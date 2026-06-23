@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Environments
+.venv/
+venv/
+.env
+
+# uv: the lockfile IS committed for reproducibility - do not ignore uv.lock
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.idea/
+.obsidian/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Scientific data must never be committed to the source repo.
+# Raw files are referenced by path + hash, not stored here (see data-model.md).
+/data/
+/scratch/
+*.gsf
+*.nea
+*.h5
+*.hdf5
+*.nc
