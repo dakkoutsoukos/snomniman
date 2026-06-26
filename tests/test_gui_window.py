@@ -11,6 +11,7 @@ contrast ever modifies the Dataset.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
@@ -26,8 +27,12 @@ from snomniman.gui.window import MeasurementExplorerWindow
 
 
 @pytest.fixture
-def window(qapp: Any, synthetic_dataset: Dataset) -> MeasurementExplorerWindow:
-    return MeasurementExplorerWindow(ExplorerModel(synthetic_dataset))
+def window(qapp: Any, synthetic_dataset: Dataset) -> Iterator[MeasurementExplorerWindow]:
+    win = MeasurementExplorerWindow(ExplorerModel(synthetic_dataset))
+    yield win
+    win.close()
+    win.deleteLater()
+    qapp.processEvents()  # delete widgets now, not chaotically at interpreter exit
 
 
 # -- structure + navigation -------------------------------------------------- #

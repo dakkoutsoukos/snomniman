@@ -3,25 +3,28 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-26 (comparative exploration: side-by-side + synced cursor)
+**Last updated:** 2026-06-26 (quantitative measurement tools: profiles, distance, ROI)
 
 ---
 
 ## Current Phase
 
 **Phase 1 is COMPLETE** (backend + Zarr round-trip) and the **read-only Measurement
-Explorer** is now both quantitatively trustworthy *and* comparative:
-- **Quantitative visualization:** every image has a colorbar + histogram with units,
-  interactive contrast (default / full-range / exact min-max, display-only), and a
-  cross-channel cursor readout beneath the image.
-- **Comparative exploration:** side-by-side panes (presets: Amplitude/Phase,
-  Optical/Topography, Sample/Reference, Harmonic series) with **synchronized zoom,
-  pan and cursor** (one crosshair marks the same point in every pane + a shared
-  readout), plus a clickable **harmonic contact sheet**.
+Explorer** now spans understand -> compare -> measure:
+- **Quantitative visualization:** colorbar + histogram with units, interactive
+  contrast (display-only), cross-channel cursor readout under the image.
+- **Comparative exploration:** side-by-side presets (Amplitude/Phase,
+  Optical/Topography, Sample/Reference, Harmonic series) with synchronized
+  zoom/pan/cursor (crosshair in every pane + shared readout) + harmonic contact sheet.
+- **Quantitative measurement:** draggable line / rectangle / polygon overlays
+  (read-only, amber, live) giving a line **profile** across every visible channel
+  with length/dx/dy, and **ROI statistics** (mean/median/min/max/std, area) per
+  channel; a session **measurement history** (rename/hide/delete). Validated math in
+  Qt-free `viz.measure` (known-answer tests, Rule 6).
 
-These closed Must-haves #1 and #2 from `docs/product-review-v0.1.md`. Verified on the
-real CdO measurement. `ruff`, `mypy --strict`, and `pytest` (124 passed) are green;
-the backend remains Qt-free (subprocess-checked). Committed as milestones on `main`.
+These closed Must-haves #1-#3 from `docs/product-review-v0.1.md`. Verified on the real
+CdO measurement (e.g. a region's Z height reads 835.9 nm). `ruff`, `mypy --strict`,
+and `pytest` (146 passed) are green; the backend stays Qt-free. Committed on `main`.
 
 Launch: `python -m snomniman.gui [measurement-directory]` (requires the `gui`
 extra: `uv sync --extra gui`).
@@ -96,14 +99,20 @@ in impact order:
     cross-channel cursor* (crosshair in every pane + shared readout), comparison
     presets, and a harmonic contact sheet. *Done 2026-06-26:* `gui.comparison`
     (`ComparisonView`/`ContactSheet`) + model presets/`values_at`.
-14. **Line profile + ROI statistics** (min/max/mean/std, area) - read-only.
-    *(Now the top open Must-have.)*
-15. **Provenance-preserving export** of the current view (a captioned figure, not a
-    bare screenshot).
+14. [x] **Line profile + distance + ROI statistics** (mean/median/min/max/std,
+    area) across every visible channel; draggable read-only overlays + a session
+    history (rename/hide/delete). *Done 2026-06-26:* `viz.measure` (validated math)
+    + model methods + `gui.measurement` (controller/panel).
+15. **Provenance-preserving export** of the current view (a captioned figure + the
+    numbers, not a bare screenshot). *(Last read-only Must-have; now the top item.)*
 16. **First processing derivations** - topography leveling + reference normalization,
-    as explicit, recorded, non-destructive steps. *Sequence after the exploration
-    items above* (explore before you process); each step is provenance-recorded,
-    never silent (OHD-6D); the Zarr store already persists the resulting DAG.
+    as explicit, recorded, non-destructive steps. *Sequence after export* (explore
+    before you process); each returns a new Dataset whose provenance appends one
+    StepRecord, never silent (OHD-2/5/6D); the Zarr store already persists the DAG.
+
+**Deferred refinements (read-only, lower priority):** mirror a measurement overlay
+into every comparison pane (results are already multi-channel); a measurement
+"snap to pixel"/numeric-entry mode; verbatim vendor-header view; measurement export.
 
 See the review's Should/Nice lists for AI orientation, a measurement library,
 verbatim-header view, sessions, and a neaPLOT cross-check. **Strongly recommended

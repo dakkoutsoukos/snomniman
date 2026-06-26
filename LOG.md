@@ -995,3 +995,79 @@ Remaining read-only Must-haves before processing: **line profile + ROI statistic
 then **provenance-preserving export**. Then the first processing derivations
 (leveling, reference normalization) as explicit, recorded steps. Strongly recommended
 first: real user validation. Re-run the review as `product-review-v0.2.md`.
+
+---
+
+## 2026-06-26 - Quantitative measurement tools (line profiles, distance, ROI stats)
+
+The Explorer becomes a measurement instrument: a researcher can ask "how wide /
+how tall / what is the profile / what are the statistics of this region" without
+changing anything. Measurements are read-only *observations*, not processing -
+they never touch the Dataset and create no derived datasets.
+
+### Completed
+- **`snomniman.viz.measure` (new, Qt-free, validated with known answers):**
+  `sample_line` (bilinear profile along a segment), `distance`, `rect_mask`,
+  `polygon_mask` (even-odd ray casting), `region_stats`
+  (count/area/mean/median/min/max/std), `pixel_area`. Physical points map to
+  fractional pixel indices by interpolation against the canonical coordinate axes,
+  so offset/non-square grids are handled. 10 known-answer tests (Rule 6).
+- **Model methods (Qt-free, tested):** `line_profile(specs, p0, p1) -> ProfileSet`,
+  `rect_statistics` / `polygon_statistics -> RegionReport`, `pixel_area_nm2`,
+  `single_view_specs` (the channels a single-view measurement reports: current +
+  phase + topography). Each computes across every visible channel.
+- **`snomniman.gui.measurement` (new):** `MeasurementController` places draggable,
+  distinctly-styled (amber) line / rectangle / polygon overlays on the single
+  image, recomputes results **live** while dragging via the model, and owns a
+  session **history** (rename / hide / delete / clear). `MeasurementPanel` shows
+  the active measurement's **profile plot** (one normalized curve per visible
+  channel + a colored legend with each channel's real range) with the line's
+  length / dx / dy, or a **statistics table** (per-channel mean/median/min/max/std)
+  with the region's pixel count and area. Added as a "Measure" tab in the right dock.
+- **Survives channel changes + read-only:** measurements persist and recompute for
+  the new channel; placing one focuses the single view (the measurement surface).
+- **Verified on the real CdO measurement** (offscreen): a line reads 12700 nm with
+  O2-amplitude / O2-phase / Z profiles; a rectangle reports 5152 px, ~22.9 um^2,
+  with means O2 amplitude 6.18 a.u., O2 phase 2.50 rad, **Z height 835.9 nm** -
+  directly answering how-large / how-tall / profile / region-statistics.
+- **Tests (+22; 146 total):** `viz.measure` known-answer math; model
+  profile/statistics (values match the channel, area = count x pixel area); GUI
+  placement (line profiles every visible channel; rect/polygon stats), history
+  rename/hide/delete, focus-on-add, survive-channel-change, and that **no
+  measurement modifies the Dataset**. `ruff` clean, `mypy --strict` clean (46
+  files), `pytest` 146 passed.
+
+### Decisions
+- **Measurement != processing (philosophy made concrete).** Measurements extract
+  information; processing derives new data. This milestone stays entirely on the
+  read-only side: no Dataset mutation, no provenance nodes, no derived datasets -
+  measurements are session-scoped exploration artifacts.
+- **The validated math lives in Qt-free `viz.measure`** (Rule 6), the orchestration
+  in the Qt-free model, the interaction in the widget (Rule 4). Overlays use a
+  distinct amber pen so a measurement never reads as data.
+- **Scope: measurements are placed on the single image** (one clear measurement
+  surface) and report across the single view's channels (amplitude + phase +
+  topography), which satisfies "for every visible channel". Mirroring an overlay
+  into each comparison pane is a deliberate later refinement (the multi-channel
+  results are already present); recorded in `NEXT.md`.
+
+### Issues Found
+- A benign PySide6/pyqtgraph teardown message ("C++ object already deleted") is
+  emitted from an `atexit` callback during interpreter shutdown after the GUI
+  tests; it is ignored (does not affect results or exit code).
+
+### Documentation Updated
+- Created: `src/snomniman/viz/measure.py`; `src/snomniman/gui/measurement.py`;
+  `tests/test_viz_measure.py`; `tests/test_gui_measurement.py`.
+- Updated: `src/snomniman/viz/__init__.py`, `src/snomniman/gui/{model,imageview,
+  window}.py`; `tests/test_gui_model.py`. This `LOG.md` entry; `NEXT.md`.
+
+### Next Recommended Actions
+The read-only exploration set is now broad (understand -> compare -> measure). The
+last read-only Must-have is **provenance-preserving export** of the current view
+(captioned figure + the numbers, not a screenshot). After that the project is
+**ready for processing derivations** - leveling, reference normalization, explicit
+phase unwrap - each an explicit, recorded, non-destructive step that returns a new
+Dataset whose provenance appends one StepRecord (OHD-2/5/6D); the Zarr store already
+persists the resulting DAG. Strongly recommended first: real user validation, then
+`product-review-v0.2.md`.

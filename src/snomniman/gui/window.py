@@ -15,6 +15,7 @@ from PySide6 import QtCore, QtWidgets
 
 from .comparison import ComparisonView, ContactSheet
 from .imageview import ChannelImageView
+from .measurement import MeasurementController, MeasurementPanel
 from .model import PRESET_LABELS, ExplorerModel, MeasurementIdentity
 from .panels import ChannelBrowser, MetadataInspector, ProvenanceInspector
 
@@ -37,6 +38,10 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._metadata = MetadataInspector()
         self._provenance = ProvenanceInspector()
         self._conventions = QtWidgets.QLabel()
+        # Measurements are read-only observations placed on the single image; they
+        # report across the single view's channels (current + phase + topography).
+        self._measure = MeasurementController(model, self._image, model.single_view_specs)
+        self._measure_panel = MeasurementPanel(self._measure)
 
         self._build_layout()
         self._wire()
@@ -72,8 +77,10 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self.addDockWidget(QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, channels)
 
         tabs = QtWidgets.QTabWidget()
+        self._inspect_tabs = tabs
         tabs.addTab(self._metadata, "Metadata")
         tabs.addTab(self._provenance, "Provenance")
+        tabs.addTab(self._measure_panel, "Measure")
         inspect = QtWidgets.QDockWidget("Inspect")
         inspect.setWidget(tabs)
         inspect.setFeatures(QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable)
@@ -109,6 +116,8 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._image.cursorMoved.connect(self._on_cursor_moved)
         self._comparison.cursorMoved.connect(self._on_comparison_cursor)
         self._contact.channelSelected.connect(self._on_channel_selected)
+        # Measurements live on the single image; adding one focuses that view.
+        self._measure.measurementAdded.connect(self._show_single)
 
     # -- loading / refreshing -------------------------------------------------
 
@@ -166,6 +175,8 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         # what channel/representation is shown and its processing state.
         state = self._channel_state(render.channel)
         self._active.setText(f"Showing   {render.title}      state: {state}")
+        # Measurements survive channel changes: recompute them for the new channel.
+        self._measure.refresh()
 
     def _on_cursor_moved(self, x_nm: float, y_nm: float, in_bounds: bool) -> None:
         if not in_bounds:

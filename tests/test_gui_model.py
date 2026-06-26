@@ -21,7 +21,7 @@ from snomniman.gui.model import (
     ExplorerModel,
     PaneSpec,
 )
-from snomniman.viz import AMPLITUDE, PHASE, REAL
+from snomniman.viz import AMPLITUDE, PHASE, REAL, prepare_channel
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _GOLDEN_DIR = (
@@ -245,6 +245,72 @@ def test_values_at_reports_every_pane(golden_model: ExplorerModel) -> None:
     assert labels == ["O2 amplitude", "Z"]  # one value per visible pane, in order
     # Out of the field -> flagged, no values.
     assert golden_model.values_at(specs, x1 + 1e6, (y0 + y1) / 2).in_bounds is False
+
+
+# -- measurements ------------------------------------------------------------ #
+
+
+def test_line_profile_across_visible_channels(synthetic_dataset: Dataset) -> None:
+    model = ExplorerModel(synthetic_dataset)
+    specs = model.comparison_layout(PRESET_AMP_PHASE)  # [O2 amplitude, O2 phase]
+    rd = model.render_spec(specs[0])
+    x0, x1, y0, y1 = rd.extent_nm
+    profile = model.line_profile(specs, (x0 + 5, (y0 + y1) / 2), (x1 - 5, (y0 + y1) / 2))
+    assert profile.distance_nm == pytest.approx(x1 - 5 - (x0 + 5))
+    assert len(profile.curves) == 2  # one curve per visible channel
+    assert [c.label for c in profile.curves] == ["O2 amplitude", "O2 phase"]
+    assert profile.curves[0].unit == "a.u." and profile.curves[1].unit == "rad"
+    # Every curve has the same number of samples as the shared position axis.
+    for curve in profile.curves:
+        assert curve.samples.shape == profile.positions_nm.shape
+
+
+def test_line_profile_values_match_channel(synthetic_dataset: Dataset) -> None:
+    # A profile along a pixel-center row reproduces that row of the amplitude image.
+    model = ExplorerModel(synthetic_dataset)
+    amp = prepare_channel(synthetic_dataset, "O2", AMPLITUDE).values
+    x = synthetic_dataset.coordinate("x").values
+    y = synthetic_dataset.coordinate("y").values
+    profile = model.line_profile([PaneSpec("O2", AMPLITUDE)], (x[0], y[1]), (x[-1], y[1]))
+    samples = profile.curves[0].samples
+    np.testing.assert_allclose(samples[0], amp[1, 0], atol=1e-5)
+    np.testing.assert_allclose(samples[-1], amp[1, -1], atol=1e-5)
+
+
+def test_rect_statistics(synthetic_dataset: Dataset) -> None:
+    model = ExplorerModel(synthetic_dataset)
+    specs = [PaneSpec("Z", REAL)]
+    report = model.rect_statistics(specs, 0.0, 0.0, 1e9, 1e9)  # whole field
+    row = report.rows[0]
+    z = synthetic_dataset.channel("Z").values
+    assert report.kind == "rectangle"
+    assert report.count == z.size
+    assert row.unit == "nm"
+    assert row.stats.mean == pytest.approx(float(np.mean(z)))
+    assert row.stats.maximum == pytest.approx(float(np.max(z)))
+    # Area equals pixel count times pixel area.
+    assert report.area_nm2 == pytest.approx(z.size * model.pixel_area_nm2())
+
+
+def test_polygon_statistics_runs_for_every_channel(golden_model: ExplorerModel) -> None:
+    specs = golden_model.comparison_layout(PRESET_OPTICAL_TOPO)  # [O2 amplitude, Z]
+    report = golden_model.polygon_statistics(
+        specs, [(57000.0, 11000.0), (63000.0, 11000.0), (60000.0, 17000.0)]
+    )
+    assert report.kind == "polygon"
+    assert report.count > 0
+    assert [r.label for r in report.rows] == ["O2 amplitude", "Z"]
+
+
+def test_measurements_do_not_mutate_dataset(golden_model: ExplorerModel) -> None:
+    ds = golden_model.dataset
+    before = {name: ds.channel(name).values.copy() for name in ds.channel_names}
+    specs = golden_model.comparison_layout(PRESET_AMP_PHASE)
+    golden_model.line_profile(specs, (56000.0, 10000.0), (65000.0, 19000.0))
+    golden_model.rect_statistics(specs, 57000.0, 11000.0, 63000.0, 17000.0)
+    for name, arr in before.items():
+        np.testing.assert_array_equal(ds.channel(name).values, arr, err_msg=name)
+        assert ds.channel(name).data.flags.writeable is False
 
 
 def test_comparison_does_not_mutate_dataset(golden_model: ExplorerModel) -> None:

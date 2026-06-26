@@ -21,11 +21,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 
 from snomniman import viz
 from snomniman.core import Dataset, Metadata
 from snomniman.io import read
-from snomniman.viz import AMPLITUDE, PHASE, REAL, RenderData
+from snomniman.viz import AMPLITUDE, PHASE, REAL, RegionStats, RenderData
 
 # --------------------------------------------------------------------------- #
 # View value objects (plain data the widgets render verbatim)
@@ -123,6 +124,45 @@ class PaneSpec:
         if self.representation == REAL:
             return self.channel
         return f"{self.channel} {self.representation}"
+
+
+@dataclass(frozen=True)
+class ProfileCurve:
+    """One channel's values sampled along a line (a read-only observation)."""
+
+    label: str
+    unit: str
+    samples: npt.NDArray[np.float64]
+
+
+@dataclass(frozen=True)
+class ProfileSet:
+    """A line measurement: the geometry plus one curve per visible channel."""
+
+    positions_nm: npt.NDArray[np.float64]  # distance along the line per sample
+    distance_nm: float
+    dx_nm: float
+    dy_nm: float
+    curves: tuple[ProfileCurve, ...]
+
+
+@dataclass(frozen=True)
+class RegionStatRow:
+    """One channel's statistics over a region."""
+
+    label: str
+    unit: str
+    stats: RegionStats
+
+
+@dataclass(frozen=True)
+class RegionReport:
+    """A region measurement: shared geometry plus per-channel statistics."""
+
+    kind: str  # "rectangle" | "polygon"
+    count: int
+    area_nm2: float
+    rows: tuple[RegionStatRow, ...]
 
 
 #: Comparison preset identifiers (see :meth:`ExplorerModel.comparison_layout`).
@@ -340,6 +380,15 @@ class ExplorerModel:
         """Optical near-field harmonics present (amplitude) for the contact sheet."""
         return [PaneSpec(ch, AMPLITUDE) for ch in self._optical_signal_channels()]
 
+    def single_view_specs(self) -> list[PaneSpec]:
+        """The channels a single-view measurement reports: current (+ phase) + topography."""
+        specs = [PaneSpec(self._channel, self._representation)]
+        if self._ds.is_complex(self._channel) and self._representation == AMPLITUDE:
+            specs.append(PaneSpec(self._channel, PHASE))
+        if "Z" in self._ds.channel_names and self._channel != "Z":
+            specs.append(PaneSpec("Z", REAL))
+        return specs
+
     def comparison_layout(self, preset: str) -> list[PaneSpec]:
         """Panes for a comparison ``preset``, anchored on the current channel.
 
@@ -366,6 +415,59 @@ class ExplorerModel:
         if preset == PRESET_HARMONIC_SERIES:
             return self.harmonic_panes()
         raise ValueError(f"unknown comparison preset: {preset!r}")
+
+    # -- measurements (read-only observations) --------------------------------
+
+    def pixel_area_nm2(self) -> float:
+        return viz.pixel_area(self._x_coords(), self._y_coords())
+
+    def line_profile(
+        self, specs: Sequence[PaneSpec], p0: tuple[float, float], p1: tuple[float, float]
+    ) -> ProfileSet:
+        """Sample every visible channel along the line ``p0`` -> ``p1`` (read-only)."""
+        x, y = self._x_coords(), self._y_coords()
+        dist, dx, dy = viz.distance(p0, p1)
+        positions, _ = viz.sample_line(self.render_spec(specs[0]).values, x, y, p0, p1)
+        n = int(positions.size)
+        curves = []
+        for spec in specs:
+            rd = self.render_spec(spec)
+            _, samples = viz.sample_line(np.asarray(rd.values, dtype=np.float64), x, y, p0, p1, n)
+            curves.append(ProfileCurve(label=spec.title, unit=rd.unit, samples=samples))
+        return ProfileSet(positions, dist, dx, dy, tuple(curves))
+
+    def rect_statistics(
+        self, specs: Sequence[PaneSpec], x0: float, y0: float, x1: float, y1: float
+    ) -> RegionReport:
+        mask = viz.rect_mask(self._x_coords(), self._y_coords(), x0, y0, x1, y1)
+        return self._region_report(specs, mask, "rectangle")
+
+    def polygon_statistics(
+        self, specs: Sequence[PaneSpec], vertices: list[tuple[float, float]]
+    ) -> RegionReport:
+        mask = viz.polygon_mask(self._x_coords(), self._y_coords(), vertices)
+        return self._region_report(specs, mask, "polygon")
+
+    def _region_report(
+        self, specs: Sequence[PaneSpec], mask: npt.NDArray[np.bool_], kind: str
+    ) -> RegionReport:
+        pixel_area = self.pixel_area_nm2()
+        rows: list[RegionStatRow] = []
+        count, area = 0, 0.0
+        for spec in specs:
+            rd = self.render_spec(spec)
+            stats = viz.region_stats(
+                np.asarray(rd.values, dtype=np.float64), mask, pixel_area_nm2=pixel_area
+            )
+            rows.append(RegionStatRow(label=spec.title, unit=rd.unit, stats=stats))
+            count, area = stats.count, stats.area_nm2
+        return RegionReport(kind, count, area, tuple(rows))
+
+    def _x_coords(self) -> npt.NDArray[np.float64]:
+        return np.asarray(self._ds.coordinate("x").values, dtype=np.float64)
+
+    def _y_coords(self) -> npt.NDArray[np.float64]:
+        return np.asarray(self._ds.coordinate("y").values, dtype=np.float64)
 
     def values_at(self, specs: Sequence[PaneSpec], x_nm: float, y_nm: float) -> CursorReadout:
         """The value of every ``spec`` at one physical point (the comparison cursor)."""
@@ -530,5 +632,9 @@ __all__ = [
     "MetadataItem",
     "MetadataSection",
     "PaneSpec",
+    "ProfileCurve",
+    "ProfileSet",
     "ProvenanceStep",
+    "RegionReport",
+    "RegionStatRow",
 ]

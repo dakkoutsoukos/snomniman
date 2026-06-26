@@ -9,6 +9,15 @@ at the GUI boundary so this package stays Qt-free (ADR-0007).
 
 from __future__ import annotations
 
+from .measure import (
+    RegionStats,
+    distance,
+    pixel_area,
+    polygon_mask,
+    rect_mask,
+    region_stats,
+    sample_line,
+)
 from .render import (
     AMPLITUDE,
     LEVEL_DEFAULT,
@@ -31,10 +40,17 @@ __all__ = [
     "LEVEL_MODES",
     "PHASE",
     "REAL",
+    "RegionStats",
     "RenderData",
     "available_representations",
     "default_representation",
+    "distance",
     "level_range",
     "pick_scale_bar",
+    "pixel_area",
+    "polygon_mask",
     "prepare_channel",
+    "rect_mask",
+    "region_stats",
+    "sample_line",
 ]

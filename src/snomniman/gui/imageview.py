@@ -19,6 +19,8 @@ display-only.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import numpy.typing as npt
 import pyqtgraph as pg
@@ -131,6 +133,18 @@ class ChannelImageView(QtWidgets.QWidget):
         """Share zoom and pan with ``other`` (synchronized navigation)."""
         self._plot.setXLink(other._plot)
         self._plot.setYLink(other._plot)
+
+    @property
+    def view_box(self) -> Any:
+        """The plot's ViewBox (physical nm coordinates) - for measurement overlays."""
+        return self._plot.getViewBox()
+
+    def add_overlay(self, item: object) -> None:
+        """Add a measurement overlay item to the plot (does not touch the data)."""
+        self._plot.addItem(item)
+
+    def remove_overlay(self, item: object) -> None:
+        self._plot.removeItem(item)
 
     @property
     def levels(self) -> tuple[float, float]:
