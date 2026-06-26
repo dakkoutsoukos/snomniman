@@ -13,8 +13,9 @@ from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
+from .comparison import ComparisonView, ContactSheet
 from .imageview import ChannelImageView
-from .model import ExplorerModel, MeasurementIdentity
+from .model import PRESET_LABELS, ExplorerModel, MeasurementIdentity
 from .panels import ChannelBrowser, MetadataInspector, ProvenanceInspector
 
 
@@ -29,6 +30,9 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._facts = QtWidgets.QLabel()
         self._active = QtWidgets.QLabel()
         self._image = ChannelImageView()
+        self._comparison = ComparisonView()
+        self._contact = ContactSheet()
+        self._stack = QtWidgets.QStackedWidget()
         self._browser = ChannelBrowser()
         self._metadata = MetadataInspector()
         self._provenance = ProvenanceInspector()
@@ -54,7 +58,11 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._active.setStyleSheet("color: #c8c8c8;")
         outer.addWidget(self._title)
         outer.addWidget(self._facts)
-        outer.addWidget(self._image, 1)
+        outer.addWidget(self._build_view_controls())
+        self._stack.addWidget(self._image)  # page 0: single channel
+        self._stack.addWidget(self._comparison)  # page 1: side-by-side comparison
+        self._stack.addWidget(self._contact)  # page 2: harmonic contact sheet
+        outer.addWidget(self._stack, 1)
         outer.addWidget(self._active)
         self.setCentralWidget(central)
 
@@ -74,10 +82,33 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
         self.statusBar().addWidget(self._conventions)
 
+    def _build_view_controls(self) -> QtWidgets.QWidget:
+        bar = QtWidgets.QWidget()
+        row = QtWidgets.QHBoxLayout(bar)
+        row.setContentsMargins(0, 2, 0, 2)
+        single = QtWidgets.QPushButton("Single")
+        single.setToolTip("Show one channel with full colorbar and contrast controls")
+        single.clicked.connect(self._show_single)
+        row.addWidget(single)
+        row.addSpacing(12)
+        row.addWidget(QtWidgets.QLabel("Compare:"))
+        for preset, label in PRESET_LABELS.items():
+            button = QtWidgets.QPushButton(label)
+            button.clicked.connect(lambda _checked=False, p=preset: self._show_comparison(p))
+            row.addWidget(button)
+        contact = QtWidgets.QPushButton("Contact sheet")
+        contact.setToolTip("Thumbnails of every harmonic; click one to inspect it")
+        contact.clicked.connect(self._show_contact)
+        row.addWidget(contact)
+        row.addStretch(1)
+        return bar
+
     def _wire(self) -> None:
         self._browser.channelSelected.connect(self._on_channel_selected)
         self._browser.representationSelected.connect(self._on_representation_selected)
         self._image.cursorMoved.connect(self._on_cursor_moved)
+        self._comparison.cursorMoved.connect(self._on_comparison_cursor)
+        self._contact.channelSelected.connect(self._on_channel_selected)
 
     # -- loading / refreshing -------------------------------------------------
 
@@ -92,15 +123,35 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             self._model.provenance_summary(), self._model.provenance_steps()
         )
         self._browser.select(self._model.current_channel)
-        self._refresh_channel()
+        self._show_single()
 
     def _on_channel_selected(self, canonical: str) -> None:
+        # Selecting a channel (from the browser or a contact-sheet thumbnail) opens
+        # it in the single, detailed view.
         self._model.set_channel(canonical)
-        self._refresh_channel()
+        self._show_single()
 
     def _on_representation_selected(self, representation: str) -> None:
         self._model.set_representation(representation)
-        self._refresh_image()
+        self._show_single()
+
+    # -- view switching -------------------------------------------------------
+
+    def _show_single(self) -> None:
+        self._stack.setCurrentWidget(self._image)
+        self._refresh_channel()
+
+    def _show_comparison(self, preset: str) -> None:
+        specs = self._model.comparison_layout(preset)
+        self._comparison.set_panes(specs, self._model.render_spec)
+        self._stack.setCurrentWidget(self._comparison)
+        self._active.setText("Comparing:   " + "      |      ".join(s.title for s in specs))
+
+    def _show_contact(self) -> None:
+        specs = self._model.harmonic_panes()
+        self._contact.set_panes(specs, self._model.render_spec)
+        self._stack.setCurrentWidget(self._contact)
+        self._active.setText(f"Contact sheet  -  {len(specs)} optical harmonics")
 
     def _refresh_channel(self) -> None:
         self._browser.set_representations(
@@ -128,6 +179,21 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._image.set_readout(
             f"x = {readout.x_nm:.0f} nm     y = {readout.y_nm:.0f} nm        {values}"
         )
+
+    def _on_comparison_cursor(self, x_nm: float, y_nm: float, in_bounds: bool) -> None:
+        if in_bounds:
+            readout = self._model.values_at(self._comparison.specs, x_nm, y_nm)
+        else:
+            readout = None
+        if readout is None or not readout.in_bounds:
+            self._comparison.set_readout("")
+            self._comparison.set_crosshair(0.0, 0.0, False)
+            return
+        values = "      ".join(f"{v.label}: {v.value} {v.unit}" for v in readout.values)
+        self._comparison.set_readout(
+            f"x = {readout.x_nm:.0f} nm     y = {readout.y_nm:.0f} nm        {values}"
+        )
+        self._comparison.set_crosshair(x_nm, y_nm, True)
 
     def _channel_state(self, channel: str) -> str:
         try:

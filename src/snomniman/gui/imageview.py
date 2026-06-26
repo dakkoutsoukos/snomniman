@@ -1,21 +1,20 @@
 """The channel image view: a quantitatively honest, physical-units display.
 
 Consumes a :class:`~snomniman.viz.RenderData` and draws it so the researcher can
-*trust the numbers*, not just see a picture:
+*trust the numbers*, not just see a picture: the image in physical nm coordinates
+(ticks in um), lower-left origin, channel-aware colormap and scale bar.
 
-* the image, in physical nm coordinates (ticks in um), lower-left origin, correct
-  channel-aware colormap, with a physical scale bar;
-* a **colorbar + histogram** (a PyQtGraph ``HistogramLUTItem``) that shows the
-  value-to-color mapping with units, the value distribution, and where the levels
-  clip - and lets the levels be dragged;
-* **contrast controls** (default / full-range buttons and exact min/max entry)
-  that change only the *display*, never the data;
-* a **cursor readout** shown directly beneath the image, not across the window.
+In the default (full) mode it adds a **colorbar + histogram** (a PyQtGraph
+``HistogramLUTItem``) with the channel unit, the value distribution and visible
+clipping; **contrast controls** (default / full-range buttons + exact min/max
+entry) that change only the *display*; and a **cursor readout** beneath the image.
 
-It computes nothing scientific - the colormap, default range, units and extent are
-decided (and tested) in :mod:`snomniman.viz`; contrast modes come from
-``viz.level_range``. Adjusting contrast is display-only: the immutable Dataset is
-never touched.
+In **compact** mode (used for the panes of a comparison) it drops the histogram,
+contrast bar and readout strip and instead shows a pane title and a crosshair, so
+several panes tile cleanly with a single shared readout. Either way it computes
+nothing scientific (the colormap, ranges, units and extent come from
+:mod:`snomniman.viz`) and never modifies the Dataset - contrast and crosshairs are
+display-only.
 """
 
 from __future__ import annotations
@@ -29,15 +28,18 @@ from snomniman.viz import RenderData, level_range, pick_scale_bar
 
 from .colormap import lookup_table
 
+_CROSSHAIR_PEN = pg.mkPen("#46c2ff", width=1, style=QtCore.Qt.PenStyle.DashLine)
+
 
 class ChannelImageView(QtWidgets.QWidget):
-    """A physical-units image with colorbar, histogram, contrast and readout."""
+    """A physical-units image; full mode adds colorbar/histogram/contrast/readout."""
 
     #: Emitted on hover: (x_nm, y_nm, in_bounds).
     cursorMoved = QtCore.Signal(float, float, bool)
 
-    def __init__(self) -> None:
+    def __init__(self, *, compact: bool = False) -> None:
         super().__init__()
+        self._compact = compact
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -56,15 +58,23 @@ class ChannelImageView(QtWidgets.QWidget):
         self._image_item = pg.ImageItem()
         self._plot.addItem(self._image_item)
 
-        self._hist = pg.HistogramLUTItem(image=self._image_item)
-        self._hist.axis.enableAutoSIPrefix(False)
-        self._layout_widget.addItem(self._hist, row=0, col=1)
+        self._vline = pg.InfiniteLine(angle=90, movable=False, pen=_CROSSHAIR_PEN)
+        self._hline = pg.InfiniteLine(angle=0, movable=False, pen=_CROSSHAIR_PEN)
+        for line in (self._vline, self._hline):
+            line.setVisible(False)
+            self._plot.addItem(line, ignoreBounds=True)
 
-        self._readout = self._layout_widget.addLabel(
-            "Hover over the image to read values", row=1, col=0, colspan=2, justify="left"
-        )
-
-        layout.addWidget(self._build_contrast_bar())
+        self._hist: pg.HistogramLUTItem | None = None
+        self._readout: pg.LabelItem | None = None
+        if not compact:
+            self._hist = pg.HistogramLUTItem(image=self._image_item)
+            self._hist.axis.enableAutoSIPrefix(False)
+            self._layout_widget.addItem(self._hist, row=0, col=1)
+            self._readout = self._layout_widget.addLabel(
+                "Hover over the image to read values", row=1, col=0, colspan=2, justify="left"
+            )
+            layout.addWidget(self._build_contrast_bar())
+            self._hist.sigLevelsChanged.connect(self._on_hist_changed)
 
         self._scalebar: object | None = None
         self._extent: tuple[float, float, float, float] | None = None
@@ -74,7 +84,6 @@ class ChannelImageView(QtWidgets.QWidget):
         self._syncing = False
 
         self._plot.scene().sigMouseMoved.connect(self._on_mouse_moved)
-        self._hist.sigLevelsChanged.connect(self._on_hist_changed)
 
     # -- public API -----------------------------------------------------------
 
@@ -83,34 +92,53 @@ class ChannelImageView(QtWidgets.QWidget):
         x0, x1, y0, y1 = render.extent_nm
         self._image_item.setImage(render.values, autoLevels=False)
         self._image_item.setRect(QtCore.QRectF(x0, y0, x1 - x0, y1 - y0))
-
         lut = lookup_table(render.colormap)
-        self._hist.gradient.setColorMap(pg.ColorMap(np.linspace(0.0, 1.0, len(lut)), lut))
-        self._hist.axis.setLabel(render.unit or None)
-
         self._values = np.asarray(render.values, dtype=np.float64)
         self._default_levels = (render.vmin, render.vmax)
-        self._configure_spinboxes(render.vmin, render.vmax)
-        self._apply_levels(render.vmin, render.vmax)
+
+        if self._hist is not None:
+            self._hist.gradient.setColorMap(pg.ColorMap(np.linspace(0.0, 1.0, len(lut)), lut))
+            self._hist.axis.setLabel(render.unit or None)
+            self._configure_spinboxes(render.vmin, render.vmax)
+            self._apply_levels(render.vmin, render.vmax)
+            self.set_readout("Hover over the image to read values")
+        else:  # compact pane: apply colormap + levels directly to the image
+            self._image_item.setLookupTable(lut)
+            self._image_item.setLevels((render.vmin, render.vmax))
 
         if self._extent != render.extent_nm:  # new field of view -> frame it
             self._extent = render.extent_nm
             self._plot.getViewBox().setRange(xRange=(x0, x1), yRange=(y0, y1), padding=0.02)
             self._install_scale_bar(x1 - x0)
-        self.set_readout("Hover over the image to read values")
+
+    def set_title(self, text: str) -> None:
+        self._plot.setTitle(text)
 
     def set_readout(self, text: str) -> None:
-        """Show ``text`` in the readout strip directly beneath the image."""
+        """Show ``text`` in the readout strip beneath the image (full mode only)."""
         self._last_readout = text
-        self._readout.setText(text)
+        if self._readout is not None:
+            self._readout.setText(text)
+
+    def set_crosshair(self, x_nm: float, y_nm: float, visible: bool) -> None:
+        """Mark the physical point (x, y) - used to sync the cursor across panes."""
+        self._vline.setPos(x_nm)
+        self._hline.setPos(y_nm)
+        self._vline.setVisible(visible)
+        self._hline.setVisible(visible)
+
+    def link_view(self, other: ChannelImageView) -> None:
+        """Share zoom and pan with ``other`` (synchronized navigation)."""
+        self._plot.setXLink(other._plot)
+        self._plot.setYLink(other._plot)
 
     @property
     def levels(self) -> tuple[float, float]:
         """Current display levels (min, max). Display only - never the data."""
-        lo, hi = self._hist.getLevels()
-        return float(lo), float(hi)
+        lv = self._image_item.levels
+        return (float(lv[0]), float(lv[1])) if lv is not None else (0.0, 1.0)
 
-    # -- contrast bar ---------------------------------------------------------
+    # -- contrast bar (full mode only) ----------------------------------------
 
     def _build_contrast_bar(self) -> QtWidgets.QWidget:
         bar = QtWidgets.QWidget()
@@ -159,6 +187,7 @@ class ChannelImageView(QtWidgets.QWidget):
         self._syncing = False
 
     def _apply_levels(self, lo: float, hi: float) -> None:
+        assert self._hist is not None
         self._syncing = True
         self._hist.setLevels(lo, hi)
         self._min_spin.setValue(lo)
@@ -172,7 +201,7 @@ class ChannelImageView(QtWidgets.QWidget):
         self._apply_levels(*level_range(self._values, "full"))
 
     def _on_spin_changed(self, _value: float) -> None:
-        if self._syncing:
+        if self._syncing or self._hist is None:
             return
         lo, hi = self._min_spin.value(), self._max_spin.value()
         if hi > lo:
@@ -181,7 +210,7 @@ class ChannelImageView(QtWidgets.QWidget):
             self._syncing = False
 
     def _on_hist_changed(self) -> None:
-        if self._syncing:
+        if self._syncing or self._hist is None:
             return
         lo, hi = self._hist.getLevels()
         self._syncing = True

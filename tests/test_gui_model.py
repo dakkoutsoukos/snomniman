@@ -13,8 +13,15 @@ import numpy as np
 import pytest
 
 from snomniman.core import Dataset
-from snomniman.gui.model import ExplorerModel
-from snomniman.viz import AMPLITUDE, PHASE
+from snomniman.gui.model import (
+    PRESET_AMP_PHASE,
+    PRESET_HARMONIC_SERIES,
+    PRESET_OPTICAL_TOPO,
+    PRESET_SAMPLE_REF,
+    ExplorerModel,
+    PaneSpec,
+)
+from snomniman.viz import AMPLITUDE, PHASE, REAL
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _GOLDEN_DIR = (
@@ -169,3 +176,86 @@ def test_exploring_does_not_modify_dataset(golden_model: ExplorerModel) -> None:
 def test_open_measurement_classmethod(golden_model: ExplorerModel) -> None:
     assert golden_model.title.startswith("2026-06-16")
     assert golden_model.dataset.is_raw is True
+
+
+# -- comparison layouts ------------------------------------------------------ #
+
+
+def test_preset_amplitude_phase(synthetic_dataset: Dataset) -> None:
+    model = ExplorerModel(synthetic_dataset)  # default channel O2 (complex)
+    assert model.comparison_layout(PRESET_AMP_PHASE) == [
+        PaneSpec("O2", AMPLITUDE),
+        PaneSpec("O2", PHASE),
+    ]
+    # A real channel has only one representation -> a single pane.
+    model.set_channel("Z")
+    assert model.comparison_layout(PRESET_AMP_PHASE) == [PaneSpec("Z", REAL)]
+
+
+def test_preset_optical_topography(synthetic_dataset: Dataset) -> None:
+    panes = ExplorerModel(synthetic_dataset).comparison_layout(PRESET_OPTICAL_TOPO)
+    assert panes == [PaneSpec("O2", AMPLITUDE), PaneSpec("Z", REAL)]
+
+
+def test_preset_sample_reference(synthetic_dataset: Dataset) -> None:
+    model = ExplorerModel(synthetic_dataset)
+    assert model.comparison_layout(PRESET_SAMPLE_REF) == [
+        PaneSpec("O2", AMPLITUDE),
+        PaneSpec("R_O2", AMPLITUDE),
+    ]
+    # Anchoring on the reference resolves back to the same sample/reference pair.
+    model.set_channel("R_O2")
+    assert model.comparison_layout(PRESET_SAMPLE_REF) == [
+        PaneSpec("O2", AMPLITUDE),
+        PaneSpec("R_O2", AMPLITUDE),
+    ]
+
+
+def test_preset_harmonic_series_and_contact_sheet(golden_model: ExplorerModel) -> None:
+    series = golden_model.comparison_layout(PRESET_HARMONIC_SERIES)
+    assert series == [PaneSpec(f"O{n}", AMPLITUDE) for n in range(6)]
+    assert golden_model.harmonic_panes() == series  # contact sheet uses the same set
+
+
+def test_unknown_preset_raises(synthetic_dataset: Dataset) -> None:
+    with pytest.raises(ValueError, match="unknown comparison preset"):
+        ExplorerModel(synthetic_dataset).comparison_layout("nonsense")
+
+
+def test_pane_spec_title() -> None:
+    assert PaneSpec("O2", AMPLITUDE).title == "O2 amplitude"
+    assert PaneSpec("Z", REAL).title == "Z"
+
+
+def test_render_spec(synthetic_dataset: Dataset) -> None:
+    rd = ExplorerModel(synthetic_dataset).render_spec(PaneSpec("O2", PHASE))
+    assert rd.channel == "O2" and rd.representation == PHASE and rd.cyclic is True
+
+
+# -- synchronized comparison cursor ------------------------------------------ #
+
+
+def test_values_at_reports_every_pane(golden_model: ExplorerModel) -> None:
+    specs = golden_model.comparison_layout(PRESET_OPTICAL_TOPO)  # [O2 amplitude, Z]
+    rd = golden_model.render_spec(specs[0])
+    x0, x1, y0, y1 = rd.extent_nm
+    readout = golden_model.values_at(specs, (x0 + x1) / 2, (y0 + y1) / 2)
+    assert readout.in_bounds is True
+    labels = [v.label for v in readout.values]
+    assert labels == ["O2 amplitude", "Z"]  # one value per visible pane, in order
+    # Out of the field -> flagged, no values.
+    assert golden_model.values_at(specs, x1 + 1e6, (y0 + y1) / 2).in_bounds is False
+
+
+def test_comparison_does_not_mutate_dataset(golden_model: ExplorerModel) -> None:
+    ds = golden_model.dataset
+    before = {name: ds.channel(name).values.copy() for name in ds.channel_names}
+    presets = (PRESET_AMP_PHASE, PRESET_OPTICAL_TOPO, PRESET_SAMPLE_REF, PRESET_HARMONIC_SERIES)
+    for preset in presets:
+        specs = golden_model.comparison_layout(preset)
+        for spec in specs:
+            golden_model.render_spec(spec)
+        golden_model.values_at(specs, 0.0, 0.0)
+    for name, arr in before.items():
+        np.testing.assert_array_equal(ds.channel(name).values, arr, err_msg=name)
+        assert ds.channel(name).data.flags.writeable is False

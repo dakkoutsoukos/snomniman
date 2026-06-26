@@ -928,3 +928,70 @@ sheet), then **line profile + ROI statistics**, then **provenance-preserving
 export**. Recommended before more building: real user validation (watch 2-3 neaPLOT
 users narrate). Re-run the product review as `product-review-v0.2.md` once these
 land and watch the obstacle list shrink.
+
+---
+
+## 2026-06-26 - Comparative exploration (side-by-side, synced cursor, contact sheet)
+
+Implemented the next Must-have from the v0.1 review: make comparison effortless,
+because near-field analysis is fundamentally comparative. Strictly read-only - no
+processing, AI, derived datasets, or export. ("Explore before you process.")
+
+### Completed
+- **Model (Qt-free, tested):** `PaneSpec` (channel + representation), four
+  comparison presets (`comparison_layout`): Amplitude/Phase, Optical/Topography,
+  Sample/Reference, Harmonic series - each anchored on the current channel and
+  degrading gracefully when a channel is absent; `harmonic_panes()` (optical orders
+  for the contact sheet); `values_at(specs, x, y)` - the synchronized-cursor readout
+  reporting every visible channel's value at one physical point; `render_spec`.
+  Refactored the value/nearest-pixel helpers so single- and comparison-mode readouts
+  share one implementation.
+- **`ChannelImageView` gained a `compact` mode** (for comparison panes): drops the
+  histogram/contrast bar/readout strip, adds a pane title and a crosshair, plus
+  `link_view` (shared zoom/pan) and `set_crosshair`. Full single-view mode is
+  unchanged (colorbar/histogram/contrast/readout).
+- **`snomniman.gui.comparison` (new):** `ComparisonView` - a grid of compact panes
+  with **synchronized zoom, pan and cursor** (one crosshair marks the same physical
+  point in every pane) and a single shared readout; `ContactSheet` - a clickable
+  thumbnail of every harmonic for orientation (click selects that channel).
+- **Window integration:** a view-control row (Single | the four Compare presets |
+  Contact sheet) over a `QStackedWidget` (single / comparison / contact). Selecting a
+  channel (browser or thumbnail) returns to the single detailed view.
+- **Verified on the real CdO measurement** (offscreen): Amplitude/Phase shows O2
+  amplitude (viridis) beside O2 phase (twilight) with the crosshair on the same
+  particle in both and a shared readout (`O2 amplitude 5.756 a.u. / O2 phase 2.718
+  rad`); Optical/Topography pairs O2 + Z; the contact sheet shows O0..O5 at a glance
+  (O2/O3 strong contrast, O5 noise) - directly answering "which harmonic best reveals
+  my sample?".
+- **Tests (+17; 124 total):** model preset/`values_at`/contact-set logic (Qt-free,
+  run in CI) and GUI checks for correct pane pairing, **synchronized zoom/pan**,
+  **synchronized cursor** (crosshair in every pane + shared readout), contact-sheet
+  build + navigation, return-to-single, and that **no comparison interaction mutates
+  the Dataset**. `ruff` clean, `mypy --strict` clean (42 files), `pytest` 124 passed.
+
+### Decisions
+- **One image widget, two modes.** Rather than a parallel light pane class,
+  `ChannelImageView` gained a `compact` flag - reuses the tested render path; the
+  panes stay thin and earn their place under Rule 9 (each improves comparison).
+- **Comparison view-state derivation lives in the Qt-free model** (presets,
+  `values_at`), so the headline logic is unit-tested without a display; the widgets
+  are pure presentation (Rule 4). Presets anchor on the current channel and only
+  include channels that exist.
+- **Contact sheet reuses `harmonic_panes()`** (DRY with the Harmonic-series preset);
+  thumbnails are axis-free and non-interactive except a click-to-select.
+
+### Issues Found
+- None. Synchronized navigation uses PyQtGraph view-linking (`setXLink`/`setYLink`);
+  the synchronized cursor is driven model-side (`values_at`) so it is exact and
+  tested. No scientific logic leaked into widgets.
+
+### Documentation Updated
+- Created: `src/snomniman/gui/comparison.py`; `tests/test_gui_comparison.py`.
+- Updated: `src/snomniman/gui/{model,imageview,window}.py`;
+  `tests/test_gui_model.py`. This `LOG.md` entry; `NEXT.md`.
+
+### Next Recommended Actions
+Remaining read-only Must-haves before processing: **line profile + ROI statistics**,
+then **provenance-preserving export**. Then the first processing derivations
+(leveling, reference normalization) as explicit, recorded steps. Strongly recommended
+first: real user validation. Re-run the review as `product-review-v0.2.md`.

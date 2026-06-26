@@ -3,20 +3,25 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-26 (quantitative image visualization; milestones committed)
+**Last updated:** 2026-06-26 (comparative exploration: side-by-side + synced cursor)
 
 ---
 
 ## Current Phase
 
-**Phase 1 is COMPLETE** (backend + Zarr round-trip), the **read-only Measurement
-Explorer** exists, and its images are now **quantitatively trustworthy**: every
-image carries a colorbar + histogram with units, interactive contrast (default /
-full-range / exact min-max, display-only), and a cross-channel cursor readout
-directly beneath the image. This closed the #1 gap from `docs/product-review-v0.1.md`.
-Verified on the real CdO measurement. `ruff`, `mypy --strict`, and `pytest`
-(107 passed) are green; the backend remains Qt-free (subprocess-checked). The work
-so far is committed as two milestones (backend; explorer + product docs).
+**Phase 1 is COMPLETE** (backend + Zarr round-trip) and the **read-only Measurement
+Explorer** is now both quantitatively trustworthy *and* comparative:
+- **Quantitative visualization:** every image has a colorbar + histogram with units,
+  interactive contrast (default / full-range / exact min-max, display-only), and a
+  cross-channel cursor readout beneath the image.
+- **Comparative exploration:** side-by-side panes (presets: Amplitude/Phase,
+  Optical/Topography, Sample/Reference, Harmonic series) with **synchronized zoom,
+  pan and cursor** (one crosshair marks the same point in every pane + a shared
+  readout), plus a clickable **harmonic contact sheet**.
+
+These closed Must-haves #1 and #2 from `docs/product-review-v0.1.md`. Verified on the
+real CdO measurement. `ruff`, `mypy --strict`, and `pytest` (124 passed) are green;
+the backend remains Qt-free (subprocess-checked). Committed as milestones on `main`.
 
 Launch: `python -m snomniman.gui [measurement-directory]` (requires the `gui`
 extra: `uv sync --extra gui`).
@@ -87,10 +92,12 @@ in impact order:
     **relocated cross-channel cursor readout** (was the biggest confidence gap).
     *Done 2026-06-26:* `HistogramLUTItem` colorbar/histogram, default/full/manual
     contrast (display-only, via `viz.level_range`), readout moved under the image.
-13. **Multi-channel comparison** - side-by-side panels with a *synchronized
-    cross-channel cursor*, plus a harmonic contact sheet (O0..O5 at a glance).
-    *(Now the top open Must-have.)*
+13. [x] **Multi-channel comparison** - side-by-side panes with a *synchronized
+    cross-channel cursor* (crosshair in every pane + shared readout), comparison
+    presets, and a harmonic contact sheet. *Done 2026-06-26:* `gui.comparison`
+    (`ComparisonView`/`ContactSheet`) + model presets/`values_at`.
 14. **Line profile + ROI statistics** (min/max/mean/std, area) - read-only.
+    *(Now the top open Must-have.)*
 15. **Provenance-preserving export** of the current view (a captioned figure, not a
     bare screenshot).
 16. **First processing derivations** - topography leveling + reference normalization,

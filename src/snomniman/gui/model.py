@@ -16,6 +16,7 @@ here that changes anything.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,7 +25,7 @@ import numpy as np
 from snomniman import viz
 from snomniman.core import Dataset, Metadata
 from snomniman.io import read
-from snomniman.viz import RenderData
+from snomniman.viz import AMPLITUDE, PHASE, REAL, RenderData
 
 # --------------------------------------------------------------------------- #
 # View value objects (plain data the widgets render verbatim)
@@ -108,6 +109,35 @@ class CursorReadout:
     x_nm: float
     y_nm: float
     values: tuple[CursorValue, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class PaneSpec:
+    """One pane of a comparison: a channel shown in a given representation."""
+
+    channel: str
+    representation: str  # AMPLITUDE | PHASE | REAL
+
+    @property
+    def title(self) -> str:
+        if self.representation == REAL:
+            return self.channel
+        return f"{self.channel} {self.representation}"
+
+
+#: Comparison preset identifiers (see :meth:`ExplorerModel.comparison_layout`).
+PRESET_AMP_PHASE = "amplitude_phase"
+PRESET_OPTICAL_TOPO = "optical_topography"
+PRESET_SAMPLE_REF = "sample_reference"
+PRESET_HARMONIC_SERIES = "harmonic_series"
+
+#: Human labels for the presets (for the view controls).
+PRESET_LABELS = {
+    PRESET_AMP_PHASE: "Amplitude / Phase",
+    PRESET_OPTICAL_TOPO: "Optical / Topography",
+    PRESET_SAMPLE_REF: "Sample / Reference",
+    PRESET_HARMONIC_SERIES: "Harmonic series",
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -300,38 +330,111 @@ class ExplorerModel:
             ))
         return out
 
-    # -- cursor readout -------------------------------------------------------
+    # -- comparison -----------------------------------------------------------
+
+    def render_spec(self, spec: PaneSpec) -> RenderData:
+        """Display-ready data for one comparison pane."""
+        return viz.prepare_channel(self._ds, spec.channel, spec.representation)
+
+    def harmonic_panes(self) -> list[PaneSpec]:
+        """Optical near-field harmonics present (amplitude) for the contact sheet."""
+        return [PaneSpec(ch, AMPLITUDE) for ch in self._optical_signal_channels()]
+
+    def comparison_layout(self, preset: str) -> list[PaneSpec]:
+        """Panes for a comparison ``preset``, anchored on the current channel.
+
+        Only channels that actually exist are included, so a measurement without
+        a reference or topography degrades gracefully rather than showing blanks.
+        """
+        if preset == PRESET_AMP_PHASE:
+            if self._ds.is_complex(self._channel):
+                return [PaneSpec(self._channel, AMPLITUDE), PaneSpec(self._channel, PHASE)]
+            return [PaneSpec(self._channel, REAL)]
+        if preset == PRESET_OPTICAL_TOPO:
+            optical = self._anchor_optical()
+            panes = [self._amplitude_or_real(optical)] if optical else []
+            if "Z" in self._ds.channel_names:
+                panes.append(PaneSpec("Z", REAL))
+            return panes
+        if preset == PRESET_SAMPLE_REF:
+            base = self._channel[2:] if self._channel.startswith("R_") else self._channel
+            panes = []
+            for name in (base, f"R_{base}"):
+                if name in self._ds.channel_names:
+                    panes.append(self._amplitude_or_real(name))
+            return panes
+        if preset == PRESET_HARMONIC_SERIES:
+            return self.harmonic_panes()
+        raise ValueError(f"unknown comparison preset: {preset!r}")
+
+    def values_at(self, specs: Sequence[PaneSpec], x_nm: float, y_nm: float) -> CursorReadout:
+        """The value of every ``spec`` at one physical point (the comparison cursor)."""
+        iy, ix, in_bounds = self._nearest(x_nm, y_nm)
+        if not in_bounds:
+            return CursorReadout(in_bounds=False, x_nm=x_nm, y_nm=y_nm)
+        x = np.asarray(self._ds.coordinate("x").values, dtype=np.float64)
+        y = np.asarray(self._ds.coordinate("y").values, dtype=np.float64)
+        values = tuple(self._value_for(s.channel, s.representation, iy, ix) for s in specs)
+        return CursorReadout(True, float(x[ix]), float(y[iy]), values)
+
+    # -- cursor readout (single view) -----------------------------------------
 
     def cursor_readout(self, x_nm: float, y_nm: float) -> CursorReadout:
         """Physical coordinate + the values under the pointer (current channel + Z)."""
+        iy, ix, in_bounds = self._nearest(x_nm, y_nm)
+        if not in_bounds:
+            return CursorReadout(in_bounds=False, x_nm=x_nm, y_nm=y_nm)
+        x = np.asarray(self._ds.coordinate("x").values, dtype=np.float64)
+        y = np.asarray(self._ds.coordinate("y").values, dtype=np.float64)
+        values: list[CursorValue] = [self._value_for(self._channel, self._representation, iy, ix)]
+        if self._ds.is_complex(self._channel):
+            values.append(self._value_for(self._channel, PHASE, iy, ix))
+        if "Z" in self._ds.channel_names and self._channel != "Z":
+            values.append(self._value_for("Z", REAL, iy, ix, label="Z height"))
+        return CursorReadout(True, float(x[ix]), float(y[iy]), tuple(values))
+
+    # -- value helpers --------------------------------------------------------
+
+    def _nearest(self, x_nm: float, y_nm: float) -> tuple[int, int, bool]:
         x = np.asarray(self._ds.coordinate("x").values, dtype=np.float64)
         y = np.asarray(self._ds.coordinate("y").values, dtype=np.float64)
         rd = viz.prepare_channel(self._ds, self._channel, self._representation)
         x0, x1, y0, y1 = rd.extent_nm
         if not (x0 <= x_nm <= x1 and y0 <= y_nm <= y1):
-            return CursorReadout(in_bounds=False, x_nm=x_nm, y_nm=y_nm)
-        ix = int(np.argmin(np.abs(x - x_nm)))
-        iy = int(np.argmin(np.abs(y - y_nm)))
+            return 0, 0, False
+        return int(np.argmin(np.abs(y - y_nm))), int(np.argmin(np.abs(x - x_nm))), True
 
-        values: list[CursorValue] = [self._value_at(self._channel, iy, ix)]
-        if self._ds.is_complex(self._channel):
-            values.append(self._phase_at(self._channel, iy, ix))
-        for topo in ("Z",):  # topography context, if present
-            if topo in self._ds.channel_names and topo != self._channel:
-                values.append(self._value_at(topo, iy, ix, label="Z height"))
-        return CursorReadout(True, float(x[ix]), float(y[iy]), tuple(values))
-
-    def _value_at(self, channel: str, iy: int, ix: int, *, label: str | None = None) -> CursorValue:
-        da = self._ds.channel(channel)
-        if self._ds.is_complex(channel):
-            amp = float(np.abs(da.values[iy, ix]))
-            return CursorValue(label or f"{channel} amplitude", f"{amp:.4g}", "a.u.")
-        unit = viz.prepare_channel(self._ds, channel).unit
-        return CursorValue(label or channel, f"{float(da.values[iy, ix]):.4g}", unit)
-
-    def _phase_at(self, channel: str, iy: int, ix: int) -> CursorValue:
+    def _value_for(
+        self, channel: str, representation: str, iy: int, ix: int, *, label: str | None = None
+    ) -> CursorValue:
         val = self._ds.channel(channel).values[iy, ix]
-        return CursorValue(f"{channel} phase", f"{float(np.angle(val)):.4g}", "rad")
+        if representation == AMPLITUDE:
+            return CursorValue(label or f"{channel} amplitude", f"{float(np.abs(val)):.4g}", "a.u.")
+        if representation == PHASE:
+            return CursorValue(label or f"{channel} phase", f"{float(np.angle(val)):.4g}", "rad")
+        unit = viz.prepare_channel(self._ds, channel).unit
+        return CursorValue(label or channel, f"{float(np.real(val)):.4g}", unit)
+
+    # -- comparison helpers ---------------------------------------------------
+
+    def _optical_signal_channels(self) -> list[str]:
+        present = set(self._ds.channel_names)
+        infos = [
+            ch for ch in self._ds.metadata.channels
+            if ch.kind == "optical" and ch.role == "signal" and ch.canonical in present
+        ]
+        infos.sort(key=lambda c: (c.harmonic is None, c.harmonic or 0, c.canonical))
+        return [c.canonical for c in infos]
+
+    def _anchor_optical(self) -> str | None:
+        """The current channel if it is an optical signal, else a default optical one."""
+        opticals = self._optical_signal_channels()
+        if self._channel in opticals:
+            return self._channel
+        return opticals[0] if opticals else None
+
+    def _amplitude_or_real(self, channel: str) -> PaneSpec:
+        return PaneSpec(channel, AMPLITUDE if self._ds.is_complex(channel) else REAL)
 
 
 # --------------------------------------------------------------------------- #
@@ -413,6 +516,11 @@ def _pair(value: tuple[float, float] | tuple[int, int] | None, fmt: str) -> str:
 
 
 __all__ = [
+    "PRESET_AMP_PHASE",
+    "PRESET_HARMONIC_SERIES",
+    "PRESET_LABELS",
+    "PRESET_OPTICAL_TOPO",
+    "PRESET_SAMPLE_REF",
     "ChannelEntry",
     "ChannelGroup",
     "CursorReadout",
@@ -421,5 +529,6 @@ __all__ = [
     "MeasurementIdentity",
     "MetadataItem",
     "MetadataSection",
+    "PaneSpec",
     "ProvenanceStep",
 ]
