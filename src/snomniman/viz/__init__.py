@@ -6,3 +6,27 @@ units, scale-bar spec), plus matplotlib-based publication-quality static export
 (vector output, cyclic colormaps for phase). Interactive PyQtGraph adapters live
 at the GUI boundary so this package stays Qt-free (ADR-0007).
 """
+
+from __future__ import annotations
+
+from .render import (
+    AMPLITUDE,
+    PHASE,
+    REAL,
+    RenderData,
+    available_representations,
+    default_representation,
+    pick_scale_bar,
+    prepare_channel,
+)
+
+__all__ = [
+    "AMPLITUDE",
+    "PHASE",
+    "REAL",
+    "RenderData",
+    "available_representations",
+    "default_representation",
+    "pick_scale_bar",
+    "prepare_channel",
+]

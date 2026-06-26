@@ -253,3 +253,609 @@ Reproducible environment verified and committed; Phase 0 fully closed. The only
 remaining Phase 1 gate is a real neaSNOM imaging golden file (CI is a recommended,
 non-blocking add). Begin Phase 1 with the Dataset model + Metadata + Provenance
 schemas, which are buildable now with synthetic data.
+
+---
+
+## 2026-06-23 - CI workflow
+
+Infrastructure only: added GitHub Actions CI. No architecture changes, no
+reopened decisions, no Phase 1 features.
+
+### Completed
+- Created `.github/workflows/ci.yml`: triggers on `push` and `pull_request`;
+  uses `ubuntu-latest` with Python 3.13 (matching the local CPython 3.13.7
+  baseline); installs `uv` via `astral-sh/setup-uv@v5`.
+- CI runs the four gates in sequence: `uv sync`, `uv run ruff check .`,
+  `uv run mypy .`, `uv run pytest`. The pytest step includes the
+  `test_backend_is_qt_free` invariant, so Rule 4 is enforced automatically in CI.
+
+### Decisions
+- None (infrastructure only). No OHDs reopened.
+
+### Issues Found
+- None.
+
+### Documentation Updated
+- Created `.github/workflows/ci.yml`.
+- Updated `docs/infrastructure-baseline.md`: added CI section; updated the
+  "Remaining blockers" entry from "recommended, non-blocking" to done.
+- Updated `NEXT.md`: marked task A.3 (CI) complete; updated "last updated" date.
+- Appended this `LOG.md` entry.
+
+### Readiness status / Next
+All Phase 0 infrastructure is complete: environment, version control, and CI.
+The only remaining Phase 1 gate is the real neaSNOM imaging golden file.
+Phase 1 Dataset / Metadata / Provenance schemas can be built now with synthetic data.
+
+---
+
+## 2026-06-23 - AI Architecture Principles
+
+Project guidance only: no architecture decisions changed, no OHDs reopened, no
+Phase 1 features, no AI implementation.
+
+### Completed
+- Added "AI Architecture Principles" section to `CLAUDE.md`: position in the
+  layer stack; scientific core as source of truth; structured output preference;
+  provenance requirements for AI actions; what AI is not.
+- Added two new "Never do" rules to `CLAUDE.md`: AI output must not silently
+  override the scientific core; AI integration must not bypass provenance.
+- Added `docs/ai-principles.md` placeholder row to the Documentation Hierarchy
+  table (to be written when AI design begins).
+- Added a forward-reference paragraph to `docs/architecture.md` section 2
+  (layered architecture) describing the future AI layer position.
+- Updated the project status block and stale Practical Notes in `CLAUDE.md`
+  (removed "uv not yet installed" and "repo not yet git init-ed"; updated date).
+
+### Decisions
+- AI is a first-class analysis subsystem, not a UI add-on or chatbot.
+- Scientific core (raw data, metadata, provenance) remains authoritative; AI
+  consumes but does not override it.
+- AI-generated outputs should be structured and provenance-recordable.
+- A detailed `docs/ai-principles.md` will be written when AI design begins.
+  No ADR needed yet (no architectural change; this is directional guidance only).
+
+### Issues Found
+- None.
+
+### Documentation Updated
+- `CLAUDE.md`: new AI Architecture Principles section; two new Never-do rules;
+  Documentation Hierarchy table; status block; Practical Notes.
+- `docs/architecture.md`: forward-reference paragraph in section 2.
+- Appended this `LOG.md` entry.
+
+### Readiness status / Next
+Phase 0 fully closed; CI in place; AI direction recorded. Only remaining Phase 1
+gate is the neaSNOM golden file. Phase 1 Dataset/Metadata/Provenance schemas
+are buildable now with synthetic data.
+
+---
+
+## 2026-06-23 - Measurement discovery; Phase 1 unblocked
+
+Documentation and validation exercise: first real neaSNOM measurement data
+inspected. No architecture decisions changed, no OHDs reopened, no code written.
+
+### Completed
+- Inspected real neaSNOM measurement data at `SNOM Sample Files/2026-06-16 14928/`.
+  Four complete measurement runs confirmed present; one run analysed in detail.
+- Identified format: **GSF (Gwyddion Simple Field)**, not HDF5. Each channel is a
+  separate `.gsf` file within a measurement directory. A `.txt` parameter file
+  provides instrument metadata alongside the channel files.
+- Confirmed channel naming convention matches `data-model.md`: O{n}A/P, M{n}A/P,
+  R- reference prefix, Z topography. Complex assembly from amplitude+phase pairs
+  confirmed.
+- Confirmed spatial units in GSF headers are meters (XYUnits=m); canonical nm
+  conversion required on import (OHD-6B). Phase stored as-imported (OHD-6D
+  directly confirmed).
+- Corrected stale "HDF5 / h5py" assumption in `architecture.md`, `data-model.md`,
+  `decisions.md`, `phase0-readiness.md`; updated reader description to
+  "GSF measurement-directory reader" in `roadmap.md`, `NEXT.md`, `decisions.md`.
+- Cleared all Phase 1 gate/blocker entries (sample data, uv, CI, git all done).
+- Created `docs/measurement-discovery.md` (historical record of this exercise).
+- Added `docs/measurement-discovery.md` entry to Documentation Hierarchy tables
+  in `CLAUDE.md` and cross-referenced from `decisions.md` ADR-0009/ADR-0012.
+
+### Decisions
+- No new decisions. The format correction (GSF directory vs. HDF5 single file) is
+  contained within the reader implementation and requires no new ADR.
+- One implementation detail deferred to Phase 1: how `RawSource` anchors a
+  measurement directory (directory path + per-file hash manifest vs. `.txt` hash).
+
+### Issues Found
+- The assumption that the neaSNOM first reader would target a single HDF5 file was
+  incorrect. The actual format is a directory of GSF files. Corrected throughout.
+- No architecture or data-model issues: the reader registry design (ADR-0006)
+  absorbs the format difference cleanly.
+
+### Documentation Updated
+- Created: `docs/measurement-discovery.md`.
+- Updated: `docs/architecture.md`, `docs/data-model.md`, `docs/decisions.md`,
+  `docs/roadmap.md`, `docs/phase0-readiness.md`, `NEXT.md`, `CLAUDE.md`.
+- Appended: this `LOG.md` entry.
+
+### Readiness status / Next
+Phase 1 is fully unblocked. All gates are cleared. Implementation can begin in
+the planned order: Dataset model -> Metadata schema -> Provenance schema ->
+GSF measurement-directory reader -> golden-file tests.
+
+---
+
+## 2026-06-25 - Phase 1 vertical slice implemented (neaSNOM GSF reader -> Dataset)
+
+First application code. The full Phase 1 vertical slice is implemented and
+validated end-to-end against the real neaSNOM measurement directory: a GSF
+measurement directory loads into a validated `Dataset` with correct dims,
+canonical-nm coordinates, complex channels, typed `Metadata`, a `RawSource`
+anchor, and a single-node provenance DAG. No GUI, no processing algorithms, no
+visualization (per ADR-0015 scope).
+
+### Completed
+- **`snomniman.core` (8 modules):** `exceptions` (typed error hierarchy);
+  `units` (canonical nm + explicit length conversion, unknown-unit guard);
+  `datakind` (`DataKind` enum); `capabilities` (`Capability` enum); `metadata`
+  (typed `Metadata` + `Conventions`/`Instrument`/`Excitation`/`Demodulation`/
+  `ScanInfo`/`Acquisition`/`ChannelInfo`, JSON round-trip, verbatim raw header);
+  `rawsource` (`RawSource` with single-file *and* directory-manifest hashing -
+  resolves the deferred Phase-1 anchor question); `provenance` (`StepRecord`,
+  multi-input `ProvenanceNode` DAG, software-version capture, DAG (de)serialize);
+  `dataset` (`Dataset` - xarray-backed, capability derivation, complex
+  amplitude/phase views, raw-array immutability).
+- **`snomniman.io` (3 modules):** `gsf` (pure Gwyddion Simple Field reader/writer,
+  correct 1-4 NUL 4-byte alignment, little-endian float32, native top-to-bottom
+  order); `neasnom` (measurement-directory reader: channel discovery, geometry
+  validation, complex assembly `O{n}=A*exp(iP)`, documented vertical flip to the
+  canonical lower-left/y-up origin, m->nm conversion, `.txt` + GSF-header metadata
+  extraction, provenance node); `registry` (reader registry + content sniffing,
+  ADR-0006).
+- **Tests (52 new; 55 total):** `test_gsf` (11), `test_core_dataset` (9),
+  `test_metadata` (4), `test_provenance` (6), `test_rawsource` (4),
+  `test_neasnom_golden` (18). Golden tests assert channel count/names (32 from 56
+  files), dims (150x150), nm coordinates, amplitude/phase faithfulness to the raw
+  files, lower-left orientation, m->nm topography, full metadata, and provenance
+  JSON round-trip - all against the real CdO measurement.
+- **Gates green:** `ruff` clean, `mypy --strict` exit 0 (27 files), `pytest`
+  55 passed, backend Qt-free invariant holds (io imports numpy/xarray, no Qt).
+
+### Decisions
+- **`RawSource` directory anchor (deferred Phase-1 detail, now resolved):** a
+  measurement directory is anchored by a **sorted manifest of (relative-name,
+  per-file sha256)** over the consumed files (the `.gsf` channels + `.txt`),
+  hashed into one stable, order-independent sha256. Not an ADR (an implementation
+  of the existing ADR-0009 design); recorded here.
+- **Canonical orientation conversion is explicit and recorded:** GSF stores rows
+  top-to-bottom; the reader applies `flipud` to reach the canonical lower-left/
+  y-up convention (OHD-6C) and records the transformation in the `io.read`
+  provenance node's params. Phase is preserved exactly as imported (OHD-6D): no
+  invert/re-reference/unwrap/normalize.
+- **Complex assembly + reference handling:** `O{n}`/`M{n}` assembled complex from
+  A/P pairs; `R-` files become `R_*` reference channels; `Z` variants (`raw`/`C`/
+  `H`/`CH`) map to `Z`/`Z_C`/`Z_H`/`Z_CH`. Channel name -> capability derivation
+  drives the hybrid dispatch set (ADR-0017).
+- **mypy `python_version` 3.11 -> 3.12 (tooling only):** numpy 2.5's stubs use
+  PEP 695 `type` statements that mypy parses only at >=3.12. Runtime floor stays
+  3.11 (`requires-python`) and ruff still targets py311, so 3.11-incompatible
+  syntax in our own code is still caught. No architecture/decision impact.
+
+### Issues Found
+- **Reader robustness (caught by testing all four runs, fixed):** the
+  channel-name prefix must come from the **directory name**, not the `.txt`
+  stem - one acquisition names its parameter file `"<dir> Spectra.txt"`. With the
+  fix, the three imaging runs load (incl. one 400x300, proving dims are not
+  hardcoded) and the non-imaging "PSP ... Spectra" point-spectra run is **rejected
+  cleanly** with a clear error rather than mis-read. Phase 1 targets imaging only;
+  other modalities are future readers.
+- **Pre-existing mypy/numpy-stub incompatibility surfaced:** the prior "mypy
+  green" was on an empty scaffold that never imported numpy. Resolved via the
+  `python_version` bump above.
+- No architecture issues. The data model, layering, OHDs, and ADRs all held
+  against real data with no redesign - the slice's purpose, achieved.
+
+### Documentation Updated
+- Created source: `src/snomniman/core/{exceptions,units,datakind,capabilities,
+  metadata,rawsource,provenance,dataset}.py`; `src/snomniman/io/{gsf,neasnom,
+  registry}.py`; populated `core/__init__.py` and `io/__init__.py` exports.
+- Created tests: `tests/test_{gsf,core_dataset,metadata,provenance,rawsource,
+  neasnom_golden}.py`; added fixtures to `tests/conftest.py`.
+- `pyproject.toml`: mypy `python_version` 3.11 -> 3.12 (documented inline).
+- `LOG.md` (this entry); `NEXT.md` (Phase 1 -> done, Phase 2 next);
+  `docs/infrastructure-baseline.md` (mypy note); `CLAUDE.md` status block.
+
+### Next Recommended Actions
+Phase 1 exit criteria are met **except** the Zarr round-trip (the slice does not
+yet persist to the canonical store). Recommended next: (1) implement the Zarr
+writer/reader and add the `Dataset -> Zarr -> Dataset` round-trip invariant to
+fully close the Phase-1 DoD; then (2) begin Phase 2 (core breadth: channel state,
+unwrapped-phase accessor, more readers, synthetic generators). See `NEXT.md`.
+
+---
+
+## 2026-06-25 - Phase 2 UX vision (product design; no code)
+
+Product-design exercise per user request: design the interactive experience
+before any GUI code. No application code, no architecture change, no decisions
+reopened.
+
+### Completed
+- Created **`docs/phase2-vision.md`** - the experience blueprint for the
+  interactive application. Implementation-agnostic (no widgets/Qt/mockups). Seven
+  required sections plus framing: experience pillars + two mantras ("nothing is
+  hidden, nothing is silent"; "explore before you process"); 6 user personas
+  (Newcomer, Power User, PI/Reviewer, Facility staff, Collaborator, Future Self);
+  9 primary workflows (goal / sequence / pain-to-eliminate); information
+  architecture (always-visible vs on-demand, progressive disclosure); viewer
+  vision (synchronized cross-channel cursor, honest complex/phase rendering,
+  multi-harmonic contact sheet, in-place metadata/provenance inspection);
+  AI experience (structured, provenance-aware, augment-not-interrupt, grounded in
+  Dataset/Metadata/Provenance); publication workflow (figures carry provenance);
+  long-term vision; and a build-sequencing note (read-only exploration first).
+- Grounded every UX promise in an existing backend guarantee (provenance DAG,
+  raw immutability, explicit conventions OHD-6, structured AI per `CLAUDE.md`).
+- ASCII-clean (Windows-terminal convention); cautious neaPLOT framing per
+  `vision.md`.
+
+### Decisions
+- None. This is directional product guidance, not an architecture decision; no
+  ADR and no OHD change. The roadmap's phase numbering is unchanged (the GUI
+  remains a later phase in `roadmap.md`); the user's "Interactive Data
+  Exploration" framing is captured as the recommended first GUI increment inside
+  `phase2-vision.md` Section 8, not as a roadmap rewrite.
+
+### Issues Found
+- None.
+
+### Documentation Updated
+- Created: `docs/phase2-vision.md`.
+- Updated: `CLAUDE.md` (Documentation Hierarchy row); `NEXT.md` (pointer to the
+  UX blueprint for the GUI phase); this `LOG.md` entry.
+
+### Next Recommended Actions
+Unchanged from the entry above: close the Phase-1 DoD with the Zarr round-trip
+(`NEXT.md` D.10), then proceed with core breadth (Phase 2 in `roadmap.md`). When
+GUI work begins, `docs/phase2-vision.md` is the experience blueprint; build the
+read-only exploration increment first.
+
+---
+
+## 2026-06-25 - Product philosophy (identity / mental model; no code)
+
+Product-philosophy exercise per user request: define the conceptual interaction
+model and identity that should unify every future feature. No application code, no
+architecture change, no decisions reopened.
+
+### Completed
+- Created **`docs/product-philosophy.md`** - the project's highest-level *design*
+  (identity/soul) document. Implementation-agnostic (no Qt/widgets/classes/screens).
+  Six required topics plus framing and a decision-litmus:
+  - **Core mental model (chosen and justified):** *"Everything is a derivation of
+    an immutable measurement."* Central object = the **Measurement** (immutable
+    truth); central relationship = **derivation** (every result is recorded and
+    traceable to its source) - the Git-like soul. Rejected alternatives with
+    reasons: Dataset (architecture's term, not the scientist's), Experiment (too
+    broad; ELN scope is out per `vision.md`), Knowledge graph (an emergent
+    structure, not an object the user holds).
+  - **9 enduring principles** (measurement is sacred; nothing hidden/silent;
+    explore before process; provenance is the product; every result explains
+    itself; AI augments never owns; reproducibility is structural; legible+
+    powerful; honesty about kind).
+  - **Human + AI collaboration:** Data -> AI -> Human understanding; AI carries
+    breadth/recall/first-drafts/vigilance, the human keeps judgment/hypothesis/
+    decision/authority. "AI proposes, the scientist disposes, the measurement is
+    the arbiter."
+  - **Scientific trust** (immutability, provenance, explicit assumptions,
+    transparent processing, inspectable AI, reversibility, validated correctness).
+  - **Product identity** paragraph ("...turns a near-field measurement into
+    understanding you can defend").
+  - **Anti-goals** (identity boundaries, distinct from `vision.md` scope non-goals):
+    never a black box / silent processor / AI oracle / vendor cage / menu labyrinth
+    / destructive editor / figure factory.
+- Positioned it as the apex design doc above `vision.md`/`phase2-vision.md` while
+  leaving `CLAUDE.md` as the operational constitution; added a "Relationship to
+  other documents" altitude table so the docs complement rather than duplicate.
+- ASCII-clean; all cross-references resolve.
+
+### Decisions
+- The **core mental model** is now explicitly chosen: *measurement + derivation*.
+  This is directional identity, not an architecture decision - it already matches
+  the settled provenance-DAG/immutability design (OHD-2/OHD-4..7), so no ADR and no
+  OHD change. It is the lens future decisions are checked against.
+
+### Issues Found
+- None. The chosen mental model is consistent with the existing architecture and
+  data model (immutable raw + provenance DAG); no contradictions surfaced.
+
+### Documentation Updated
+- Created: `docs/product-philosophy.md`.
+- Updated: `CLAUDE.md` (Documentation Hierarchy - added as the apex design doc);
+  `NEXT.md` (pointer); this `LOG.md` entry.
+
+### Next Recommended Actions
+Unchanged: close the Phase-1 DoD (Zarr round-trip, `NEXT.md` D.10), then Phase 2
+core breadth. `docs/product-philosophy.md` is now the lens for every future
+architectural, UI, AI, and workflow decision; `phase2-vision.md` remains the
+experience blueprint for the GUI phase.
+
+---
+
+## 2026-06-25 - Measurement Explorer interaction-design blueprint (no code)
+
+Interaction-design exercise per user request: the blueprint for the central GUI
+experience, before any GUI code. No application code, no architecture change, no
+decisions reopened. Framed as the **last design doc before building**.
+
+### Completed
+- Created **`docs/measurement-explorer.md`** - the interaction-design blueprint for
+  the **Measurement Explorer** (the name now adopted for SNOMNIMAN's central GUI
+  experience). Interaction-design altitude only (no Qt/widgets/menus/layouts; a
+  vocabulary check confirms none). Nine required sections:
+  1. Explorer philosophy (looking *through* the software at the measurement;
+     explore before you process; safe/immediate/alive/honest).
+  2. The first five minutes (a concrete narrative grounded in the real CdO scan).
+  3. Information hierarchy (always-visible scientific frame / quickly-accessible /
+     rarely-needed).
+  4. Navigation model (one metaphor: "you are always somewhere in the derivation
+     graph of a measurement"; channels/harmonics/references/space/metadata/
+     provenance/derived datasets/across-measurements).
+  5. AI integration built on the user's insight that **an AI result is just
+     another derivation of the measurement** - same graph, same provenance; in
+     context; proposes-not-asserts.
+  6. Transparency as an interaction guarantee (where from / how produced / what
+     assumptions; never lost).
+  7. Future growth (hyperspectral, point spectra, pipelines, AI analyses,
+     publication, batch all absorbed as new measurement-kinds or derivations - the
+     concepts are closed under these additions).
+  8. Better than neaPLOT - by *experience* per workflow (cautious framing per
+     `vision.md`): friction today -> how removed -> why fundamentally better.
+  9. Product North Star (what a researcher remembers after eight hours).
+- Adopted the user's **"Measurement Explorer"** naming for the central experience;
+  noted it as the heart of the interactive GUI phase in `roadmap.md` (no phase
+  renumbering).
+- Grounded throughout in the real measurement (O0-O5/M0-M5, references, topography,
+  nm coords) and kept strictly consistent with `product-philosophy.md`.
+- ASCII-clean; all cross-references resolve.
+
+### Decisions
+- None (directional design). The "AI-as-derivation" framing is not a new decision -
+  it is the existing provenance-DAG model (OHD-2/OHD-5) plus the AI principles in
+  `CLAUDE.md`, restated as experience. No ADR, no OHD change.
+- Naming: the interactive imaging GUI's first surface is "the Measurement Explorer."
+  Captured in this doc and referenced from `roadmap.md`; phase numbers unchanged.
+
+### Issues Found
+- None. The blueprint is consistent with the architecture, data model, and
+  philosophy; every Explorer concept maps to an existing backend capability.
+
+### Documentation Updated
+- Created: `docs/measurement-explorer.md`.
+- Updated: `CLAUDE.md` (Documentation Hierarchy row); `roadmap.md` (Explorer name +
+  pointer on the interactive-GUI phase); `NEXT.md` (pointer); this `LOG.md` entry.
+
+### Next Recommended Actions
+The design layer is now complete enough to build against. Highest-leverage next
+step is **implementation, not more docs**: close the Phase-1 Zarr round-trip
+(`NEXT.md` D.10), then build the **read-only Measurement Explorer** per
+`docs/measurement-explorer.md`. Recommended working rule going forward: no new
+design documents unless implementation exposes a real problem.
+
+---
+
+## 2026-06-25 - Canonical Zarr store; Phase 1 COMPLETE
+
+Closed the final Phase-1 Definition-of-Done item: the canonical
+`Dataset -> Zarr -> Dataset` round-trip (OHD-3). Backend only - no GUI, no
+processing algorithms, no AI, no architecture change, no decisions reopened.
+
+### Completed
+- **`snomniman.io.zarrstore` (new module):** `write_zarr(dataset, path,
+  *, overwrite=True) -> Path` and `read_zarr(path) -> Dataset`, the canonical
+  project store. Labeled arrays are written via `xarray.Dataset.to_zarr`
+  (complex64 channels, per-array units/attrs, dtypes, and dims handled natively
+  by Zarr); the SNOMNIMAN-level semantics that are not plain array data
+  (`DataKind`, typed `Metadata`, the provenance DAG, the `RawSource` anchor) are
+  serialized into **one JSON document** stored under the reserved Zarr group
+  attribute `"snomniman"` (format marker `snomniman.dataset`, `schema_version` 1).
+- **Wiring:** exported `read_zarr`, `write_zarr`, `STORE_FORMAT`,
+  `STORE_SCHEMA_VERSION` from `snomniman.io`. The store is intentionally **not**
+  registered in the vendor reader registry (that registry imports foreign files;
+  this is our own canonical format).
+- **Tests (19 new; 74 total):** `tests/test_zarr_roundtrip.py`. A deep
+  equivalence helper asserts kind, derived capabilities, `is_raw`, channel set +
+  dtypes + **bit-identical** values, `xarray.testing.assert_identical` (names,
+  dims, coords, values, units/attrs), full typed-metadata equality (incl. the
+  explicit conventions, nested verbatim header, per-channel descriptors),
+  provenance-DAG equality (`serialize_dag`), and `RawSource` equality - on both a
+  content-rich **synthetic** dataset (complex + multi-harmonic + reference +
+  float64/float32 topography, non-default conventions, a 2-node DAG) and the real
+  **golden** CdO measurement. Plus guards: `overwrite=False` refuses an existing
+  store (`FileExistsError`); a non-store path and a foreign (non-SNOMNIMAN) Zarr
+  both raise `ReaderError`; loaded datasets remain immutable; amplitude/phase
+  views stay consistent after a round-trip.
+- **Gates green:** `ruff` clean, `mypy --strict` no issues (29 files), `pytest`
+  74 passed, backend Qt-free invariant still holds (`zarrstore` imports only
+  `json`/`pathlib`/`xarray`/`snomniman.core` - no Qt).
+
+### Decisions
+- **Sidecar-as-JSON-string (implementation detail, not an ADR):** the non-array
+  scientific state is stored as a single JSON string in the Zarr group attrs
+  rather than as nested Zarr attributes. Rationale: fully deterministic, immune to
+  attribute-encoding quirks, self-contained, version-tagged, and human-inspectable
+  in `zarr.json`. The per-array units/attrs that Zarr handles cleanly are left to
+  Zarr. Reuses the existing `Metadata.to_dict`/`serialize_dag`/`RawSource.to_dict`
+  serializers - no parallel implementation (Rule 2).
+- **Derived-not-stored:** the capability set and the amplitude/phase views are
+  recomputed on load (they are pure functions of the array data), so they cannot
+  drift from the data they describe. `DataKind` is *not* derivable and is
+  persisted explicitly.
+- **Eager load + freeze:** `read_zarr` calls `.load()` so the reconstructed
+  dataset holds real numpy arrays, which the `Dataset` constructor freezes -
+  giving the same raw-immutability guarantee as a fresh import. Lazy/chunked
+  streaming is a deliberate future optimization (R5), not Phase 1.
+- **Zarr v3:** stores are written `consolidated=False` (consolidated metadata is
+  not part of the Zarr v3 spec and otherwise warns).
+
+### Issues Found
+- None architectural. Empirically de-risked before implementing: zarr 3.2.1 +
+  xarray round-trip **complex64/float64/float32** exactly; coordinate and variable
+  `attrs` (including `None`-valued ones) survive; `to_zarr` writes correctly from
+  read-only (frozen) arrays; with dask absent, `open_zarr().load()` returns real
+  numpy arrays (so freezing enforces immutability). The data model, layering,
+  OHDs, and ADRs held against the real-data round-trip with no redesign.
+
+### Documentation Updated
+- Created: `src/snomniman/io/zarrstore.py`; `tests/test_zarr_roundtrip.py`.
+- Updated: `src/snomniman/io/__init__.py` (exports); `CLAUDE.md` (status block ->
+  Phase 1 COMPLETE); `NEXT.md` (D.10 done, DoD all met, blockers none); this
+  `LOG.md` entry. The persistence-layer implementation notes for future
+  developers live in the `zarrstore` module docstring (store layout, the reserved
+  `"snomniman"` group attribute, derived-not-stored facets, eager-load+freeze,
+  the Zarr v3 `consolidated=False` note).
+
+### Next Recommended Actions
+**Phase 1 is complete.** Per the user's working rule (no new design docs), the
+next high-leverage work is the first *experience*: build the **read-only
+Measurement Explorer** (open a measurement -> browse channels -> inspect
+metadata/provenance) per `docs/measurement-explorer.md`, judged against
+`docs/product-philosophy.md`. Alternatively, extend backend core breadth (Phase 2
+in `roadmap.md`: channel state, unwrapped-phase accessor, more readers, synthetic
+generators). No Phase-1 items remain.
+
+---
+
+## 2026-06-25 - Read-only Measurement Explorer (first GUI experience)
+
+The project's first user-facing experience: a read-only **Measurement Explorer**
+that opens a neaSNOM measurement directory as one coherent, understandable object
+(not 56 files). Strictly read-only - no processing, editing, export, AI authoring,
+or dataset writing (per the milestone scope). Built against
+`docs/measurement-explorer.md` and `docs/product-philosophy.md`.
+
+### Completed
+- **`snomniman.viz.render` (new, Qt-free backend):** `RenderData` value object +
+  `prepare_channel`/`available_representations`/`default_representation`/
+  `pick_scale_bar`. This is where the *scientific display decisions* live and are
+  unit-tested headlessly: complex channels shown honestly as **amplitude** (viridis)
+  or **phase** (cyclic `twilight`, fixed -pi..pi, flagged `cyclic`); topography in
+  `afmhot`; robust percentile ranges; physical pixel-edge extent honoring the
+  lower-left origin (OHD-6C). Phase shown exactly as imported (OHD-6D).
+- **`snomniman.gui.model.ExplorerModel` (new, Qt-free presenter):** the testable
+  core of the experience - channel grouping by physical meaning
+  (optical/mechanical/topography/references), a sensible default channel (O2
+  amplitude), identity, typed metadata arranged into readable sections (each value
+  with its unit and *source*), provenance/lineage in plain language, and a
+  cross-channel cursor readout. Holds one immutable `Dataset` and only ever reads.
+- **`snomniman.gui` widgets (PySide6 + PyQtGraph):** `ChannelImageView`
+  (physical-nm image, lower-left orientation verified, recommended colormap/range,
+  physical scale bar, hover->coordinate), `ChannelBrowser` (grouped tree + an
+  amplitude/phase toggle shown only when there is a choice), `MetadataInspector`,
+  `ProvenanceInspector`, `MeasurementExplorerWindow` (identity frame + image +
+  docks + conventions/readout status bar), `colormap.lookup_table` (matplotlib name
+  -> LUT), and the `app.run` / `__main__` entry point
+  (`python -m snomniman.gui [dir]`).
+- **Verified on the real CdO measurement** (rendered offscreen): opens to O2
+  amplitude with the nanoparticle near-field contrast (viridis); amplitude/phase
+  toggle gives honest cyclic phase; topography in nm; the cursor readout reports
+  `O2 amplitude / O2 phase / Z height` at one pixel; the identity frame shows
+  `150x150 px, 10x10 um, 5973 cm^-1, PsHet, ...`; conventions and "this is the raw
+  measurement" provenance are always visible.
+- **Tests (+26; 100 total):** `test_viz_render` (8), `test_gui_model` (13,
+  Qt-free, run in CI), `test_gui_window` (6, skip without the `gui` extra; headless
+  offscreen otherwise). They cover representation honesty, scale-bar rounding,
+  channel grouping/identity/metadata/provenance, cursor readout, channel switching,
+  and the cardinal invariant **exploration never mutates the Dataset** (arrays
+  unchanged and still frozen after a full browse) at both the model and window
+  levels.
+- **Gates green:** `ruff` clean, `mypy --strict` no issues (40 files), `pytest`
+  100 passed.
+
+### Decisions
+- **GUI Rule added to `CLAUDE.md` (Rule 9, user-requested):** "Every GUI feature
+  must justify its existence by improving a researcher's understanding of a
+  measurement." Guards the Explorer against becoming a menu labyrinth.
+- **Display logic lives in `viz` (Qt-free), not in widgets.** The honest
+  amplitude/phase/colormap/range/extent/scale-bar decisions are in `viz.render`
+  and tested without a display; the widgets are thin consumers (Rule 4). The model
+  (channel grouping, identity, sections, readout) is a Qt-free presenter in `gui`,
+  so the bulk of the experience is unit-tested headlessly and runs in CI.
+- **`ChannelImageView` uses composition** (wraps a `PlotWidget`) rather than
+  subclassing it, so the typed Qt surface stays clean under strict mypy.
+- **Qt-free invariant hardened (strengthened, not weakened):**
+  `test_backend_is_qt_free` now imports the backend in a **subprocess** and checks
+  that process's `sys.modules`. This makes the invariant about what the backend
+  itself imports - immune to a GUI test importing Qt earlier in the same pytest
+  session - which the prior whole-`sys.modules` check could not distinguish.
+- **Tick labels shown in um, data/coords/hover in nm.** Axis tick text is scaled
+  for readability only; the scale bar and cursor readout are the authoritative
+  physical references, and the model stays entirely in canonical nm.
+
+### Issues Found
+- Pre-empted the Qt-free false-positive (a GUI test importing PySide6 would have
+  polluted the shared `sys.modules` the old invariant inspected) by moving the
+  check to a subprocess. No scientific-logic leak into widgets (enforced by Rule 4
+  and the mutation tests). matplotlib 3.11 removed `cm.get_cmap`; used
+  `matplotlib.colormaps[name]`.
+
+### Documentation Updated
+- Created: `src/snomniman/viz/render.py`; `src/snomniman/gui/{model,colormap,
+  imageview,panels,window,app,__main__}.py`; `tests/test_{viz_render,gui_model,
+  gui_window}.py`.
+- Updated: `src/snomniman/viz/__init__.py`, `src/snomniman/gui/__init__.py`
+  (exports/docstring); `tests/conftest.py` (offscreen platform, `qapp` +
+  `synthetic_dataset` fixtures); `tests/test_smoke.py` (subprocess invariant);
+  `.github/workflows/ci.yml` (install the `gui` extra + Qt offscreen libs so mypy
+  and the GUI tests run in CI); `CLAUDE.md` (Rule 9 + status);
+  `docs/architecture.md` (viz/gui now implemented); `NEXT.md`; this `LOG.md` entry.
+
+### Next Recommended Actions
+The first experience exists and is verified. Recommended next (still pre-processing,
+to deepen *understanding* before any transformation): a harmonic **contact sheet**
+(all O-orders at a glance), **signal-with-reference** side-by-side, per-region
+**statistics**, and an optional **AI orientation** paragraph - each an Explorer
+addition that must pass Rule 9. Only after exploration feels complete should
+processing (leveling, normalization, explicit phase unwrap) begin - and every such
+step must be an explicit, provenance-recorded derivation (never silent).
+
+---
+
+## 2026-06-26 - Product review of the Measurement Explorer v0.1 (no code)
+
+Product-critique exercise per user request: now that a real experience exists, step
+out of the builder role and evaluate it as a working SNOM researcher would. No code,
+no architecture change, no decisions reopened.
+
+### Completed
+- Created **`docs/product-review-v0.1.md`** - a deliberately critical, researcher's-
+  perspective review of the running Explorer (opened on the real CdO measurement),
+  covering all nine requested categories: first impression, per-workflow friction,
+  experiential neaPLOT comparison (cautious framing per `vision.md`), scientific
+  confidence, AI readiness, low-effort polish, a Must/Should/Nice backlog, things to
+  remove/suppress, and the vision test with ranked obstacles.
+- **Central finding (uncomfortable truth):** v0.1 is an excellent place to
+  *understand* a measurement and not yet a place to *do* anything with it - it wins
+  the first five minutes but cannot finish an analysis. Top gaps: no colorbar /
+  contrast control; no analysis actions (leveling, normalization, line profiles, ROI
+  stats); no multi-channel comparison; cursor readout misplaced/too sparse; no
+  provenance-preserving export.
+- Vision test answered honestly: a daily neaPLOT user would **not** switch today;
+  the seven obstacles are ranked, and most are weeks of conventional product work
+  (the hardest, differentiating part - making a measurement understood - is done).
+
+### Decisions
+- None. This is product direction, not an architecture decision; no ADR, no OHD
+  change. The review is intended as the product backlog for the next iterations and
+  supersedes the ad-hoc "F." list in `NEXT.md` as the prioritization source.
+
+### Issues Found
+- No software defects (this was a UX/product critique, not a code review). The
+  findings are experiential gaps, not bugs; the backend and its tests are unaffected.
+
+### Documentation Updated
+- Created: `docs/product-review-v0.1.md`.
+- Updated: `CLAUDE.md` (Documentation Hierarchy row); `NEXT.md` (points the next
+  priorities at the review's Must-have list); this `LOG.md` entry.
+
+### Next Recommended Actions
+Per the review and the user's guidance: (1) commit the GUI milestone + this review;
+(2) put the Explorer in front of two or three neaPLOT users and watch them narrate;
+(3) work the review's **Must have** list - starting with a colorbar + visible
+contrast control, the synchronized multi-channel view, and a relocated cross-channel
+cursor readout - before any processing or AI. Each new GUI element must pass Rule 9.

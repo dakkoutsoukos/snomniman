@@ -1,6 +1,6 @@
 # Architecture
 
-**Status:** Phase 0 complete; all OHD decisions applied. **Last updated:** 2026-06-22
+**Status:** Phase 0 complete; all OHD decisions applied. **Last updated:** 2026-06-23
 
 Authoritative description of the system's structure, written before
 implementation. When the architecture changes, this file changes in the same
@@ -59,6 +59,13 @@ reverse). `core` imports nothing else in the project. There are no cycles.
 backend imports `gui`; no cycles. Checked in CI (a dependency/import test; the
 Qt-free part is already enforced by `tests/test_smoke.py`).
 
+**Future AI layer:** the long-term architecture adds a `snomniman.ai` analysis
+layer that sits above `core` (consuming `Dataset`, `Metadata`, and `Provenance`)
+without modifying them. AI-generated outputs are recorded as provenance nodes.
+AI is a first-class analysis subsystem, not a UI add-on. Full principles:
+`CLAUDE.md` (AI Architecture Principles section) and `docs/ai-principles.md`
+(to be written when AI design begins).
+
 ## 3. Module responsibilities
 
 ### `snomniman.core` - the data model (no I/O, no processing logic)
@@ -81,10 +88,13 @@ Qt-free part is already enforced by `tests/test_smoke.py`).
 - `registry`: maps format identifiers to reader callables; content-based sniffing
   dispatches to a reader (id encodes format+version). A registry, not a plugin
   system (ADR-0006).
-- `readers/`: concrete readers. **First target (Phase 1): a real neaSNOM imaging
-  dataset** (OHD-9). HDF5-based vendor files are read with h5py. Each reader
-  returns a `Dataset` with correct dims, coords, canonical units, channels, and a
-  populated `Metadata` + `RawSource`; unknown header fields preserved verbatim.
+- `readers/`: concrete readers. **First target (Phase 1): a GSF measurement-directory
+  reader for neaSNOM imaging data** (OHD-9). A neaSNOM measurement is a directory
+  of per-channel `.gsf` files (Gwyddion Simple Field format) plus a `.txt` parameter
+  file; the reader assembles all channels into a single `Dataset`. `h5py` is retained
+  for future HDF5-based vendor formats. Each reader returns a `Dataset` with correct
+  dims, coords, canonical units, channels, and a populated `Metadata` + `RawSource`;
+  unknown header fields preserved verbatim.
 - `writers/`: persistence to the **canonical Zarr store** (OHD-3) and export of
   derived data (CSV, ...).
 - **Validation note (Rule 6):** exact vendor formats are *not assumed*; readers
@@ -124,6 +134,9 @@ Qt-free part is already enforced by `tests/test_smoke.py`).
 - `matplotlib` export for publication figures (vector, cyclic colormaps for phase).
 - Interactive PyQtGraph adapters consume this data at the `gui` boundary,
   keeping `viz` Qt-free.
+- **Implemented:** `render` - the `RenderData` value object + `prepare_channel`
+  (honest amplitude/phase, cyclic colormap for phase, robust ranges, lower-left
+  pixel-edge extent) + `pick_scale_bar`. matplotlib static export not yet built.
 
 ### `snomniman.batch` - headless multi-dataset runs (depends on `pipeline`, `io`, `core`)
 - Applies a DAG (or template) across many sources, emitting results + a per-result
@@ -134,7 +147,13 @@ Qt-free part is already enforced by `tests/test_smoke.py`).
   and a **provenance panel** exposing/editing the graph.
 - Strictly a consumer: it builds steps/graphs and calls the backend. **No
   scientific computation in widgets, dialogs, event handlers, or view classes**
-  (Rule 4). Not part of the Phase 1 vertical slice.
+  (Rule 4); every GUI feature must also satisfy Rule 9 (improve understanding).
+- **Implemented:** the read-only **Measurement Explorer** - a Qt-free
+  `ExplorerModel` presenter plus thin PyQtGraph/PySide6 widgets (image view,
+  channel browser, metadata + provenance inspectors, cursor readout) and the
+  `python -m snomniman.gui` entry point. Open/browse/inspect only; processing,
+  editing, export, and AI authoring are not yet built. The package `__init__` does
+  not import Qt, so the presenter and backend import without the `gui` extra.
 
 ## 4. Key patterns
 
@@ -206,7 +225,7 @@ exercisable from Python/pytest with no Qt event loop. The GUI is thin.
 | Arrays / labeled data | NumPy, **xarray** | Named dims/coords/units/metadata; complex dtype; chunked I/O. |
 | Numerics | SciPy | FFT, filtering, interpolation, optimization. |
 | Canonical project store | **Zarr** (OHD-3) | complex-native, chunked, JSON attrs; large cubes + rich metadata. |
-| Vendor file reading | h5py (HDF5-based vendor files) | vendor formats independent of the store. |
+| Vendor file reading | format-specific readers (GSF for neaSNOM; h5py for HDF5-based formats) | vendor formats independent of the store. |
 | Interactive GUI | **PySide6** (Qt) + **PyQtGraph** | Fast multi-dimensional interactive visualization. |
 | Static export | matplotlib | Publication-quality vector figures. |
 | Packaging / env | **uv** | Fast, reproducible environments and lockfile. |
