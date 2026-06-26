@@ -56,7 +56,10 @@ select = ["E", "F", "W", "I", "UP", "B", "C4", "NPY", "RUF"]
 known-first-party = ["snomniman"]
 
 [tool.mypy]
-python_version = "3.11"
+# Runtime floor is 3.11 (requires-python), but mypy analyzes at 3.12: numpy's
+# type stubs use PEP 695 `type` statements that mypy only parses under >=3.12.
+# Ruff still targets py311, so 3.11-incompatible *syntax* in our code is caught.
+python_version = "3.12"
 mypy_path = "src"
 explicit_package_bases = true
 namespace_packages = true

@@ -1,6 +1,6 @@
 # Decisions (ADR log)
 
-**Status:** Living document - **Last updated:** 2026-06-22 (OHD application; Phase 0 complete)
+**Status:** Living document - **Last updated:** 2026-06-23 (measurement discovery; format corrections)
 
 Architecture Decision Records, lightweight. Each entry: context -> decision ->
 alternatives -> consequences -> status. New major decisions are appended here in
@@ -83,14 +83,18 @@ chokepoint. Mind the nonlinear wavenumber<->wavelength conversion.
 decide the project's relationship to raw microscope files.
 **Decision (OHD-3 resolved).** **Canonical project storage is Zarr** (complex-native,
 chunked, JSON attrs - suits large cubes + rich metadata + the DAG). **Vendor
-files are read by format-specific readers** (HDF5-based vendor files via h5py);
-vendor formats are independent of the project store. Provenance/project metadata
-serialize to **JSON**. The working project **references external raw files by
-path + sha256** plus a manifest; raw files are **never copied or modified**. A
-self-contained export bundle (raw + manifest + derived results) comes later.
+files are read by format-specific readers**; vendor formats are independent of
+the project store. Provenance/project metadata serialize to **JSON**. The working
+project **references external raw files by path + sha256** plus a manifest; raw
+files are **never copied or modified**. A self-contained export bundle (raw +
+manifest + derived results) comes later.
 **Alternatives.** netCDF - rejected: classic netCDF cannot store complex.
 **Consequences.** One coherent internal store; relink story for moved raw files
 (relative path + hash + size).
+**Note (2026-06-23):** the Phase 1 neaSNOM reader targets the **GSF
+measurement-directory format** (Gwyddion Simple Field), not HDF5. `h5py` is
+retained in `pyproject.toml` for future HDF5-based vendor formats. See
+`docs/measurement-discovery.md`.
 
 ## ADR-0010 - Name SNOMNIMAN; package `snomniman`; `src/` layout  [ACCEPTED]
 **Context.** Need a distinct, memorable, collision-free name (a PyPI `snompy`
@@ -113,6 +117,10 @@ The reader interface is vendor-agnostic; parsing is validated against real files
 (Rule 6) and unknown header fields are preserved verbatim. Future modalities
 (spectra, hyperspectral, approach curves) remain in scope.
 **Consequences.** Fast path to parity; other modalities/vendors via new readers.
+**Note (2026-06-23):** the neaSNOM imaging format is **GSF (Gwyddion Simple Field)**:
+a measurement **directory** containing one `.gsf` file per channel (O0A..O5P, M0A..M5P,
+reference variants, topography) plus a `.txt` parameter file. The reader ingests a
+directory, not a single file. See `docs/measurement-discovery.md`.
 
 ## ADR-0013 - Full reproducibility and traceability in provenance  [ACCEPTED]
 **Context.** Reproducibility depends on more than parameters.
@@ -172,7 +180,7 @@ while users still see a clear dataset type.
 |---|---|---|---|
 | OHD-1 | Package name | SNOMNIMAN / `snomniman` (renamed from `snom`) | 0010 |
 | OHD-2 | Provenance topology | Multi-input provenance **DAG** | 0005 |
-| OHD-3 | Storage format | **Zarr** canonical store; vendor reads via readers (h5py for HDF5) | 0009 |
+| OHD-3 | Storage format | **Zarr** canonical store; vendor reads via readers (GSF directory for neaSNOM; h5py for future HDF5 formats) | 0009 |
 | OHD-4 | Unwrapped phase | First-class channel | 0002 |
 | OHD-5 | Reproducibility/traceability | Record sources, DAG, steps, params, software + operation versions | 0013 |
 | OHD-6 | Scientific conventions | In metadata; nm canonical; origin lower-left/x-right/y-up; phase preserved-as-imported | 0014 |

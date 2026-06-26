@@ -55,6 +55,14 @@ Notes:
   ['pyqtgraph.*', 'scipy.*', 'zarr.*']") because those override entries target
   libraries not yet imported by any code. The note does not affect the result
   (exit 0); the entries are intentionally retained for imminent Phase 1/2 use.
+- **Update 2026-06-25 (Phase 1 code landed):** with application code present,
+  `mypy --strict` checks **27 source files**, exit 0; `pytest` reports **55
+  passed**. Two tooling changes were required: (1) mypy `python_version` raised
+  `3.11 -> 3.12` because numpy 2.5's type stubs use PEP 695 `type` statements that
+  mypy parses only at >=3.12 (runtime floor stays 3.11 via `requires-python`;
+  ruff still targets py311). (2) The unused-override note now narrows to
+  `['pyqtgraph.*']` only (scipy/zarr resolve once imported); pyqtgraph is the
+  optional GUI extra, retained for the GUI phase.
 - The LF -> CRLF warnings from `git add` on Windows are Git's autocrlf notice;
   the repository stores LF. (A `.gitattributes` enforcing `eol=lf` is an optional
   future nicety; not added to keep this baseline minimal.)
@@ -80,15 +88,36 @@ GUI-independent.
 - **Excluded** (git-ignored): `.venv/`, `.obsidian/` (stray editor state),
   `.mypy_cache/`, `.pytest_cache/`, `.ruff_cache/`.
 
+## Continuous Integration
+
+**Status:** Added 2026-06-23. GitHub Actions workflow at `.github/workflows/ci.yml`.
+
+The CI workflow runs on every `push` and `pull_request` and enforces the same
+gates verified locally above.
+
+| Step | Command | What it enforces |
+|---|---|---|
+| Install dependencies | `uv sync` | Lockfile-exact environment installs cleanly |
+| Lint | `uv run ruff check .` | Style and import correctness |
+| Type check | `uv run mypy .` | Static type safety (strict mode) |
+| Tests | `uv run pytest` | Correctness + backend Qt-free invariant (Rule 4) |
+
+The backend/Qt-free invariant (`test_backend_is_qt_free`) is part of the pytest
+suite, so the Tests step also enforces the GUI/backend separation automatically.
+
+CI uses `ubuntu-latest` with Python 3.13 (matching the local CPython 3.13.7
+baseline) and installs `uv` via `astral-sh/setup-uv@v5`.
+
+---
+
 ## Remaining Phase 1 Blockers
 
 - **Genuine blocker:** a real **neaSNOM imaging** sample file (the golden file)
   is required to implement and validate the Phase 1 reader. The Dataset/Metadata/
   Provenance schemas can be built and unit-tested with synthetic data in the
   meantime.
-- **Recommended, non-blocking:** add a CI workflow that runs `pytest` + `ruff` +
-  `mypy` + the dependency/Qt-free guard (the toolchain is verified locally; CI
-  just automates it).
+- **Done (2026-06-23):** CI workflow added at `.github/workflows/ci.yml` — runs
+  `pytest` + `ruff` + `mypy` on push and pull_request.
 
 No decision or architecture blockers remain - all OHDs are resolved
 (`decisions.md`). The repository is reproducible, validated, and under version

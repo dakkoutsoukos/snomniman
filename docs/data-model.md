@@ -1,6 +1,6 @@
 # Data Model
 
-**Status:** Phase 0 complete; all OHD decisions applied. **Last updated:** 2026-06-22
+**Status:** Phase 0 complete; all OHD decisions applied. **Last updated:** 2026-06-23
 
 Authoritative description of how near-field data, metadata, and processing history
 are represented in SNOMNIMAN. The conventions here are settled scientific
@@ -161,9 +161,9 @@ The reproducibility anchor - an immutable description of where data came from.
 
 ```json
 {
-  "path": "data/sample_001.gsf",
+  "path": "data/2026-06-16 190234 PH CdO Dense ROI 2",
   "sha256": "a1b2...",
-  "reader": "neasnom.image.v1",
+  "reader": "neasnom.image.gsf.v1",
   "reader_params": { "channel_map": "default" },
   "bytes": 1048576,
   "imported_at": "2026-06-22T12:00:00Z"
@@ -174,6 +174,11 @@ The hash lets replay verify the raw file is unchanged before reconstructing a
 result. Paths are stored relative to the project root (plus size) to support
 relinking moved/renamed files. `source` is `None` for synthetic datasets (which
 record their generator parameters in provenance).
+
+**Note on the neaSNOM GSF reader:** a neaSNOM measurement is a **directory** of
+per-channel `.gsf` files, not a single file. For the GSF measurement-directory
+reader, `path` is the measurement directory. The sha256 anchor strategy (directory
+manifest vs. `.txt` entry-point hash) is an implementation detail resolved in Phase 1.
 
 ## 8. Provenance: DAG, `StepRecord`, `ProvenanceNode`
 
@@ -236,12 +241,25 @@ Schema versions are explicit so formats can evolve with migrations.
 | Canonical project store (datasets + derived) | **Zarr** (OHD-3) | complex-native, chunked, JSON attrs; suits large cubes + rich metadata |
 | Provenance DAG / project metadata | JSON | human-readable, diffable, version-controllable |
 | Manifest | JSON | raw sources (relative path + sha256 + bytes + reader) |
-| Vendor file reading | format-specific readers | HDF5-based vendor files via h5py; vendor formats are independent of the store |
+| Vendor file reading | format-specific readers | Phase 1: GSF measurement directories (neaSNOM); h5py for future HDF5-based formats; vendor formats are independent of the store |
 | Exported figures | PDF/SVG/PNG (matplotlib) | vector for publication |
 | Exported data | CSV / Zarr / HDF5 | tabular spectra, ROI stats, etc. |
 
 Raw vendor files are **never overwritten or modified**. A self-contained export
 bundle (raw copied in + manifest + derived results) is a later deliverable.
+
+**Canonical store layout (implemented in `snomniman.io.zarrstore`).** A `Dataset`
+is written with `write_zarr` and reconstructed with `read_zarr`. The labeled
+arrays go through `xarray.Dataset.to_zarr` (Zarr stores complex64 channels,
+per-array units/attrs, dtypes, and dimensions natively). The SNOMNIMAN-level
+semantics that are not plain array data - the `DataKind`, the typed `Metadata`
+(with its explicit conventions and verbatim header), the provenance DAG, and the
+`RawSource` anchor - are serialized into one JSON document held under the reserved
+Zarr **group attribute** `"snomniman"` (format marker `snomniman.dataset`, with a
+`schema_version`). The capability set and the amplitude/phase views are *derived
+on load* (pure functions of the array data), never stored, so they cannot drift.
+Stores are written `consolidated=False` (Zarr v3 spec) and loaded eagerly, so the
+reconstructed arrays are frozen and immutable exactly as on first import.
 
 ## 11. Invariants (enforced by tests)
 

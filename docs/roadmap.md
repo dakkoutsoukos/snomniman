@@ -1,7 +1,7 @@
 # Roadmap
 
 **Status:** Phase 0 complete (decisions + documentation); Phase 1 ready to begin.
-**Last updated:** 2026-06-22
+**Last updated:** 2026-06-23
 
 Phased plan from foundation to a publication-grade tool. Sequenced so a real file
 reaches the data model early (the vertical slice, ADR-0015), then the
@@ -42,9 +42,9 @@ design-blocking decisions resolved.
 - [x] Package named/renamed to **SNOMNIMAN / `snomniman`** (OHD-1)
 
 **Phase 1 entry checklist (mechanical infra + inputs, no decisions left):**
-- [ ] Install `uv`; `uv sync`; `uv run pytest`/`ruff`/`mypy` green; add CI gate
-- [ ] `git init` + initial commit
-- [ ] Obtain a real **neaSNOM imaging** sample file (the golden file)
+- [x] Install `uv`; `uv sync`; `uv run pytest`/`ruff`/`mypy` green; add CI gate *(done 2026-06-22/23)*
+- [x] `git init` + initial commit *(done 2026-06-22)*
+- [x] Obtain a real **neaSNOM imaging** sample file *(done 2026-06-23 - GSF measurement directory present)*
 
 ## Phase 1 - Vertical slice: neaSNOM imaging reader (backend only)  [ADR-0015]
 
@@ -60,16 +60,18 @@ visualization** beyond what validates the slice.
    plus the verbatim vendor header.
 3. **Provenance schema** - `StepRecord` + the provenance **DAG** node (OHD-2/OHD-5),
    even though the slice uses a single `io.read` node.
-4. **One real neaSNOM imaging reader** - `snomniman.io` reader (OHD-9) returning a
-   `Dataset` with correct dims, coords, canonical units, channels, and metadata;
-   unknown header fields preserved verbatim.
-5. **Golden-file tests** - real file -> expected `Dataset`; Zarr round-trip and
+4. **GSF measurement-directory reader** - `snomniman.io` reader (OHD-9) that ingests
+   a neaSNOM measurement directory (one `.gsf` file per channel + `.txt` parameters),
+   assembles all channels into a `Dataset` with correct dims, coords, canonical units,
+   and metadata; unknown header fields preserved verbatim.
+5. **Golden-file tests** - real directory -> expected `Dataset`; Zarr round-trip and
    raw-immutability invariants; backend stays Qt-free.
 
-**Gated on:** a real neaSNOM imaging sample file.
-**Exit (Rule 6):** the neaSNOM image loads into a validated `Dataset`, verified by
-golden-file tests against known values / neaPLOT; Zarr round-trip and immutability
-pass.
+**Gated on:** ~~a real neaSNOM imaging sample file~~ **Gate lifted** - real GSF
+measurement data is present. See `docs/measurement-discovery.md`.
+**Exit (Rule 6):** the neaSNOM measurement directory loads into a validated `Dataset`,
+verified by golden-file tests against known values / neaPLOT; Zarr round-trip and
+immutability pass.
 
 ## Phase 2 - Core data model & I/O (breadth)
 
@@ -95,7 +97,14 @@ pass.
 reload -> replay reproduces the recorded result (bit-identical for deterministic
 steps); leveling removes a synthetic plane to tolerance.
 
-## Phase 4 - Interactive GUI (imaging)
+## Phase 4 - Interactive GUI (imaging): the Measurement Explorer
+
+The central GUI experience is the **Measurement Explorer** - the surface where a
+researcher opens, navigates, and *understands* a measurement. Its interaction
+design is specified in [`measurement-explorer.md`](measurement-explorer.md)
+(read it before any GUI code). Build the **read-only Explorer first** (open ->
+browse channels -> inspect metadata/provenance), then add processing/AI/export as
+further derivations.
 
 - `snomniman.gui`: PySide6 shell; PyQtGraph image viewer (the first viewer);
   channel selector; LUT/scale; ROI; **provenance panel**; project save/open.
@@ -143,13 +152,12 @@ Each will get an ADR before implementation.
 
 ## Cross-cutting risks & dependencies
 
-- **Sample data is the only remaining Phase-1 gate.** The neaSNOM imaging reader
-  (Phase 1) cannot be validated without a real file. *Action: obtain the golden
-  file.*
+- **Phase 1 is fully unblocked.** Real GSF measurement data is present; `uv`,
+  CI, and git are in place. Implementation can begin.
 - **Vendor format details are not assumed** (Rule 6); parsing is validated, and
-  unknown fields are preserved verbatim.
+  unknown fields are preserved verbatim. The neaSNOM format is GSF
+  measurement directories (see `docs/measurement-discovery.md`).
 - **Scientific conventions are settled** (OHD-6) and stored in metadata; readers
   convert to canonical (nm, lower-left origin) and record conversions in provenance.
-- **`uv` is not yet installed**; install before Phase 1 coding.
 - Documentation is ASCII/UTF-8 and internally consistent; the package is
   `snomniman` throughout.

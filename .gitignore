@@ -29,8 +29,11 @@ Thumbs.db
 
 # Scientific data must never be committed to the source repo.
 # Raw files are referenced by path + hash, not stored here (see data-model.md).
+# The real neaSNOM sample measurements (~192 MB) live here locally; the golden
+# tests skip cleanly when this folder is absent (e.g. on CI / a fresh clone).
 /data/
 /scratch/
+/SNOM Sample Files/
 *.gsf
 *.nea
 *.h5
