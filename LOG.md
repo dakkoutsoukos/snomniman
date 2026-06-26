@@ -859,3 +859,72 @@ Per the review and the user's guidance: (1) commit the GUI milestone + this revi
 (3) work the review's **Must have** list - starting with a colorbar + visible
 contrast control, the synchronized multi-channel view, and a relocated cross-channel
 cursor readout - before any processing or AI. Each new GUI element must pass Rule 9.
+
+---
+
+## 2026-06-26 - Milestone commits + quantitative image visualization
+
+Two parts: (a) committed the work so far as two clean milestones, and (b)
+implemented the highest-priority UX gap from the v0.1 review - making every
+displayed image quantitatively trustworthy. No processing, no AI, no architecture
+change; the Explorer stays strictly read-only.
+
+### Completed
+- **Committed two milestones** (history: Phase 0 scaffold -> these):
+  `feat(core): complete Phase 1 scientific backend` (core, io incl. Zarr store,
+  golden tests) and `feat(explorer): first read-only Measurement Explorer` (viz,
+  gui, product docs incl. the v0.1 review). The 192 MB real sample folder is
+  **git-ignored** (golden tests skip when absent, by design); `uv.lock` unchanged.
+- **Quantitative visualization system** (closes review Must-have #1):
+  - **Colorbar + histogram** via a PyQtGraph `HistogramLUTItem` beside the image:
+    shows the value->color mapping with the channel's unit on its axis, the value
+    distribution, and where the levels clip; levels are draggable.
+  - **Interactive contrast**: Default (robust percentile) and Full-range buttons +
+    exact min/max spin boxes, all kept in sync with the histogram. Backed by the
+    new Qt-free `viz.level_range(values, mode)` (default/full), so the contrast
+    logic is unit-tested without a display. **Display-only - never touches data.**
+  - **Channel-aware defaults** unchanged and honored (amplitude viridis / phase
+    cyclic twilight at -pi..pi / topography afmhot; robust default range).
+  - **Cursor readout relocated** from the window status bar to a strip directly
+    beneath the image (cross-channel: amplitude / phase / Z height at the pixel).
+  - Trimmed the active-channel caption (the colorbar now carries the range; dropped
+    the range numbers and the colormap name as engineer-facing noise, per the
+    review's "things to remove").
+- **Verified on the real CdO measurement** (offscreen): O2 amplitude opens at its
+  robust range with the histogram/colorbar; switching to Z updates levels to nm and
+  the colormap to afmhot; Full-range widens 712..913 -> 680..966 nm; the readout
+  sits under the image.
+- **Tests (+7; 107 total):** `viz.level_range` (default vs full, guards) and
+  GUI-level checks that levels match the channel default on load, update on channel
+  switch, that Full-range widens and Default restores, that manual levels apply, and
+  that **changing contrast never modifies the Dataset** (arrays unchanged + still
+  frozen). `ruff` clean, `mypy --strict` clean (40 files), `pytest` 107 passed.
+
+### Decisions
+- **`ChannelImageView` rebuilt around a `GraphicsLayoutWidget`** (image + histogram
+  + readout in one graphics scene); the histogram item owns the image LUT/levels, so
+  the widget no longer sets them directly. Contrast modes live in Qt-free `viz`
+  (tested); the widget is still thin (Rule 4) and earns its place under Rule 9
+  (every element improves quantitative interpretation).
+- **Axis tick labels in um, all data/levels/readout in nm**, as before; the colorbar
+  axis shows the channel unit (a.u. / rad / nm) with SI auto-prefix disabled.
+
+### Issues Found
+- None. The level-sync between histogram drag, the spin boxes, and the buttons uses
+  a single re-entrancy guard to avoid feedback loops; verified by the round-trip of
+  Default -> Full -> Default restoring the exact default levels.
+
+### Documentation Updated
+- Created: (none new) - extended `src/snomniman/viz/render.py` (`level_range`),
+  `src/snomniman/gui/imageview.py` (rewrite), `src/snomniman/gui/window.py`
+  (readout -> image, trimmed caption); `src/snomniman/viz/__init__.py` exports;
+  `tests/test_viz_render.py`, `tests/test_gui_window.py`. Updated `.gitignore`
+  (ignore the sample folder). This `LOG.md` entry; `NEXT.md`.
+
+### Next Recommended Actions
+Per the v0.1 review, the next Must-haves (still pre-processing): **multi-channel
+comparison** (side-by-side + synchronized cross-channel cursor + harmonic contact
+sheet), then **line profile + ROI statistics**, then **provenance-preserving
+export**. Recommended before more building: real user validation (watch 2-3 neaPLOT
+users narrate). Re-run the product review as `product-review-v0.2.md` once these
+land and watch the obstacle list shrink.

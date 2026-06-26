@@ -11,22 +11,30 @@ from __future__ import annotations
 
 from .render import (
     AMPLITUDE,
+    LEVEL_DEFAULT,
+    LEVEL_FULL,
+    LEVEL_MODES,
     PHASE,
     REAL,
     RenderData,
     available_representations,
     default_representation,
+    level_range,
     pick_scale_bar,
     prepare_channel,
 )
 
 __all__ = [
     "AMPLITUDE",
+    "LEVEL_DEFAULT",
+    "LEVEL_FULL",
+    "LEVEL_MODES",
     "PHASE",
     "REAL",
     "RenderData",
     "available_representations",
     "default_representation",
+    "level_range",
     "pick_scale_bar",
     "prepare_channel",
 ]

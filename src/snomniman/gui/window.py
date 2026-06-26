@@ -33,7 +33,6 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._metadata = MetadataInspector()
         self._provenance = ProvenanceInspector()
         self._conventions = QtWidgets.QLabel()
-        self._readout = QtWidgets.QLabel()
 
         self._build_layout()
         self._wire()
@@ -74,7 +73,6 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self.resizeDocks([channels, inspect], [260, 380], QtCore.Qt.Orientation.Horizontal)
 
         self.statusBar().addWidget(self._conventions)
-        self.statusBar().addPermanentWidget(self._readout)
 
     def _wire(self) -> None:
         self._browser.channelSelected.connect(self._on_channel_selected)
@@ -113,22 +111,23 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
     def _refresh_image(self) -> None:
         render = self._model.render()
         self._image.show_render(render)
+        # The colorbar now carries the value scale, so the caption stays minimal:
+        # what channel/representation is shown and its processing state.
         state = self._channel_state(render.channel)
-        self._active.setText(
-            f"Showing   {render.title}     state: {state}     "
-            f"range [{render.vmin:.3g}, {render.vmax:.3g}]     colormap: {render.colormap}"
-        )
+        self._active.setText(f"Showing   {render.title}      state: {state}")
 
     def _on_cursor_moved(self, x_nm: float, y_nm: float, in_bounds: bool) -> None:
         if not in_bounds:
-            self._readout.setText("")
+            self._image.set_readout("")
             return
         readout = self._model.cursor_readout(x_nm, y_nm)
         if not readout.in_bounds:
-            self._readout.setText("")
+            self._image.set_readout("")
             return
-        values = "    ".join(f"{v.label}: {v.value} {v.unit}" for v in readout.values)
-        self._readout.setText(f"x={readout.x_nm:.0f} nm  y={readout.y_nm:.0f} nm    |    {values}")
+        values = "      ".join(f"{v.label}: {v.value} {v.unit}" for v in readout.values)
+        self._image.set_readout(
+            f"x = {readout.x_nm:.0f} nm     y = {readout.y_nm:.0f} nm        {values}"
+        )
 
     def _channel_state(self, channel: str) -> str:
         try:

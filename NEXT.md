@@ -3,30 +3,31 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-25 (read-only Measurement Explorer implemented)
+**Last updated:** 2026-06-26 (quantitative image visualization; milestones committed)
 
 ---
 
 ## Current Phase
 
-**Phase 1 is COMPLETE** (backend + Zarr round-trip), and the **first user-facing
-experience now exists**: a read-only **Measurement Explorer** that opens a neaSNOM
-measurement directory as one coherent object and lets a researcher browse channels,
-inspect metadata and provenance, hover for a cross-channel readout, and toggle
-honest amplitude/phase - without modifying anything. Verified on the real CdO
-measurement. `ruff`, `mypy --strict`, and `pytest` (100 passed) are green; the
-backend remains Qt-free (now checked in a subprocess).
+**Phase 1 is COMPLETE** (backend + Zarr round-trip), the **read-only Measurement
+Explorer** exists, and its images are now **quantitatively trustworthy**: every
+image carries a colorbar + histogram with units, interactive contrast (default /
+full-range / exact min-max, display-only), and a cross-channel cursor readout
+directly beneath the image. This closed the #1 gap from `docs/product-review-v0.1.md`.
+Verified on the real CdO measurement. `ruff`, `mypy --strict`, and `pytest`
+(107 passed) are green; the backend remains Qt-free (subprocess-checked). The work
+so far is committed as two milestones (backend; explorer + product docs).
 
 Launch: `python -m snomniman.gui [measurement-directory]` (requires the `gui`
 extra: `uv sync --extra gui`).
 
 Implemented:
 - Backend (no Qt): `snomniman.core`; `snomniman.io` (gsf, neasnom, registry,
-  zarrstore); `snomniman.viz` (**render** - display-ready data: honest
-  amplitude/phase, colormaps, ranges, extent, scale bar).
+  zarrstore); `snomniman.viz` (**render** - display-ready data + `level_range`
+  contrast modes: honest amplitude/phase, colormaps, ranges, extent, scale bar).
 - GUI (PySide6 + PyQtGraph, read-only): `snomniman.gui` (**model** - Qt-free
-  presenter; **imageview/panels/window** widgets; **colormap**; **app/__main__**
-  entry point).
+  presenter; **imageview** - colorbar/histogram/contrast/readout;
+  **panels/window** widgets; **colormap**; **app/__main__** entry point).
 
 **Still NOT implemented (out of scope so far):** any processing/derivation,
 editing, export, AI, batch, or writing derived datasets.
@@ -79,19 +80,20 @@ Ordered. `(user)` = needs a human action.
 
 **F. Next - product backlog from the v0.1 review (each must pass Rule 9):**
 
-The authoritative prioritization now lives in **`docs/product-review-v0.1.md`** (a
+The authoritative prioritization lives in **`docs/product-review-v0.1.md`** (a
 researcher's-perspective critique of the running Explorer). Its **Must have** list,
 in impact order:
-12. **Colorbar + visible, adjustable contrast/levels** (with a histogram) - the
-    biggest confidence gap: you cannot trust an image whose scale you can't see/set.
+12. [x] **Colorbar + visible, adjustable contrast/levels** (with a histogram) +
+    **relocated cross-channel cursor readout** (was the biggest confidence gap).
+    *Done 2026-06-26:* `HistogramLUTItem` colorbar/histogram, default/full/manual
+    contrast (display-only, via `viz.level_range`), readout moved under the image.
 13. **Multi-channel comparison** - side-by-side panels with a *synchronized
     cross-channel cursor*, plus a harmonic contact sheet (O0..O5 at a glance).
-14. **Relocate + expand the cursor readout** - at/near the pointer, across the
-    channels on screen, with units.
-15. **Line profile + ROI statistics** (min/max/mean/std, area) - read-only.
-16. **Provenance-preserving export** of the current view (a captioned figure, not a
+    *(Now the top open Must-have.)*
+14. **Line profile + ROI statistics** (min/max/mean/std, area) - read-only.
+15. **Provenance-preserving export** of the current view (a captioned figure, not a
     bare screenshot).
-17. **First processing derivations** - topography leveling + reference normalization,
+16. **First processing derivations** - topography leveling + reference normalization,
     as explicit, recorded, non-destructive steps. *Sequence after the exploration
     items above* (explore before you process); each step is provenance-recorded,
     never silent (OHD-6D); the Zarr store already persists the resulting DAG.

@@ -34,6 +34,11 @@ REAL = "real"
 #: Robust display-range percentiles (clip extreme outliers, keep the structure).
 _LO_PCT, _HI_PCT = 1.0, 99.0
 
+#: Contrast/level modes the viewer offers (see :func:`level_range`).
+LEVEL_DEFAULT = "default"  # robust percentile clip (the channel-aware default)
+LEVEL_FULL = "full"  # true finite min..max (show everything, including outliers)
+LEVEL_MODES = (LEVEL_DEFAULT, LEVEL_FULL)
+
 #: Recommended matplotlib colormap names (the GUI resolves these to LUTs).
 _CMAP_AMPLITUDE = "viridis"
 _CMAP_TOPOGRAPHY = "afmhot"
@@ -114,6 +119,28 @@ def prepare_channel(
     )
 
 
+def level_range(values: npt.NDArray[np.float64], mode: str = LEVEL_DEFAULT) -> tuple[float, float]:
+    """Display levels ``(lo, hi)`` for ``values`` under a contrast ``mode``.
+
+    ``"default"`` is the robust percentile clip used on load (keeps structure,
+    ignores extreme outliers); ``"full"`` is the true finite min..max (shows
+    everything). This is *display only* - it never alters the data. Returns a
+    non-degenerate range even for a flat/dead channel.
+    """
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return 0.0, 1.0
+    if mode == LEVEL_FULL:
+        lo, hi = float(finite.min()), float(finite.max())
+    elif mode == LEVEL_DEFAULT:
+        lo, hi = (float(v) for v in np.percentile(finite, [_LO_PCT, _HI_PCT]))
+    else:
+        raise ValueError(f"unknown level mode {mode!r}; choose from {LEVEL_MODES}")
+    if not hi > lo:  # flat/dead channel - give a non-degenerate range
+        hi = lo + 1.0
+    return lo, hi
+
+
 def pick_scale_bar(span_nm: float, *, fraction: float = 0.2) -> tuple[float, str]:
     """Choose a tidy scale-bar length (~``fraction`` of ``span_nm``) and its label.
 
@@ -136,13 +163,7 @@ def pick_scale_bar(span_nm: float, *, fraction: float = 0.2) -> tuple[float, str
 
 
 def _robust_range(values: npt.NDArray[np.float64]) -> tuple[float, float]:
-    finite = values[np.isfinite(values)]
-    if finite.size == 0:
-        return 0.0, 1.0
-    lo, hi = (float(v) for v in np.percentile(finite, [_LO_PCT, _HI_PCT]))
-    if not hi > lo:  # flat/dead channel - give a non-degenerate range
-        hi = lo + 1.0
-    return lo, hi
+    return level_range(values, LEVEL_DEFAULT)
 
 
 def _extent_nm(dataset: Dataset) -> tuple[float, float, float, float]:
@@ -192,11 +213,15 @@ def _channel_info(dataset: Dataset, channel: str) -> ChannelInfo | None:
 
 __all__ = [
     "AMPLITUDE",
+    "LEVEL_DEFAULT",
+    "LEVEL_FULL",
+    "LEVEL_MODES",
     "PHASE",
     "REAL",
     "RenderData",
     "available_representations",
     "default_representation",
+    "level_range",
     "pick_scale_bar",
     "prepare_channel",
 ]

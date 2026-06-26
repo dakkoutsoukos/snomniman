@@ -12,6 +12,7 @@ from snomniman.viz import (
     REAL,
     available_representations,
     default_representation,
+    level_range,
     pick_scale_bar,
     prepare_channel,
 )
@@ -79,3 +80,21 @@ def test_dead_channel_range_is_non_degenerate(synthetic_dataset: Dataset) -> Non
     # The all-constant reference amplitude must still yield vmin < vmax.
     rd = prepare_channel(synthetic_dataset, "R_O2", AMPLITUDE)
     assert rd.vmax > rd.vmin
+
+
+def test_level_range_default_vs_full() -> None:
+    # An array with strong outliers: percentile default clips them; full keeps them.
+    values = np.concatenate([np.linspace(0.0, 1.0, 1000), [1000.0]]).astype(np.float64)
+    lo_d, hi_d = level_range(values, "default")
+    lo_f, hi_f = level_range(values, "full")
+    assert hi_f == pytest.approx(1000.0)  # full keeps the outlier
+    assert hi_d < 10.0  # default clips it away
+    assert lo_f <= lo_d and hi_f >= hi_d  # full always encloses default
+
+
+def test_level_range_guards_and_validates() -> None:
+    flat = np.full((4, 4), 3.0)
+    lo, hi = level_range(flat, "full")
+    assert hi > lo  # non-degenerate even for a constant channel
+    with pytest.raises(ValueError, match="unknown level mode"):
+        level_range(flat, "nonsense")
