@@ -277,6 +277,53 @@ optional change. The deterministic core remains the single source of truth. Full
 
 ---
 
+## ADR-0021 - Generic, registry-driven Processing Workspace (no per-operation GUI)  [ACCEPTED]
+**Context.** The processing engine grew a vocabulary (`image.plane_level`,
+`reference_normalize`, `phase_unwrap`, `crop`), but the Explorer only knew how to preview
+plane leveling - its Process panel was hand-wired to one operation
+(`_on_preview_requested(channel, order)`). Adding each operation to the GUI separately would
+make the Explorer a menu labyrinth and couple GUI code to each algorithm, violating Rule 2
+(no parallel implementations) and Rule 9 (every GUI feature must earn its place). The
+operations are already first-class in the registry, the Description API, and the Diagnostics
+Engine; the GUI should *consume* those, not re-encode operation knowledge.
+**Decision.** Replace the operation-specific Process panel with one generic, registry-driven
+**Processing Workspace** that exposes *every* registered `ProcessingStep`. All of it is a
+projection of existing layers: discovery/grouping from `describe_operations()`; availability
+and "why unavailable" from the Diagnostics Engine's `operation_applicability`; the parameter
+form generated from each `ParameterSpec`; preview by applying the step to the live dataset
+(the engine is purely functional) and **diffing** the derived dataset against the current one
+to report, generically, what changes and what stays; provenance preview = the real
+`StepRecord` Accept will commit. To let a generic form pick the right control without GUI-side
+scientific knowledge (Rule 4), `ParameterSpec` gains two optional, declarative UI hints:
+`choices` (a fixed enum, also enforced by `validate()`) and `channel_role`
+(`any`/`real`/`complex`, marking a `str` param as naming a channel of that kind). The
+Description API's `OperationParameter` projects both. Adding a new operation now requires
+only: implement, register, declare `param_specs` + `required_capabilities` - the Explorer
+provides discoverability, parameter editing, preview, provenance preview, accept/cancel, and
+history with **no new GUI code**.
+**Alternatives.** (a) Keep wiring each operation by hand - rejected: O(operations) GUI code,
+drift, and a growing menu (Rule 2/9). (b) A name heuristic in the GUI ("a `str` param called
+`channel` lists real channels") - rejected: it puts scientific knowledge (which kind each
+operation needs - real for leveling, complex for unwrap) in GUI code (Rule 4) and is fragile.
+(c) A new GUI abstraction layer for operation forms - rejected as premature generalization
+(Rule 7): the registry + `ParameterSpec` + the Qt-free presenter already carry everything; a
+new layer is unnecessary. (d) Compute "what will change" from per-operation declarations -
+rejected: diffing the actual preview against the current dataset is truthful and fully generic
+(no per-operation upkeep). (e) Build a multi-input picker now - deferred (Rule 7): no
+registered operation is multi-input yet; the single-input `{"primary": ds}` convention covers
+every current step, and the form gains an auxiliary-input picker when a real multi-input
+operation exists.
+**Consequences.** Operation-specific processing UI is permanently eliminated; the next
+operation (e.g. `image.line_flatten`) needs essentially no UI work. `ParameterSpec` now also
+declares display-affecting hints, but they never change a computed result (pure UI/validation),
+and the dataset-dependent channel filtering stays in the Qt-free presenter, so the widgets
+remain thin and the backend Qt-free (Rule 4). The change is additive: existing specs and the
+plane-level workflow are unchanged (the latter now runs *through* the generic interface, with
+its tests rewritten accordingly). Full detail: `docs/processing-engine.md` ("Processing
+Workspace") and `docs/measurement-explorer.md` (Section 7).
+
+---
+
 ## Decision Closure (OHD-1..9 resolved)
 
 | OHD | Topic | Resolution | ADR |

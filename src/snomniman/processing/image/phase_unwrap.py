@@ -26,7 +26,7 @@ import xarray as xr
 from snomniman.core import Capability, ChannelInfo, DataKind, Dataset, Metadata
 from snomniman.core.exceptions import ProcessingError
 from snomniman.processing.registry import register
-from snomniman.processing.step import ParameterSpec, ProcessingStep
+from snomniman.processing.step import CHANNEL_COMPLEX, ParameterSpec, ProcessingStep
 
 
 def unwrap_2d(phase: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
@@ -57,6 +57,7 @@ class PhaseUnwrap(ProcessingStep):
                 "Complex channel whose phase to unwrap (e.g. 'O2').",
                 (str,),
                 required=True,
+                channel_role=CHANNEL_COMPLEX,
             ),
         ]
 

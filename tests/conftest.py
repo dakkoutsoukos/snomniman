@@ -133,6 +133,43 @@ def synthetic_dataset() -> Dataset:
 
 
 @pytest.fixture
+def topography_dataset() -> Dataset:
+    """A real-only 2-D scan (topography Z) - no complex optical or reference channels.
+
+    Exercises the disabled-operation path of the Processing Workspace: operations
+    that require complex/reference capabilities (e.g. reference_normalize) are
+    unavailable on this dataset and must explain why.
+    """
+    ny, nx = 3, 4
+    y = (np.arange(ny, dtype=np.float64) + 0.5) * 50.0
+    x = (np.arange(nx, dtype=np.float64) + 0.5) * 50.0
+    z = np.linspace(700.0, 900.0, ny * nx, dtype=np.float64).reshape(ny, nx)
+    data = xr.Dataset(
+        {"Z": (("y", "x"), z)},
+        coords={
+            "x": ("x", x, {"unit": "nm", "axis": "X"}),
+            "y": ("y", y, {"unit": "nm", "axis": "Y"}),
+        },
+    )
+    metadata = Metadata(
+        data_kind=DataKind.IMAGE,
+        conventions=Conventions(),
+        instrument=Instrument(vendor="neaspec", model="neaSNOM"),
+        excitation=Excitation(),
+        demodulation=Demodulation(),
+        scan=ScanInfo(
+            pixels=(nx, ny), size_nm=(nx * 50.0, ny * 50.0), pixel_size_nm=(50.0, 50.0)
+        ),
+        channels=(ChannelInfo("Z", "topography", "signal", "float64", value_unit="nm"),),
+        original_units={"x": "m", "y": "m", "Z": "m"},
+    )
+    node = ProvenanceNode(
+        node_id="n0", record=StepRecord(step_id="io.read", step_version=1, deterministic=True)
+    )
+    return Dataset(data, kind=DataKind.IMAGE, metadata=metadata, provenance=node)
+
+
+@pytest.fixture
 def make_gsf(tmp_path: Path) -> Callable[..., Path]:
     """Factory writing a synthetic GSF file and returning its path."""
 

@@ -16,10 +16,11 @@ here that changes anything.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -28,9 +29,18 @@ import snomniman.processing.image  # noqa: F401  (registers image ops for applic
 from snomniman import viz
 from snomniman.ai import Briefing, build_briefing
 from snomniman.core import Dataset, Metadata, current_software
-from snomniman.describe import summarize_provenance
-from snomniman.diagnostics import diagnose
+from snomniman.core.exceptions import ProcessingError
+from snomniman.describe import (
+    LineageStep,
+    OperationDescription,
+    OperationParameter,
+    describe_operation,
+    describe_operations,
+    summarize_provenance,
+)
+from snomniman.diagnostics import OperationApplicability, diagnose, operation_applicability
 from snomniman.io import read
+from snomniman.processing import CHANNEL_COMPLEX, CHANNEL_REAL, get_step
 from snomniman.viz import AMPLITUDE, PHASE, REAL, FigureSpec, OverlaySpec, RegionStats, RenderData
 
 # --------------------------------------------------------------------------- #
@@ -192,6 +202,108 @@ class DiagnosticSection:
 
     title: str
     rows: tuple[DiagnosticRow, ...]
+
+
+# --------------------------------------------------------------------------- #
+# Processing-workspace view objects (generic, registry-driven)
+# --------------------------------------------------------------------------- #
+
+#: Form-control kinds a generic parameter editor can render. Derived from each
+#: parameter's declared Python types + ParameterSpec UI hints, so the GUI never
+#: hardcodes a per-operation layout.
+FIELD_INT = "int"
+FIELD_FLOAT = "float"
+FIELD_BOOL = "bool"
+FIELD_CHANNEL = "channel"  # a str parameter naming a channel (choices = channel names)
+FIELD_ENUM = "enum"  # a fixed set of allowed values (choices = the values)
+FIELD_TEXT = "text"  # a free-form string (fallback)
+
+
+@dataclass(frozen=True)
+class OperationField:
+    """One editable operation parameter, projected for a generic form control.
+
+    ``kind`` selects the control (see the ``FIELD_*`` constants); ``choices`` holds
+    the allowed values for ``FIELD_ENUM`` and the eligible channel names (filtered
+    for *this* dataset) for ``FIELD_CHANNEL``, and is empty otherwise.
+    """
+
+    name: str
+    description: str
+    kind: str
+    required: bool
+    default: object | None
+    choices: tuple[object, ...]
+
+
+@dataclass(frozen=True)
+class OperationOption:
+    """A registered operation projected for the Processing Workspace.
+
+    Everything the workspace needs to list the operation, explain whether it can
+    run (and why not), and build its parameter form - all derived from the
+    processing registry, ``ParameterSpec``, and the dataset's capabilities. No
+    field here is operation-specific code; adding a new ``ProcessingStep`` fills
+    this in automatically.
+    """
+
+    step_id: str
+    title: str  # human title derived from step_id ("image.plane_level" -> "Plane Level")
+    group: str  # logical group derived from the step_id namespace ("Image")
+    description: str  # the operation's scientific purpose (its ProcessingStep.description)
+    version: int
+    deterministic: bool
+    applicable: bool  # capability test (from the Diagnostics Engine)
+    already_applied: bool  # this step already appears in the provenance DAG
+    requirements: tuple[str, ...]  # human-readable required capabilities
+    missing: tuple[str, ...]  # human-readable missing capabilities (why unavailable)
+    fields: tuple[OperationField, ...]
+    blocked_reason: str | None  # set if capability-applicable but a required field can't be filled
+
+    @property
+    def available(self) -> bool:
+        """True iff the operation can be previewed now (capabilities + fields)."""
+        return self.applicable and self.blocked_reason is None
+
+
+@dataclass(frozen=True)
+class PreviewPane:
+    """One before/after pane: a labelled spec and its already-rendered data."""
+
+    spec: PaneSpec
+    render: RenderData
+
+
+@dataclass(frozen=True)
+class OperationPreview:
+    """The result of previewing an operation, before it is committed.
+
+    Carries the derived (not-yet-committed) Dataset plus everything needed to
+    explain the derivation: before/after panes, a plain-language change summary
+    (what changes / what stays), and the provenance node that *will* be created.
+    The original Dataset is untouched - accepting simply adopts ``dataset``.
+    """
+
+    step_id: str
+    title: str  # suggested title for the derived dataset
+    dataset: Dataset  # the derived dataset (committed verbatim on Accept)
+    panes: tuple[PreviewPane, ...]
+    changes: tuple[str, ...]  # what this operation will change
+    unchanged: tuple[str, ...]  # what it leaves untouched
+    provenance: ProvenanceStep  # the provenance node that will be recorded
+
+
+#: Human-readable phrases for each capability, for the "why unavailable" message.
+_CAPABILITY_PHRASES = {
+    "spatial_2d": "a 2-D scan (x and y axes)",
+    "spatial_1d": "a line profile (one spatial axis)",
+    "spectral": "a spectral (wavenumber) axis",
+    "complex_optical": "complex optical channels (O{n})",
+    "complex_mechanical": "complex mechanical channels (M{n})",
+    "topography": "a topography channel (Z)",
+    "reference": "reference channels (R_*)",
+    "multi_harmonic": "multiple harmonic orders",
+}
 
 
 #: Comparison preset identifiers (see :meth:`ExplorerModel.comparison_layout`).
@@ -383,23 +495,10 @@ class ExplorerModel:
         # The structured lineage comes from the backend Scientific Description API;
         # this method only formats it for the inspector (backend owns the facts,
         # the GUI owns the words).
-        out: list[ProvenanceStep] = []
-        for step in summarize_provenance(self._ds.provenance).steps:
-            sources = tuple(
-                f"{s.name}: {s.filename} "
-                f"(sha256 {s.sha256[:12]}..., reader {s.reader})"
-                for s in step.sources
-            )
-            out.append(ProvenanceStep(
-                node_id=step.node_id,
-                step_id=step.step_id,
-                description=_step_description(step.step_id),
-                deterministic=step.deterministic,
-                params=dict(step.params),
-                software=dict(step.software),
-                sources=sources,
-            ))
-        return out
+        return [
+            _format_lineage_step(step)
+            for step in summarize_provenance(self._ds.provenance).steps
+        ]
 
     # -- comparison -----------------------------------------------------------
 
@@ -629,6 +728,198 @@ class ExplorerModel:
         """
         return build_briefing(self._ds, title=self._title)
 
+    # -- processing workspace (generic, registry-driven) ----------------------
+
+    def operation_catalog(self) -> list[OperationOption]:
+        """Every registered operation, projected for the Processing Workspace.
+
+        Pure projection of the processing registry + this dataset's capabilities:
+        the list, grouping, availability, "why unavailable", and each operation's
+        parameter form all come from ``describe`` + ``diagnostics`` + the dataset.
+        A newly registered ``ProcessingStep`` appears here automatically, with no
+        GUI change (that is the whole point of the workspace).
+        """
+        apps = {a.step_id: a for a in operation_applicability(self._ds)}
+        return [self._operation_option(d, apps.get(d.step_id)) for d in describe_operations()]
+
+    def operation_option(self, step_id: str) -> OperationOption:
+        """Project one registered operation for the workspace (raises if unknown)."""
+        apps = {a.step_id: a for a in operation_applicability(self._ds)}
+        return self._operation_option(describe_operation(step_id), apps.get(step_id))
+
+    def preview_operation(
+        self, step_id: str, params: Mapping[str, object]
+    ) -> OperationPreview:
+        """Apply ``step_id`` with ``params`` to a *copy* and describe the result.
+
+        Builds the step from the registry, applies it to ``{"primary": dataset}``
+        (the single-input convention every current operation uses), and returns an
+        :class:`OperationPreview` describing the derivation - before/after panes, a
+        change summary, and the provenance node that will be recorded. The active
+        Dataset is **not** modified; the derived Dataset is carried on the preview
+        and committed verbatim only if the user accepts. Raises
+        :exc:`~snomniman.core.ProcessingError` for invalid params or preconditions
+        (the caller surfaces it; nothing is committed).
+        """
+        step = get_step(step_id)(**params)
+        derived = step.apply({"primary": self._ds})
+        changes, unchanged, focus = self._diff_summary(self._ds, derived)
+        panes = self._preview_panes(self._ds, derived, focus)
+        lineage = summarize_provenance(derived.provenance).steps
+        provenance = _format_lineage_step(lineage[-1])
+        return OperationPreview(
+            step_id=step_id,
+            title=self._derived_title(step_id, dict(params)),
+            dataset=derived,
+            panes=panes,
+            changes=changes,
+            unchanged=unchanged,
+            provenance=provenance,
+        )
+
+    def _operation_option(
+        self, desc: OperationDescription, app: OperationApplicability | None
+    ) -> OperationOption:
+        fields = tuple(self._operation_field(p) for p in desc.parameters)
+        applicable = app.applicable if app is not None else True
+        requirements = tuple(
+            _capability_phrase(c) for c in (app.required_capabilities if app else ())
+        )
+        missing = tuple(
+            _capability_phrase(c) for c in (app.missing_capabilities if app else ())
+        )
+        blocked = self._blocked_reason(fields) if applicable else None
+        return OperationOption(
+            step_id=desc.step_id,
+            title=_operation_title(desc.step_id),
+            group=_operation_group(desc.step_id),
+            description=desc.description,
+            version=desc.version,
+            deterministic=desc.deterministic,
+            applicable=applicable,
+            already_applied=app.already_applied if app is not None else False,
+            requirements=requirements,
+            missing=missing,
+            fields=fields,
+            blocked_reason=blocked,
+        )
+
+    def _operation_field(self, p: OperationParameter) -> OperationField:
+        """Map one parameter (types + UI hints) to a generic form-control descriptor."""
+        if p.channel_role is not None:
+            return OperationField(
+                p.name, p.description, FIELD_CHANNEL, p.required, p.default,
+                self._channels_for_role(p.channel_role),
+            )
+        if p.choices is not None:
+            return OperationField(
+                p.name, p.description, FIELD_ENUM, p.required, p.default, tuple(p.choices)
+            )
+        return OperationField(
+            p.name, p.description, _scalar_kind(p.types), p.required, p.default, ()
+        )
+
+    def _channels_for_role(self, role: str) -> tuple[str, ...]:
+        """Channel names of *this* dataset eligible for a channel parameter's role."""
+        names = self._ds.channel_names
+        if role == CHANNEL_REAL:
+            return tuple(n for n in names if not self._ds.is_complex(n))
+        if role == CHANNEL_COMPLEX:
+            return tuple(n for n in names if self._ds.is_complex(n))
+        return tuple(names)
+
+    @staticmethod
+    def _blocked_reason(fields: tuple[OperationField, ...]) -> str | None:
+        """Why a capability-applicable operation still cannot run on this dataset."""
+        for f in fields:
+            if f.required and f.kind == FIELD_CHANNEL and not f.choices:
+                return f"this measurement has no eligible channel for '{f.name}'"
+        return None
+
+    def _derived_title(self, step_id: str, params: dict[str, object]) -> str:
+        title = _operation_title(step_id).lower()
+        for p in describe_operation(step_id).parameters:
+            if p.channel_role is not None and p.name in params:
+                return f"{self._title} -> {title} ({params[p.name]})"
+        return f"{self._title} -> {title}"
+
+    # -- preview diff (generic: compares the derived dataset to the current one) --
+
+    def _diff_summary(
+        self, before: Dataset, after: Dataset
+    ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+        before_names = list(before.channel_names)
+        after_names = list(after.channel_names)
+        before_set, after_set = set(before_names), set(after_names)
+        added = [c for c in after_names if c not in before_set]
+        removed = [c for c in before_names if c not in after_set]
+        common = [c for c in after_names if c in before_set]
+        shape_changed = dict(before.data.sizes) != dict(after.data.sizes)
+        modified = [
+            c for c in common
+            if before.channel(c).values.shape == after.channel(c).values.shape
+            and not _arrays_equal(before.channel(c).values, after.channel(c).values)
+        ]
+
+        changes: list[str] = []
+        if shape_changed:
+            changes.append(_shape_change_line(before, after))
+        changes.extend(_added_channel_line(after, c) for c in added)
+        changes.extend(f"Removes channel {c}." for c in removed)
+        changes.extend(f"Recomputes channel {c}." for c in modified)
+        changes.extend(_state_change_lines(before, after))
+        phase_line = _phase_reference_change(before, after)
+        if phase_line is not None:
+            changes.append(phase_line)
+
+        focus_source = [*modified, *added] or [self._channel]
+        ordered = ([self._channel] if self._channel in focus_source else []) + [
+            c for c in focus_source if c != self._channel
+        ]
+        focus = tuple(c for c in ordered[:2] if c in after_set or c in before_set)
+
+        unchanged = _unchanged_lines(before, after, modified, added, removed, shape_changed)
+        return tuple(changes), unchanged, focus
+
+    def _preview_panes(
+        self, before: Dataset, after: Dataset, focus: tuple[str, ...]
+    ) -> tuple[PreviewPane, ...]:
+        panes: list[PreviewPane] = []
+        for channel in focus:
+            panes.extend(self._before_panes(before, after, channel))
+            rep = viz.default_representation(after, channel)
+            is_new = channel not in before.channel_names
+            label = f"{channel} (new)" if is_new else f"{channel} (after)"
+            panes.append(
+                PreviewPane(
+                    PaneSpec(channel, rep, label=label),
+                    viz.prepare_channel(after, channel, rep),
+                )
+            )
+        return tuple(panes)
+
+    def _before_panes(
+        self, before: Dataset, after: Dataset, channel: str
+    ) -> list[PreviewPane]:
+        if channel in before.channel_names:
+            rep = viz.default_representation(before, channel)
+            return [
+                PreviewPane(
+                    PaneSpec(channel, rep, label=f"{channel} (before)"),
+                    viz.prepare_channel(before, channel, rep),
+                )
+            ]
+        # An added channel had no "before"; show the source it was derived from.
+        source, rep = _derived_source(before, after, channel)
+        if source is None:
+            return []
+        return [
+            PreviewPane(
+                PaneSpec(source, rep, label=f"{source} (before)"),
+                viz.prepare_channel(before, source, rep),
+            )
+        ]
+
     def _x_coords(self) -> npt.NDArray[np.float64]:
         return np.asarray(self._ds.coordinate("x").values, dtype=np.float64)
 
@@ -762,11 +1053,153 @@ def _convention_items(m: Metadata) -> tuple[MetadataItem, ...]:
 
 
 def _step_description(step_id: str) -> str:
+    """A reading-friendly description of a provenance step.
+
+    The raw-import node is not a registered operation; every other step's words
+    come from the operation's own ``ProcessingStep.description`` (single source of
+    truth - no per-operation table to maintain here).
+    """
     if step_id == "io.read":
         return "Imported the raw measurement from the vendor files."
-    if step_id == "image.plane_level":
-        return "Subtracted a fitted polynomial surface from the target channel."
-    return step_id
+    try:
+        return get_step(step_id).description
+    except ProcessingError:
+        return step_id
+
+
+def _format_lineage_step(step: LineageStep) -> ProvenanceStep:
+    """Format one Description-API lineage node for the inspector / preview."""
+    sources = tuple(
+        f"{s.name}: {s.filename} (sha256 {s.sha256[:12]}..., reader {s.reader})"
+        for s in step.sources
+    )
+    return ProvenanceStep(
+        node_id=step.node_id,
+        step_id=step.step_id,
+        description=_step_description(step.step_id),
+        deterministic=step.deterministic,
+        params=dict(step.params),
+        software=dict(step.software),
+        sources=sources,
+    )
+
+
+def _operation_title(step_id: str) -> str:
+    """Human title from a step_id: ``image.plane_level`` -> ``Plane Level``."""
+    return step_id.split(".")[-1].replace("_", " ").title()
+
+
+def _operation_group(step_id: str) -> str:
+    """Logical group from a step_id namespace: ``image.plane_level`` -> ``Image``."""
+    head = step_id.split(".")[0] if "." in step_id else "general"
+    return head.replace("_", " ").title()
+
+
+def _capability_phrase(value: str) -> str:
+    return _CAPABILITY_PHRASES.get(value, value)
+
+
+def _scalar_kind(types: tuple[str, ...]) -> str:
+    """Form-control kind for a scalar parameter from its accepted type names."""
+    if "bool" in types:  # bool is a subclass of int - test it first
+        return FIELD_BOOL
+    if "float" in types:  # (int, float) accepts floats -> use the float control
+        return FIELD_FLOAT
+    if "int" in types:
+        return FIELD_INT
+    return FIELD_TEXT
+
+
+def _arrays_equal(a: npt.NDArray[Any], b: npt.NDArray[Any]) -> bool:
+    """True iff two arrays are equal (NaN==NaN), comparing complex by components."""
+    a = np.asarray(a)
+    b = np.asarray(b)
+    if a.shape != b.shape:
+        return False
+    if np.iscomplexobj(a) or np.iscomplexobj(b):
+        return _arrays_equal(a.real, b.real) and _arrays_equal(a.imag, b.imag)
+    if np.issubdtype(a.dtype, np.floating):
+        return bool(np.array_equal(a, b, equal_nan=True))
+    return bool(np.array_equal(a, b))
+
+
+def _shape_change_line(before: Dataset, after: Dataset) -> str:
+    bx, by = int(before.data.sizes["x"]), int(before.data.sizes["y"])
+    ax, ay = int(after.data.sizes["x"]), int(after.data.sizes["y"])
+    return f"Restricts the field of view to {ax}x{ay} pixels (was {bx}x{by})."
+
+
+def _added_channel_line(after: Dataset, channel: str) -> str:
+    attrs = after.data[channel].attrs
+    bits: list[str] = []
+    quantity = attrs.get("quantity")
+    if isinstance(quantity, str) and quantity:
+        bits.append(quantity.replace("_", " "))
+    unit = attrs.get("unit")
+    if isinstance(unit, str) and unit:
+        bits.append(unit)
+    suffix = f" ({', '.join(bits)})" if bits else ""
+    source = attrs.get("derived_from")
+    if isinstance(source, str) and source:
+        return f"Adds channel {channel}{suffix}, derived from {source}."
+    return f"Adds channel {channel}{suffix}."
+
+
+def _state_change_lines(before: Dataset, after: Dataset) -> list[str]:
+    before_states = {c.canonical: c.state for c in before.metadata.channels}
+    lines: list[str] = []
+    for c in after.metadata.channels:
+        old = before_states.get(c.canonical)
+        if old is not None and c.state != old:
+            lines.append(f"Marks {c.canonical} as {c.state}.")
+    return lines
+
+
+def _phase_reference_change(before: Dataset, after: Dataset) -> str | None:
+    old = before.metadata.conventions.phase_reference
+    new = after.metadata.conventions.phase_reference
+    if new != old and new:
+        return f"Re-references phase to: {new}."
+    return None
+
+
+def _unchanged_lines(
+    before: Dataset,
+    after: Dataset,
+    modified: list[str],
+    added: list[str],
+    removed: list[str],
+    shape_changed: bool,
+) -> tuple[str, ...]:
+    lines = ["The raw measurement is untouched; this records a new derived dataset."]
+    touched = set(modified) | set(added) | set(removed)
+    untouched = [c for c in before.channel_names if c not in touched]
+    if untouched and not shape_changed:
+        kept = ", ".join(untouched)
+        lines.append(f"{len(untouched)} other channel(s) keep their values: {kept}.")
+    if not shape_changed:
+        lines.append("Coordinates and field of view are unchanged.")
+    conv = before.metadata.conventions
+    if _phase_reference_change(before, after) is None:
+        lines.append(f"Conventions unchanged ({conv.spatial_unit}, {conv.origin} origin).")
+    return tuple(lines)
+
+
+def _derived_source(
+    before: Dataset, after: Dataset, channel: str
+) -> tuple[str | None, str]:
+    """The source channel + best 'before' representation for an added channel.
+
+    Data-driven (reads the new channel's ``derived_from``/``quantity`` attrs the
+    operation chose to set), so it is generic - no step_id is hardcoded.
+    """
+    attrs = after.data[channel].attrs
+    source = attrs.get("derived_from")
+    if isinstance(source, str) and source in before.channel_names:
+        if attrs.get("quantity") == "unwrapped_phase" and before.is_complex(source):
+            return source, PHASE
+        return source, viz.default_representation(before, source)
+    return None, REAL
 
 
 def _fmt_value(value: float | None, unit: str) -> str:
@@ -793,6 +1226,12 @@ def _pair(value: tuple[float, float] | tuple[int, int] | None, fmt: str) -> str:
 
 
 __all__ = [
+    "FIELD_BOOL",
+    "FIELD_CHANNEL",
+    "FIELD_ENUM",
+    "FIELD_FLOAT",
+    "FIELD_INT",
+    "FIELD_TEXT",
     "PRESET_AMP_PHASE",
     "PRESET_HARMONIC_SERIES",
     "PRESET_LABELS",
@@ -806,7 +1245,11 @@ __all__ = [
     "MeasurementIdentity",
     "MetadataItem",
     "MetadataSection",
+    "OperationField",
+    "OperationOption",
+    "OperationPreview",
     "PaneSpec",
+    "PreviewPane",
     "ProfileCurve",
     "ProfileSet",
     "ProvenanceStep",

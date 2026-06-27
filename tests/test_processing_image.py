@@ -222,12 +222,13 @@ def test_default_order_is_1() -> None:
 
 
 def test_order_0_raises() -> None:
-    with pytest.raises(ProcessingError, match="order must be 1, 2, or 3"):
+    # order is constrained by ParameterSpec(choices=(1, 2, 3)); validate rejects it.
+    with pytest.raises(ProcessingError, match=r"one of \[1, 2, 3\]"):
         PlaneLevel(order=0)
 
 
 def test_order_4_raises() -> None:
-    with pytest.raises(ProcessingError, match="order must be 1, 2, or 3"):
+    with pytest.raises(ProcessingError, match=r"one of \[1, 2, 3\]"):
         PlaneLevel(order=4)
 
 

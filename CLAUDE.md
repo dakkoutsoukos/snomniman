@@ -30,14 +30,17 @@ rather than repeating them.
 > The user-facing experience is the **Measurement Explorer** (`snomniman.gui`,
 > PySide6 + PyQtGraph; `python -m snomniman.gui <dir>`): open a measurement,
 > browse/compare channels, inspect metadata/provenance/diagnostics, read a Scientific
-> Briefing, measure profiles/ROI stats, export publication figures, and apply plane
-> leveling via an explicit Preview -> Accept/Cancel derivation - never mutating the raw
-> measurement (the newer operations are first-class in the engine/Description/
-> Diagnostics/AI; their Explorer preview UI is the next step). 305 tests pass;
-> `ruff`, `mypy --strict`, and the Qt-free invariant
-> (subprocess-checked) are green. All OHD-1..9 settled. The AI is orientation-only
-> (no recommendations, no execution) and grounded entirely in the deterministic layers
-> (`docs/ai-scientist-v1.md`; GUI Rule 9 gates every GUI feature).
+> Briefing, measure profiles/ROI stats, export publication figures, and apply **any**
+> registered operation through one generic, registry-driven **Processing Workspace**
+> (ADR-0021): it lists every step (grouped, with availability + a plain reason when an
+> operation does not apply), builds each parameter form automatically from the step's
+> `ParameterSpec`, and runs one identical Preview -> (what changes / what stays / the
+> provenance to be recorded) -> Accept/Cancel derivation - never mutating the raw
+> measurement. Adding a new operation needs **no GUI code** (implement, register,
+> declare params + capabilities). 318 tests pass; `ruff`, `mypy --strict`, and the
+> Qt-free invariant (subprocess-checked) are green. All OHD-1..9 settled. The AI is
+> orientation-only (no recommendations, no execution) and grounded entirely in the
+> deterministic layers (`docs/ai-scientist-v1.md`; GUI Rule 9 gates every GUI feature).
 
 This is documentation-driven development: keep `/docs` authoritative and in sync
 with code.

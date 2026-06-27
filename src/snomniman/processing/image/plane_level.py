@@ -22,7 +22,7 @@ import xarray as xr
 from snomniman.core import Capability, DataKind, Dataset, Metadata
 from snomniman.core.exceptions import ProcessingError
 from snomniman.processing.registry import register
-from snomniman.processing.step import ParameterSpec, ProcessingStep
+from snomniman.processing.step import CHANNEL_REAL, ParameterSpec, ProcessingStep
 
 
 def _poly_design_matrix(
@@ -91,6 +91,7 @@ class PlaneLevel(ProcessingStep):
                 (str,),
                 required=False,
                 default="Z",
+                channel_role=CHANNEL_REAL,
             ),
             ParameterSpec(
                 "order",
@@ -98,18 +99,9 @@ class PlaneLevel(ProcessingStep):
                 (int,),
                 required=False,
                 default=1,
+                choices=(1, 2, 3),
             ),
         ]
-
-    @classmethod
-    def validate(cls, params: Mapping[str, Any]) -> dict[str, Any]:
-        out = super().validate(params)
-        order: int = out["order"]
-        if not (1 <= order <= 3):
-            raise ProcessingError(
-                f"{cls.step_id}: order must be 1, 2, or 3; got {order!r}"
-            )
-        return out
 
     def _execute(
         self, inputs: Mapping[str, Dataset]

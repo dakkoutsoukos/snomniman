@@ -1664,3 +1664,99 @@ complete.
   operation panel** for the Explorer (registry + `param_specs`-driven form + per-op
   preview) so the new verbs are usable in the GUI. Then a concrete AI
   `NarrativeProvider` (optional extra). Design-first; real-user validation.
+
+---
+
+## 2026-06-27 - Generic, registry-driven Processing Workspace (ADR-0021)
+
+Committed the scientific-vocabulary milestone (reference_normalize, phase_unwrap,
+crop) as `feat(processing): add reference normalize, phase unwrap, and crop`, then
+built the milestone the user identified as the real bottleneck: **not another
+algorithm, but the universal interface to algorithms**. The Explorer's Process tab is
+now one generic, registry-driven Processing Workspace that exposes *every* registered
+operation. The plane-level-specific panel/wiring is gone; the next operation needs no
+GUI code. No new architectural layer; the engine and Explorer were not redesigned.
+
+### Completed
+- **`ParameterSpec` UI hints (backend, `snomniman.processing.step`):** added two
+  optional, defaulted fields - `choices` (a fixed enum; now also enforced by
+  `validate()`) and `channel_role` (`CHANNEL_ANY`/`CHANNEL_REAL`/`CHANNEL_COMPLEX`,
+  marking a `str` param as naming a channel of that kind). They are pure UI/validation
+  hints - they never change a computed result. Annotated `image.plane_level.channel`
+  (`real`) + `order` (`choices=(1,2,3)`, which let the redundant custom order-range
+  `validate` override be removed - Rule 8) and `image.phase_unwrap.channel`
+  (`complex`). Exported the channel-role constants from `snomniman.processing`.
+- **Description API projection:** `describe.OperationParameter` gained `choices` +
+  `channel_role`; `_describe_parameter` fills them - so the registry catalogue fully
+  reports each operation's parameter schema (the GUI never re-reads `ParameterSpec`).
+- **Presenter (`gui.model.ExplorerModel`, Qt-free) - the generic engine:** new
+  view-objects (`OperationField`/`OperationOption`/`PreviewPane`/`OperationPreview` +
+  `FIELD_*` kinds) and methods: `operation_catalog()` / `operation_option(step_id)`
+  (project `describe_operations` + Diagnostics `operation_applicability` + the dataset
+  into a grouped, available/explained list with a per-dataset, role-filtered parameter
+  form), and `preview_operation(step_id, params)` (build the step, apply to
+  `{"primary": ds}`, **diff** the derived vs current dataset to report generically what
+  changes / what stays / the provenance to record). The diff is fully generic - no
+  step_id is hardcoded; the added-channel "before" view is chosen from the new
+  channel's own `derived_from`/`quantity` attrs. Refactored `provenance_steps` to share
+  one lineage formatter, and `_step_description` now sources every operation's words
+  from its registered `ProcessingStep.description` (single source of truth).
+- **Widget (`gui.process.ProcessingWorkspace`, replaces `ProcessPanel`):** a thin,
+  generic surface - a grouped operation tree (unavailable ops visible but disabled with
+  a plain reason), an auto-generated parameter form (numbers -> spin boxes, `bool` ->
+  checkbox, `choices` -> selector, `channel_role` -> filtered channel picker), one
+  Preview/Accept/Cancel button set, and a preview panel showing the change summary +
+  the provenance to be recorded. No operation-specific code; it maps field descriptors
+  to controls and back, and emits intent signals.
+- **Window wiring (`gui.window`):** replaced the plane-level handlers
+  (`_on_preview_requested(channel, order)`) with generic ones routed through the model;
+  the before/after still reuses the comparison view; history/back unchanged.
+- **Verified** on the synthetic dataset (offscreen + a probe): all four ops appear
+  grouped under "Image" with correct forms (plane_level -> real channel + order 1/2/3;
+  phase_unwrap -> complex channel; crop -> four nm bounds; reference_normalize -> no
+  params); each previews with an accurate, generic change summary (e.g. crop "restricts
+  the field of view to 2x2 (was 4x3)"; reference_normalize surfaces the explicit phase
+  re-reference, OHD-6D); the original Dataset stays frozen throughout.
+
+### Decisions
+- **ADR-0021** (generic, registry-driven Processing Workspace; no per-operation GUI).
+  Key calls recorded there: UI hints belong on `ParameterSpec` not in the GUI (Rule 4 -
+  "which channels an operation accepts" is scientific knowledge); "what changes" is
+  computed by diffing the actual preview (generic, no per-op upkeep) rather than
+  declared; no multi-input form yet (Rule 7 - no multi-input operation exists; the
+  single-input `{"primary": ds}` convention covers every step); no new GUI abstraction
+  layer (the registry + `ParameterSpec` + the Qt-free presenter already suffice).
+
+### Issues Found
+- Adding `choices=(1,2,3)` to `order` made `PlaneLevel.validate`'s range check
+  redundant and would have changed its error message; removed the override and updated
+  the two order-range tests to match the `choices` message (behaviour preserved:
+  order outside {1,2,3} still rejected). No other regressions - the `describe`/JSON and
+  AI/diagnostics tests passed unchanged (the new `OperationParameter` fields default to
+  `None`).
+
+### Tests / gates
+- 318 total (up from 305; net +13): a new Qt-free
+  `tests/test_gui_workspace_model.py` (21 tests - catalogue discovery, auto parameter
+  forms, channel-role filtering, availability + disabled-operation explanations,
+  preview content for all four ops, invalid-param errors, immutability) and a rewritten
+  `tests/test_gui_process.py` (18 window-wiring tests - catalogue tree, form building,
+  the Preview/Accept/Cancel lifecycle, history, and the *same* workflow driving
+  phase_unwrap / reference_normalize / crop end-to-end), replacing the 26
+  plane-level-specific tests. Added a shared `topography_dataset` fixture to
+  `conftest.py`. `ruff` clean; `mypy --strict` clean (78 files); Qt-free invariant
+  green.
+
+### Documentation
+- `docs/processing-engine.md` - documented `choices`/`channel_role`, the new
+  `validate()` choices rule, a "Processing Workspace" section, and refreshed the
+  preview-model + multi-input-example sections to match what shipped.
+  `docs/measurement-explorer.md` - Section 7 "Realized" note (the Workspace implements
+  "every operation is a derivation"; new operations inherit it). `docs/decisions.md` -
+  ADR-0021. `CLAUDE.md` status (Workspace + 318). This entry; `NEXT.md` (task 24 done).
+
+### Next recommended
+- `image.line_flatten` (now nearly GUI-free: implement + register + declare
+  params/capabilities and it appears in the Workspace automatically). Then a concrete
+  AI `NarrativeProvider` (optional extra, its own ADR) - at which point the AI can
+  recommend a registered operation and the Workspace already knows how to present it.

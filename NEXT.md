@@ -3,7 +3,7 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-27 (scientific vocabulary: reference_normalize, phase_unwrap, crop)
+**Last updated:** 2026-06-27 (generic, registry-driven Processing Workspace)
 
 ---
 
@@ -45,18 +45,21 @@ Implemented:
   **panels/window** widgets; **colormap**; **app/__main__** entry point).
 
 **Now implemented since:** processing engine + a growing operation vocabulary
-(`image.plane_level` with full Explorer Preview->Accept/Cancel; plus
-`image.reference_normalize`, `image.phase_unwrap`, `image.crop` - first-class in the
-engine/provenance/Description API/Diagnostics/AI, validated, but not yet wired into
-the Explorer preview UI), provenance-preserving figure export, the Scientific
-Description API, the Scientific Diagnostics Engine (+ Explorer Diagnostics tab), and
-the AI Scientist v1 - a deterministic **Scientific Briefing** (+ Explorer Briefing
-tab; provider seam, no model SDK).
-**Still NOT implemented (out of scope so far):** a generic Explorer operation panel
-(registry/`param_specs`-driven) to preview the newer ops; a concrete AI narrative
-provider (only the seam exists); AI recommendations/execution; batch; further
-operations (`image.line_flatten`, masking, background subtraction); and Zarr-export of
-derived datasets from the GUI.
+(`image.plane_level`, `image.reference_normalize`, `image.phase_unwrap`,
+`image.crop` - first-class in the engine/provenance/Description API/Diagnostics/AI)
+**all exposed through one generic, registry-driven Processing Workspace** (ADR-0021):
+the Explorer's Process tab lists every registered step (grouped, with availability +
+"why unavailable"), auto-builds each parameter form from `ParameterSpec`
+(`choices`/`channel_role` hints), and runs one identical Preview -> (what changes /
+what stays / provenance) -> Accept/Cancel derivation - adding a new operation needs no
+GUI code. Plus provenance-preserving figure export, the Scientific Description API,
+the Scientific Diagnostics Engine (+ Explorer Diagnostics tab), and the AI Scientist
+v1 - a deterministic **Scientific Briefing** (+ Explorer Briefing tab; provider seam,
+no model SDK).
+**Still NOT implemented (out of scope so far):** a concrete AI narrative provider
+(only the seam exists); AI recommendations/execution; batch; further operations
+(`image.line_flatten`, masking, background subtraction); a multi-input operation form
+(no multi-input op exists yet); and Zarr-export of derived datasets from the GUI.
 
 ---
 
@@ -188,13 +191,20 @@ in impact order:
 23. **`image.line_flatten`** - per-scan-line polynomial subtraction (removes
     line-to-line offsets/drift); the genuinely-new flattening verb (distinct from the
     surface flatten plane_level already provides). Same pattern: register, declare
-    `required_capabilities` (`spatial_2d`), validate analytically.
-24. **Generic Explorer operation panel** - make the Process panel registry-driven:
-    list registered ops, build a parameter form from each op's `param_specs()`
-    (channel combos for `str` channel params, spin boxes for numbers), and route
-    Preview->Accept/Cancel through a per-op preview. Replaces the plane-level-specific
-    `_on_preview_requested(channel, order)` wiring (and its ~30 tests). A deliberate UI
-    task - the only piece of the new vocabulary not yet usable in the GUI.
+    `required_capabilities` (`spatial_2d`), validate analytically. **It will appear in
+    the Explorer automatically** - the Processing Workspace is now generic (task 24),
+    so this needs essentially no GUI work; the milestone is the algorithm + tests.
+24. [x] **Generic Explorer operation panel (Processing Workspace)** - the Process tab
+    is now registry-driven: it lists every registered op (grouped, with availability +
+    a plain "why unavailable"), builds each parameter form from `param_specs()`
+    (channel pickers from a new `channel_role` hint, selectors from `choices`, spin
+    boxes for numbers), and runs one generic Preview -> (change summary + provenance
+    preview) -> Accept/Cancel that diffs the derived dataset against the current one.
+    `ParameterSpec` gained `choices`/`channel_role` UI hints (projected by
+    `describe.OperationParameter`); the plane-level-specific wiring is gone (plane
+    level now runs *through* the generic interface). 31 new tests (Qt-free model +
+    window wiring); 318 total green. ADR-0021; `docs/processing-engine.md`
+    ("Processing Workspace"). *Done 2026-06-27.*
 25. **Concrete AI narrative provider** - add ONE real provider behind the existing
     `NarrativeProvider` seam as an *optional* extra (`uv sync --extra ai`),
     lazy-imported, never required for backend/CI; wire provider selection so the

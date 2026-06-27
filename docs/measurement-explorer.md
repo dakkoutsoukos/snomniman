@@ -308,6 +308,16 @@ under these additions - the test of a sound mental model.
   spine of navigation. A pipeline is a path through the derivation graph; building
   one simply grows branches. "Explore before you process" means processing is
   entered *from* understanding, as a natural next step.
+  *Realized:* the **Processing Workspace** (the Process tab) is one generic,
+  registry-driven surface for *every* operation - it lists the registered steps
+  (grouped, with availability and a plain reason when an operation does not apply),
+  builds each parameter form automatically from the operation's `ParameterSpec`, and
+  runs one identical Preview -> (what changes / what stays / the provenance to be
+  recorded) -> Accept/Cancel flow that records a new derivation without ever touching
+  the raw measurement. A newly added operation appears here with **no GUI work** -
+  implement, register, declare its parameters and required capabilities, and it is
+  immediately discoverable, configurable, previewable, and recordable. (Details:
+  `docs/processing-engine.md`, "Processing Workspace".)
 - **AI-generated analyses** - more derivations (Section 5), already first-class.
 - **Publication workflows** - a figure is a derivation that carries its provenance;
   exporting creates a figure-derivation from the current understanding.

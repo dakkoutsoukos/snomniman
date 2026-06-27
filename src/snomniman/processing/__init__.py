@@ -20,9 +20,18 @@ Concrete operations live in sub-packages by domain::
 """
 
 from .registry import get_step, list_steps, register
-from .step import ParameterSpec, ProcessingStep
+from .step import (
+    CHANNEL_ANY,
+    CHANNEL_COMPLEX,
+    CHANNEL_REAL,
+    ParameterSpec,
+    ProcessingStep,
+)
 
 __all__ = [
+    "CHANNEL_ANY",
+    "CHANNEL_COMPLEX",
+    "CHANNEL_REAL",
     "ParameterSpec",
     "ProcessingStep",
     "get_step",

@@ -152,13 +152,23 @@ class ProvenanceSummary:
 
 @dataclass(frozen=True)
 class OperationParameter:
-    """One parameter a processing operation accepts."""
+    """One parameter a processing operation accepts.
+
+    ``choices`` and ``channel_role`` mirror the operation's
+    :class:`~snomniman.processing.ParameterSpec` UI hints: ``choices`` is a fixed
+    set of allowed values (an enum) or ``None``; ``channel_role`` marks a ``str``
+    parameter as naming a real/complex/any channel (``"real"`` / ``"complex"`` /
+    ``"any"``) or ``None``. They let a generic consumer build the right control
+    without operation-specific code.
+    """
 
     name: str
     description: str
     types: tuple[str, ...]  # accepted Python type names
     required: bool
     default: Any
+    choices: tuple[Any, ...] | None = None
+    channel_role: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: _jsonify(v) for k, v in asdict(self).items()}

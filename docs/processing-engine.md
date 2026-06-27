@@ -78,12 +78,15 @@ class ParameterSpec:
     py_type: tuple[type[Any], ...]   # accepted Python types for isinstance()
     required: bool = True
     default: Any = None              # used when required=False
+    choices: tuple[Any, ...] | None = None   # fixed allowed values (an enum)
+    channel_role: str | None = None          # marks a str param as naming a channel
 ```
 
-`ProcessingStep.validate()` enforces three rules:
+`ProcessingStep.validate()` enforces these rules:
 
 - **No unknown names** - any key not in `param_specs` raises `ProcessingError`.
 - **Correct type** - `isinstance(value, spec.py_type)` must hold.
+- **In `choices`** - if `choices` is set, a value outside it raises `ProcessingError`.
 - **Required params present** - missing required params raise `ProcessingError`.
 
 `params` returned by `validate()` (and stored as `step.params`) must be
@@ -91,25 +94,47 @@ JSON-serializable Python scalars (str, int, float, bool, None). No NumPy
 scalars, no ndarrays. This constraint keeps the provenance DAG fully
 serializable without any special encoding.
 
+### Declarative UI hints (`choices`, `channel_role`)
+
+`choices` and `channel_role` are optional, declarative hints that let a *generic*
+parameter editor build the correct control with **no operation-specific code** -
+they never change an operation's computed result:
+
+- `choices` - a fixed set of allowed values (e.g. `image.plane_level`'s
+  `order=(1, 2, 3)`). A consumer renders a selector; `validate()` also enforces it.
+- `channel_role` - one of `CHANNEL_ANY` / `CHANNEL_REAL` / `CHANNEL_COMPLEX`
+  (`snomniman.processing`). It marks a `str` parameter as naming a channel of that
+  kind, so a consumer can offer a channel picker filtered to the channels the
+  operation accepts (`image.plane_level.channel` is `real`;
+  `image.phase_unwrap.channel` is `complex`). The dataset is not available at
+  `validate()` time, so the operation still validates the chosen channel in
+  `_execute`; `channel_role` only drives the *form*.
+
+Why on `ParameterSpec` and not in the GUI: which channels an operation can accept
+is *scientific* knowledge, and Rule 4 keeps such knowledge out of GUI code. The
+operation declares it as data; the Description API projects it
+(`OperationParameter.choices` / `.channel_role`); the Explorer's Processing
+Workspace consumes it. See "Processing Workspace" below.
+
 ---
 
 ## Preview model
 
-The engine has no special preview state. To preview a step before committing,
-the caller:
+The engine has no special preview state - it is purely functional, so a preview is
+just an `apply()` whose result has not been committed. To preview a step, the caller:
 
-1. Creates a spatially-cropped copy of the input Dataset (a sliced xr.Dataset
-   wrapping a new xarray.Dataset slice).
-2. Calls `step.apply({"primary": cropped})` to produce the preview result.
-3. Renders the result.
-4. If the researcher accepts, calls `step.apply({"primary": full_dataset})`.
+1. Builds the step from the registry with the chosen params.
+2. Calls `step.apply({"primary": dataset})` to produce the derived Dataset.
+3. Renders it (and, in the Explorer, diffs it against the current dataset to
+   summarise what changes).
+4. If the researcher accepts, that *same* derived Dataset is committed; if they
+   cancel, it is simply discarded.
 
-`apply()` on a small slice is identical in behaviour to `apply()` on the full
-data - the engine is purely functional. There are no "preview mode" flags,
-callbacks, or side channels.
-
-This means the GUI preview layer is entirely in the GUI (future work). The
-backend knows nothing about preview vs commit.
+This is exactly what the Explorer's Processing Workspace does (the live dataset is
+small enough to apply in full). There are no "preview mode" flags, callbacks, or
+side channels: the backend knows nothing about preview vs commit. Previewing on a
+spatially-cropped slice first (identical behaviour, less compute) is a future
+optimisation for large/hyperspectral data, not a change to this contract.
 
 ---
 
@@ -127,17 +152,19 @@ The resulting provenance DAG is serializable with `serialize_dag()` /
 `deserialize_dag()` (from `snomniman.core`) and is stored in the canonical
 Zarr project store alongside the data.
 
-**Multi-input example** (reference normalization, future):
+**Multi-input example** (e.g. background subtraction across two measurements,
+future - no registered operation is multi-input yet; `image.reference_normalize`
+is single-input because signal and reference share one measurement):
 
 ```python
-step = ReferenceNormalize(harmonic=2)
+step = SubtractBackground()
 result = step.apply({
-    "sample":    dataset_sample,
-    "reference": dataset_reference,
+    "sample":     dataset_sample,
+    "background": dataset_background,
 })
 # result.provenance.inputs == {
-#     "sample":    dataset_sample.provenance,
-#     "reference": dataset_reference.provenance,
+#     "sample":     dataset_sample.provenance,
+#     "background": dataset_background.provenance,
 # }
 ```
 
@@ -167,11 +194,46 @@ operation is **`image.line_flatten`** (per-scan-line polynomial subtraction, whi
 removes line-to-line offsets/drift rather than a global surface); it is the next
 flattening verb to add, not a rename of an existing one.
 
-**Explorer exposure.** Every operation is usable through the engine (`apply`) and is
-first-class in Description/Diagnostics/AI. The Explorer's *Preview -> Accept/Cancel*
-GUI currently wires `image.plane_level`; exposing arbitrary operations through that
-flow needs a registry-driven, `param_specs`-built parameter form (a deliberate UI
-task, tracked in `NEXT.md`), not new engine work.
+**Explorer exposure.** Every operation is usable through the engine (`apply`), is
+first-class in Description/Diagnostics/AI, **and is exposed in the Explorer's
+Processing Workspace automatically** (see below) - no per-operation GUI code.
+
+---
+
+## Processing Workspace (the one generic GUI surface)
+
+The Explorer exposes *every* registered operation through a single, registry-driven
+**Processing Workspace** (`snomniman.gui.process.ProcessingWorkspace`, fed by the
+Qt-free `ExplorerModel`). There is **no operation-specific UI**: adding a step makes
+it appear with discoverability, a parameter editor, preview, provenance preview, and
+accept/cancel - for free.
+
+Everything the workspace shows is a projection of the engine + the dataset:
+
+- **Discovery & grouping** - the operation list comes from `describe_operations()`,
+  grouped by step_id namespace (`image.*` -> "Image"), titled from the step_id
+  (`image.plane_level` -> "Plane Level").
+- **Availability & "why unavailable"** - from the Diagnostics Engine's
+  `operation_applicability` (capability test); unavailable operations stay visible
+  and explain which capabilities the measurement lacks.
+- **Parameter form** - generated from each `ParameterSpec`: numbers -> spin boxes,
+  `bool` -> checkbox, `choices` -> a selector, `channel_role` -> a channel picker
+  filtered (real/complex) for the current dataset. No hardcoded layouts.
+- **Preview / Accept / Cancel** - identical for every operation. The model runs
+  `step.apply({"primary": dataset})` on the live dataset (the engine is purely
+  functional; previewing is just applying without committing), then **diffs** the
+  derived dataset against the current one to report, generically, *what will change*
+  (recomputed/added/removed channels, field-of-view changes, channel-state and
+  phase-reference changes) and *what stays the same*. Before/after panes reuse the
+  comparison view.
+- **Provenance preview** - the exact `StepRecord` (step_id, params, input dataset)
+  that Accept will record; Accept simply adopts the previewed derived dataset.
+
+The raw measurement is never mutated: a preview is a throwaway derived Dataset, and
+Accept records a new node in the provenance DAG (the original remains reachable via
+the Explorer's history). Multi-input operations are not yet surfaced in the form (no
+registered operation is multi-input today); when one exists, the workspace gains an
+auxiliary-input picker - the rest of the flow is unchanged.
 
 ---
 

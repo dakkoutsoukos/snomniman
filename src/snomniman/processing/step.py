@@ -30,7 +30,7 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Final
 
 import xarray as xr
 
@@ -45,6 +45,19 @@ from snomniman.core import (
 )
 from snomniman.core.exceptions import ProcessingError
 
+#: ``channel_role`` values: a ``str`` parameter that names a dataset channel.
+#: They let a consumer (e.g. the Explorer's generic operation form) offer a
+#: channel picker filtered to the channels the operation can actually accept -
+#: scientific knowledge that therefore lives with the operation, not the GUI
+#: (Rule 4). They do not affect :meth:`ProcessingStep.validate` (the dataset is
+#: not available then); each step still validates the chosen channel in
+#: ``_execute``.
+CHANNEL_ANY: Final = "any"  #: any channel of the dataset
+CHANNEL_REAL: Final = "real"  #: real-valued channels only (e.g. topography Z)
+CHANNEL_COMPLEX: Final = "complex"  #: complex channels only (e.g. optical O{n})
+
+_CHANNEL_ROLES: Final = frozenset({CHANNEL_ANY, CHANNEL_REAL, CHANNEL_COMPLEX})
+
 
 @dataclass(frozen=True)
 class ParameterSpec:
@@ -55,6 +68,22 @@ class ParameterSpec:
 
         ParameterSpec("order", "Harmonic order.", (int,))
         ParameterSpec("value", "A real number.", (int, float))
+
+    ``choices`` and ``channel_role`` are optional, declarative *UI hints* that
+    let a generic parameter editor build the right control without any
+    operation-specific code:
+
+    - ``choices`` - a fixed set of allowed values (an enum). When set, a value
+      outside it is rejected by :meth:`validate`, and a consumer renders a
+      selector rather than a free field.
+    - ``channel_role`` - one of :data:`CHANNEL_ANY` / :data:`CHANNEL_REAL` /
+      :data:`CHANNEL_COMPLEX`; marks a ``str`` parameter as naming a channel of
+      that kind, so a consumer can offer a channel picker filtered to the
+      channels the operation accepts (the operation still validates in
+      ``_execute``).
+
+    Both default to ``None`` (no hint); they never change an operation's
+    computed result.
     """
 
     name: str
@@ -62,6 +91,15 @@ class ParameterSpec:
     py_type: tuple[type[Any], ...]
     required: bool = True
     default: Any = None
+    choices: tuple[Any, ...] | None = None
+    channel_role: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.channel_role is not None and self.channel_role not in _CHANNEL_ROLES:
+            raise ValueError(
+                f"ParameterSpec {self.name!r}: channel_role must be one of "
+                f"{sorted(_CHANNEL_ROLES)} or None, got {self.channel_role!r}"
+            )
 
 
 class ProcessingStep(ABC):
@@ -154,6 +192,11 @@ class ProcessingStep(ABC):
                     f"{step_name}: parameter {name!r} must be "
                     f"one of {spec.py_type!r}, got {type(value).__name__!r}"
                 )
+            if spec.choices is not None and value not in spec.choices:
+                raise ProcessingError(
+                    f"{step_name}: parameter {name!r} must be one of "
+                    f"{list(spec.choices)!r}, got {value!r}"
+                )
             out[name] = value
 
         missing = [
@@ -223,4 +266,10 @@ class ProcessingStep(ABC):
         """
 
 
-__all__ = ["ParameterSpec", "ProcessingStep"]
+__all__ = [
+    "CHANNEL_ANY",
+    "CHANNEL_COMPLEX",
+    "CHANNEL_REAL",
+    "ParameterSpec",
+    "ProcessingStep",
+]

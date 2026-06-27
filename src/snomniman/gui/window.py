@@ -20,18 +20,23 @@ from typing import Any
 from PySide6 import QtCore, QtWidgets
 
 from snomniman import viz
-from snomniman.core import Dataset
 from snomniman.core.exceptions import ProcessingError
-from snomniman.viz import REAL, RenderData
+from snomniman.viz import RenderData
 
 from .briefing import BriefingPanel
 from .comparison import ComparisonView, ContactSheet
 from .diagnostics import DiagnosticsPanel
 from .imageview import ChannelImageView
 from .measurement import MeasurementController, MeasurementPanel
-from .model import PRESET_LABELS, ExplorerModel, MeasurementIdentity, PaneSpec
+from .model import (
+    PRESET_LABELS,
+    ExplorerModel,
+    MeasurementIdentity,
+    OperationPreview,
+    PaneSpec,
+)
 from .panels import ChannelBrowser, MetadataInspector, ProvenanceInspector
-from .process import ProcessPanel
+from .process import ProcessingWorkspace
 
 
 class MeasurementExplorerWindow(QtWidgets.QMainWindow):
@@ -41,9 +46,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         super().__init__()
         self._model = model
         self._history: list[ExplorerModel] = []
-        self._preview_ds: Dataset | None = None
-        self._preview_channel: str = ""
-        self._preview_order: int = 1
+        self._preview: OperationPreview | None = None
 
         self._title = QtWidgets.QLabel()
         self._facts = QtWidgets.QLabel()
@@ -59,7 +62,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._conventions = QtWidgets.QLabel()
         self._diagnostics = DiagnosticsPanel()
         self._briefing = BriefingPanel()
-        self._process = ProcessPanel()
+        self._process = ProcessingWorkspace()
         # Measurements are read-only observations placed on the single image; they
         # report across the single view's channels (current + phase + topography).
         self._measure = MeasurementController(model, self._image, model.single_view_specs)
@@ -153,7 +156,8 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._contact.channelSelected.connect(self._on_channel_selected)
         # Measurements live on the single image; adding one focuses that view.
         self._measure.measurementAdded.connect(self._show_single)
-        # Processing signals
+        # Processing signals (generic, registry-driven workspace)
+        self._process.operationSelected.connect(self._on_operation_selected)
         self._process.previewRequested.connect(self._on_preview_requested)
         self._process.previewAccepted.connect(self._on_preview_accepted)
         self._process.previewCancelled.connect(self._on_preview_cancelled)
@@ -172,7 +176,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         )
         self._diagnostics.set_report(self._model.diagnostics_report())
         self._briefing.set_briefing(self._model.scientific_briefing())
-        self._process.set_channels(self._real_channels())
+        self._process.set_catalog(self._model.operation_catalog())
         self._browser.select(self._model.current_channel)
         self._show_single()
 
@@ -200,7 +204,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
     def _navigate_back(self) -> None:
         if not self._history:
             return
-        self._preview_ds = None
+        self._preview = None
         self._process.set_preview_mode(False)
         self._update_model(self._history.pop(), push_history=False)
 
@@ -209,13 +213,6 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._back_btn.setVisible(has_history)
         if has_history:
             self._back_btn.setText(f"← Back to {self._history[-1].title}")
-
-    def _real_channels(self) -> list[str]:
-        """Real-valued (non-complex) channels of the current dataset."""
-        return [
-            ch for ch in self._model.dataset.channel_names
-            if not self._model.dataset.is_complex(ch)
-        ]
 
     # -- view switching -------------------------------------------------------
 
@@ -235,54 +232,51 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._stack.setCurrentWidget(self._contact)
         self._active.setText(f"Contact sheet  -  {len(specs)} optical harmonics")
 
-    # -- processing (plane level and future operations) -----------------------
+    # -- processing (generic: any registered operation, no per-op wiring) ------
 
-    def _on_preview_requested(self, channel: str, order: int) -> None:
-        from snomniman.processing.image.plane_level import PlaneLevel
+    def _on_operation_selected(self, step_id: str) -> None:
+        """Show the selected operation's description + parameter form."""
+        self._process.show_operation(self._model.operation_option(step_id))
 
-        step = PlaneLevel(channel=channel, order=order)
+    def _on_preview_requested(self, step_id: str, params: dict[str, Any]) -> None:
+        """Run the operation on a copy and show a before/after preview.
+
+        The model does the science (build the step, apply it, diff the result); the
+        window only lays the panes out and reveals the summary. Nothing is
+        committed - the derived dataset rides on the preview until Accept.
+        """
         try:
-            preview_ds = step.apply({"primary": self._model.dataset})
+            preview = self._model.preview_operation(step_id, params)
         except ProcessingError as exc:
             QtWidgets.QMessageBox.warning(self, "Preview failed", str(exc))
             return
 
-        self._preview_ds = preview_ds
-        self._preview_channel = channel
-        self._preview_order = order
-
-        preview_model = ExplorerModel(preview_ds, title="preview")
-        orig_spec = PaneSpec(channel, REAL, label=f"{channel} (original)")
-        leveled_spec = PaneSpec(channel, REAL, label=f"{channel} (leveled, order {order})")
-
-        orig_rd = self._model.render_spec(PaneSpec(channel, REAL))
-        leveled_rd = preview_model.render_spec(PaneSpec(channel, REAL))
-        renders: dict[PaneSpec, RenderData] = {orig_spec: orig_rd, leveled_spec: leveled_rd}
-
-        self._comparison.set_panes([orig_spec, leveled_spec], renders.__getitem__)
+        self._preview = preview
+        specs = [pane.spec for pane in preview.panes]
+        renders: dict[PaneSpec, RenderData] = {pane.spec: pane.render for pane in preview.panes}
+        self._comparison.set_panes(specs, renders.__getitem__)
         self._stack.setCurrentWidget(self._comparison)
         self._active.setText(
-            f"Preview: plane level on '{channel}' (order {order})"
-            " — Apply to commit, Cancel to discard"
+            f"Preview: {self._operation_title(step_id)} — Accept to commit, Cancel to discard"
         )
+        self._process.show_preview(preview)
         self._process.set_preview_mode(True)
 
     def _on_preview_accepted(self) -> None:
-        if self._preview_ds is None:
+        if self._preview is None:
             return
-        ch = self._preview_channel
-        derived_title = f"{self._model.title} → plane leveled ({ch})"
-        new_model = ExplorerModel(self._preview_ds, title=derived_title)
-        self._preview_ds = None
-        self._preview_channel = ""
+        new_model = ExplorerModel(self._preview.dataset, title=self._preview.title)
+        self._preview = None
         self._process.set_preview_mode(False)
         self._update_model(new_model)
 
     def _on_preview_cancelled(self) -> None:
-        self._preview_ds = None
-        self._preview_channel = ""
+        self._preview = None
         self._process.set_preview_mode(False)
         self._show_single()
+
+    def _operation_title(self, step_id: str) -> str:
+        return self._model.operation_option(step_id).title
 
     # -- publication export ---------------------------------------------------
 

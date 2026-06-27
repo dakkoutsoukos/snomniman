@@ -194,6 +194,8 @@ def _describe_parameter(spec: ParameterSpec) -> OperationParameter:
         types=tuple(t.__name__ for t in spec.py_type),
         required=spec.required,
         default=spec.default,
+        choices=spec.choices,
+        channel_role=spec.channel_role,
     )
 
 

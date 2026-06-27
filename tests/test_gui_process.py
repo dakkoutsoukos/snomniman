@@ -1,8 +1,10 @@
-"""Integration tests for the processing workflow in the Measurement Explorer.
+"""Integration tests for the generic Processing Workspace in the Explorer window.
 
-Covers the process panel, before/after preview, accept/cancel, model switching,
-history navigation, and the cardinal invariant: the original dataset is never
-modified by any derivation.
+Covers the registry-driven workspace wiring: the operation catalogue populates the
+tree, selecting an operation builds its parameter form, and the
+Preview -> Accept/Cancel lifecycle, history navigation, and dataset immutability all
+work through one interface for *every* operation (not just plane level). The
+backend of the workspace is covered Qt-free in ``test_gui_workspace_model.py``.
 
 All tests run headless (offscreen Qt) and skip cleanly when PySide6 is absent.
 """
@@ -27,13 +29,19 @@ from snomniman.gui.window import MeasurementExplorerWindow
 
 
 def _is_shown(widget: QtWidgets.QWidget) -> bool:
-    """Return True if the widget was explicitly shown (setVisible(True) was called).
-
-    Qt's isVisible() requires the full ancestor chain to be visible, so it
-    returns False for widgets inside a non-show()n window.  WA_WState_Hidden
-    tracks the widget's own explicit hide state independently of its ancestors.
-    """
+    """True if the widget was explicitly shown (independent of ancestor visibility)."""
     return not widget.testAttribute(Qt.WidgetAttribute.WA_WState_Hidden)
+
+
+def _image_group_children(window: MeasurementExplorerWindow) -> list[str]:
+    """Step ids listed under the 'Image' group in the workspace tree."""
+    tree = window._process._tree
+    for i in range(tree.topLevelItemCount()):
+        group = tree.topLevelItem(i)
+        if group is not None and group.text(0) == "Image":
+            children = [group.child(j) for j in range(group.childCount())]
+            return [c.data(0, Qt.ItemDataRole.UserRole) for c in children if c is not None]
+    return []
 
 
 @pytest.fixture
@@ -46,229 +54,202 @@ def window(qapp: Any, synthetic_dataset: Dataset) -> Iterator[MeasurementExplore
 
 
 # --------------------------------------------------------------------------- #
-# Panel existence and population
+# Catalogue discovery + the Process tab
 # --------------------------------------------------------------------------- #
 
 
-def test_process_panel_exists(window: MeasurementExplorerWindow) -> None:
-    assert window._process is not None
-
-
-def test_process_panel_in_inspect_tabs(window: MeasurementExplorerWindow) -> None:
+def test_workspace_in_inspect_tabs(window: MeasurementExplorerWindow) -> None:
     tabs = window._inspect_tabs
     labels = [tabs.tabText(i) for i in range(tabs.count())]
     assert "Process" in labels
 
 
-def test_process_panel_shows_real_channels_only(
-    window: MeasurementExplorerWindow, qapp: Any
+def test_catalog_populates_tree_with_all_operations(window: MeasurementExplorerWindow) -> None:
+    children = _image_group_children(window)
+    assert {
+        "image.crop",
+        "image.phase_unwrap",
+        "image.plane_level",
+        "image.reference_normalize",
+    } <= set(children)
+
+
+def test_selecting_operation_builds_parameter_form(window: MeasurementExplorerWindow) -> None:
+    window._on_operation_selected("image.plane_level")
+    assert set(window._process._fields) == {"channel", "order"}
+    assert window._process.current_params() == {"channel": "Z", "order": 1}
+
+
+def test_selecting_no_param_operation_builds_empty_form(
+    window: MeasurementExplorerWindow,
 ) -> None:
-    qapp.processEvents()
-    combo = window._process._channel_combo
-    items = [combo.itemText(i) for i in range(combo.count())]
-    assert "Z" in items, "real channel Z must be in the selector"
-    # Complex channels must not appear
-    for complex_ch in ("O2", "O3", "R_O2", "M1"):
-        assert complex_ch not in items, f"complex channel {complex_ch!r} must not appear"
+    window._on_operation_selected("image.reference_normalize")
+    assert window._process._fields == {}
+    assert window._process.current_params() == {}
+
+
+def test_unavailable_operation_disables_preview(
+    qapp: Any, topography_dataset: Dataset
+) -> None:
+    win = MeasurementExplorerWindow(ExplorerModel(topography_dataset))
+    try:
+        win._on_operation_selected("image.reference_normalize")
+        # reference_normalize needs complex optical + reference channels Z lacks.
+        assert not win._process._preview_btn.isEnabled()
+    finally:
+        win.close()
+        win.deleteLater()
+        qapp.processEvents()
 
 
 # --------------------------------------------------------------------------- #
-# Preview: shows comparison with two labeled panes
+# Preview: a before/after comparison, identical lifecycle for every operation
 # --------------------------------------------------------------------------- #
 
 
-def test_preview_switches_to_comparison_view(
-    window: MeasurementExplorerWindow, qapp: Any
-) -> None:
-    window._on_preview_requested("Z", 1)
+def test_preview_switches_to_comparison(window: MeasurementExplorerWindow, qapp: Any) -> None:
+    window._on_preview_requested("image.plane_level", {"channel": "Z", "order": 1})
     qapp.processEvents()
     assert window._stack.currentWidget() is window._comparison
-
-
-def test_preview_shows_two_panes(window: MeasurementExplorerWindow, qapp: Any) -> None:
-    window._on_preview_requested("Z", 1)
-    qapp.processEvents()
     assert len(window._comparison.specs) == 2
 
 
-def test_preview_panes_have_labels(window: MeasurementExplorerWindow, qapp: Any) -> None:
-    window._on_preview_requested("Z", 1)
+def test_preview_enters_preview_mode(window: MeasurementExplorerWindow, qapp: Any) -> None:
+    window._on_operation_selected("image.plane_level")
+    window._on_preview_requested("image.plane_level", {"channel": "Z", "order": 1})
     qapp.processEvents()
-    specs = window._comparison.specs
-    assert any("original" in (s.label or "") for s in specs)
-    assert any("leveled" in (s.label or "") for s in specs)
+    assert _is_shown(window._process._apply_btn)
+    assert _is_shown(window._process._cancel_btn)
+    assert not window._process._preview_btn.isEnabled()
+    assert not window._process._tree.isEnabled()  # catalogue locked during preview
+    assert _is_shown(window._process._preview_box)
 
 
 def test_preview_does_not_change_model(window: MeasurementExplorerWindow, qapp: Any) -> None:
     original_model = window._model
-    window._on_preview_requested("Z", 1)
+    window._on_preview_requested("image.plane_level", {"channel": "Z", "order": 1})
     qapp.processEvents()
     assert window._model is original_model
 
 
-def test_preview_mode_disables_preview_btn(
-    window: MeasurementExplorerWindow, qapp: Any
+def test_preview_failure_shows_warning_and_keeps_state(
+    window: MeasurementExplorerWindow, qapp: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # isEnabled() is reliable regardless of parent visibility; isVisible() is not
-    # (it requires the full ancestor chain to be visible — i.e. window.show()).
-    window._on_preview_requested("Z", 1)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox, "warning", lambda *a, **k: calls.append(a[2] if len(a) > 2 else "")
+    )
+    original_model = window._model
+    # plane_level on a complex channel is invalid -> ProcessingError -> warning.
+    window._on_preview_requested("image.plane_level", {"channel": "O2", "order": 1})
     qapp.processEvents()
-    assert not window._process._preview_btn.isEnabled()
+    assert calls, "a warning should have been shown"
+    assert window._model is original_model
+    assert window._preview is None
 
 
 # --------------------------------------------------------------------------- #
-# Cancel: discard preview and return to single view
+# Cancel
 # --------------------------------------------------------------------------- #
 
 
 def test_cancel_restores_single_view(window: MeasurementExplorerWindow, qapp: Any) -> None:
-    window._on_preview_requested("Z", 1)
-    qapp.processEvents()
+    window._on_preview_requested("image.plane_level", {"channel": "Z", "order": 1})
     window._on_preview_cancelled()
     qapp.processEvents()
     assert window._stack.currentWidget() is window._image
+    assert window._preview is None
 
 
 def test_cancel_does_not_change_model(window: MeasurementExplorerWindow, qapp: Any) -> None:
     original_model = window._model
-    window._on_preview_requested("Z", 1)
+    window._on_preview_requested("image.plane_level", {"channel": "Z", "order": 1})
     window._on_preview_cancelled()
     qapp.processEvents()
     assert window._model is original_model
-
-
-def test_cancel_leaves_no_preview_ds(window: MeasurementExplorerWindow, qapp: Any) -> None:
-    window._on_preview_requested("Z", 1)
-    window._on_preview_cancelled()
-    qapp.processEvents()
-    assert window._preview_ds is None
-
-
-def test_cancel_restores_preview_btn(window: MeasurementExplorerWindow, qapp: Any) -> None:
-    window._on_preview_requested("Z", 1)
-    window._on_preview_cancelled()
-    qapp.processEvents()
-    assert window._process._preview_btn.isEnabled()
-    assert not window._process._apply_btn.isVisible()
+    assert not _is_shown(window._process._apply_btn)
 
 
 # --------------------------------------------------------------------------- #
-# Accept: commit the derivation
+# Accept: commit the derivation (the original measurement is preserved)
 # --------------------------------------------------------------------------- #
 
 
-def test_accept_updates_model(window: MeasurementExplorerWindow, qapp: Any) -> None:
+def test_accept_commits_new_dataset(window: MeasurementExplorerWindow, qapp: Any) -> None:
     original_ds = window._model.dataset
-    window._on_preview_requested("Z", 1)
+    window._on_preview_requested("image.plane_level", {"channel": "Z", "order": 2})
     window._on_preview_accepted()
     qapp.processEvents()
     assert window._model.dataset is not original_ds
-
-
-def test_accepted_model_is_not_raw(window: MeasurementExplorerWindow, qapp: Any) -> None:
-    window._on_preview_requested("Z", 1)
-    window._on_preview_accepted()
-    qapp.processEvents()
     assert not window._model.dataset.is_raw
-
-
-def test_accepted_model_provenance_records_step(
-    window: MeasurementExplorerWindow, qapp: Any
-) -> None:
-    window._on_preview_requested("Z", 1)
-    window._on_preview_accepted()
-    qapp.processEvents()
     assert window._model.dataset.provenance.record.step_id == "image.plane_level"
+    assert window._model.dataset.provenance.record.params == {"channel": "Z", "order": 2}
 
 
-def test_accepted_model_provenance_params(
+def test_accept_returns_to_single_view_and_shows_back(
     window: MeasurementExplorerWindow, qapp: Any
 ) -> None:
-    window._on_preview_requested("Z", 2)
-    window._on_preview_accepted()
-    qapp.processEvents()
-    params = window._model.dataset.provenance.record.params
-    assert params["channel"] == "Z"
-    assert params["order"] == 2
-
-
-def test_accept_returns_to_single_view(window: MeasurementExplorerWindow, qapp: Any) -> None:
-    window._on_preview_requested("Z", 1)
+    window._on_preview_requested("image.plane_level", {"channel": "Z", "order": 1})
     window._on_preview_accepted()
     qapp.processEvents()
     assert window._stack.currentWidget() is window._image
-
-
-def test_accept_restores_preview_btn(window: MeasurementExplorerWindow, qapp: Any) -> None:
-    window._on_preview_requested("Z", 1)
-    window._on_preview_accepted()
-    qapp.processEvents()
-    assert window._process._preview_btn.isEnabled()
-    assert not window._process._apply_btn.isVisible()
-
-
-# --------------------------------------------------------------------------- #
-# Navigation: back button and history
-# --------------------------------------------------------------------------- #
-
-
-def test_back_button_hidden_initially(window: MeasurementExplorerWindow) -> None:
-    assert not _is_shown(window._back_btn)
-
-
-def test_back_button_appears_after_accept(
-    window: MeasurementExplorerWindow, qapp: Any
-) -> None:
-    window._on_preview_requested("Z", 1)
-    window._on_preview_accepted()
-    qapp.processEvents()
     assert _is_shown(window._back_btn)
+    assert not _is_shown(window._process._apply_btn)
 
 
-def test_back_button_label_names_previous(
-    window: MeasurementExplorerWindow, qapp: Any
-) -> None:
-    original_title = window._model.title
-    window._on_preview_requested("Z", 1)
-    window._on_preview_accepted()
-    qapp.processEvents()
-    assert original_title in window._back_btn.text()
-
-
-def test_navigate_back_restores_original_model(
-    window: MeasurementExplorerWindow, qapp: Any
-) -> None:
+def test_navigate_back_restores_original(window: MeasurementExplorerWindow, qapp: Any) -> None:
     original_ds = window._model.dataset
-    window._on_preview_requested("Z", 1)
+    window._on_preview_requested("image.plane_level", {"channel": "Z", "order": 1})
     window._on_preview_accepted()
     qapp.processEvents()
     window._navigate_back()
     qapp.processEvents()
     assert window._model.dataset is original_ds
-
-
-def test_navigate_back_hides_back_button(
-    window: MeasurementExplorerWindow, qapp: Any
-) -> None:
-    window._on_preview_requested("Z", 1)
-    window._on_preview_accepted()
-    qapp.processEvents()
-    window._navigate_back()
-    qapp.processEvents()
+    assert len(window._history) == 0
     assert not _is_shown(window._back_btn)
 
 
-def test_history_empty_after_back(window: MeasurementExplorerWindow, qapp: Any) -> None:
-    window._on_preview_requested("Z", 1)
+# --------------------------------------------------------------------------- #
+# Genericity: the SAME workflow drives non-plane-level operations, no extra wiring
+# --------------------------------------------------------------------------- #
+
+
+def test_phase_unwrap_through_generic_workflow(
+    window: MeasurementExplorerWindow, qapp: Any
+) -> None:
+    window._on_operation_selected("image.phase_unwrap")
+    window._on_preview_requested("image.phase_unwrap", {"channel": "O2"})
+    qapp.processEvents()
+    assert window._stack.currentWidget() is window._comparison
     window._on_preview_accepted()
     qapp.processEvents()
-    window._navigate_back()
+    assert "O2_phase_unwrapped" in window._model.dataset.channel_names
+    assert window._model.dataset.provenance.record.step_id == "image.phase_unwrap"
+
+
+def test_reference_normalize_through_generic_workflow(
+    window: MeasurementExplorerWindow, qapp: Any
+) -> None:
+    window._on_operation_selected("image.reference_normalize")
+    window._on_preview_requested("image.reference_normalize", {})
+    window._on_preview_accepted()
     qapp.processEvents()
-    assert len(window._history) == 0
+    assert window._model.dataset.provenance.record.step_id == "image.reference_normalize"
+
+
+def test_crop_through_generic_workflow(window: MeasurementExplorerWindow, qapp: Any) -> None:
+    window._on_operation_selected("image.crop")
+    window._on_preview_requested(
+        "image.crop", {"x_min": 0.0, "x_max": 120.0, "y_min": 0.0, "y_max": 120.0}
+    )
+    window._on_preview_accepted()
+    qapp.processEvents()
+    assert dict(window._model.dataset.data.sizes) == {"x": 2, "y": 2}
+    assert window._model.dataset.provenance.record.step_id == "image.crop"
 
 
 # --------------------------------------------------------------------------- #
-# Cardinal invariant: original dataset is immutable through the whole workflow
+# Cardinal invariant: the original dataset is immutable through the whole workflow
 # --------------------------------------------------------------------------- #
 
 
@@ -277,22 +258,8 @@ def test_original_dataset_immutable_through_accept(
 ) -> None:
     ds = window._model.dataset
     before = {name: ds.channel(name).values.copy() for name in ds.channel_names}
-    window._on_preview_requested("Z", 1)
+    window._on_preview_requested("image.plane_level", {"channel": "Z", "order": 1})
     window._on_preview_accepted()
-    qapp.processEvents()
-    for name, arr in before.items():
-        np.testing.assert_array_equal(ds.channel(name).values, arr, err_msg=name)
-        assert ds.channel(name).data.flags.writeable is False
-
-
-def test_original_dataset_immutable_after_back(
-    window: MeasurementExplorerWindow, qapp: Any
-) -> None:
-    ds = window._model.dataset
-    before = {name: ds.channel(name).values.copy() for name in ds.channel_names}
-    window._on_preview_requested("Z", 1)
-    window._on_preview_accepted()
-    window._navigate_back()
     qapp.processEvents()
     for name, arr in before.items():
         np.testing.assert_array_equal(ds.channel(name).values, arr, err_msg=name)
