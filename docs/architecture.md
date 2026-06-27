@@ -59,12 +59,19 @@ reverse). `core` imports nothing else in the project. There are no cycles.
 backend imports `gui`; no cycles. Checked in CI (a dependency/import test; the
 Qt-free part is already enforced by `tests/test_smoke.py`).
 
+**Scientific Description API:** `snomniman.describe` is a Qt-free, read-only layer
+(depends on `core` + `processing`; the `pipeline` tier) that projects the core and
+the step registry into structured, JSON-serializable descriptors. It is consumed by
+`gui`/`batch` (and later `ai`); `viz` stays `core`-only and does not use it. It adds
+no state and performs no scientific computation. Full detail:
+`docs/description-api.md` (ADR-0018).
+
 **Future AI layer:** the long-term architecture adds a `snomniman.ai` analysis
-layer that sits above `core` (consuming `Dataset`, `Metadata`, and `Provenance`)
-without modifying them. AI-generated outputs are recorded as provenance nodes.
-AI is a first-class analysis subsystem, not a UI add-on. Full principles:
-`CLAUDE.md` (AI Architecture Principles section) and `docs/ai-principles.md`
-(to be written when AI design begins).
+layer that sits above `core` (consuming `Dataset`, `Metadata`, and `Provenance`,
+via the `snomniman.describe` projection) without modifying them. AI-generated
+outputs are recorded as provenance nodes. AI is a first-class analysis subsystem,
+not a UI add-on. Full principles: `CLAUDE.md` (AI Architecture Principles section)
+and `docs/ai-principles.md` (to be written when AI design begins).
 
 ## 3. Module responsibilities
 
@@ -115,6 +122,20 @@ AI is a first-class analysis subsystem, not a UI add-on. Full principles:
     normalization, baseline, atmospheric correction, averaging.
   - `common/`: masking, unit conversion (recorded), statistics/ROI reduction.
   - Phase operations are always explicit and recorded - never silent (OHD-6D).
+
+### `snomniman.describe` - the Scientific Description API (depends on `processing`, `core`)
+- A Qt-free, **read-only** projection of the scientific core (`Dataset`, `Metadata`,
+  provenance, `RawSource`) and the step registry into structured, typed,
+  JSON-serializable *descriptors* (`MeasurementDescription`, `ChannelDescription`,
+  `MetadataSummary`, `ProvenanceSummary`, `OperationDescription`, ...).
+- Answers "what is this measurement, what does it contain, where did it come from,
+  and what operations exist?" in one canonical place. Performs no scientific
+  computation and never mutates inputs; reports honest values (`None` for unknown -
+  formatting is a consumer concern).
+- Exists for present-day consumers (Explorer, publication/provenance export,
+  reports, debugging, tests); a future `ai` layer is one more client. It does **not**
+  modify the processing engine and registers nothing itself.
+- **Implemented.** See `docs/description-api.md` (ADR-0018).
 
 ### `snomniman.pipeline` - reproducibility engine (depends on `processing`, `core`)
 - The **provenance DAG** (OHD-2): nodes are operations with named inputs, allowing

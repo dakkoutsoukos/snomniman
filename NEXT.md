@@ -3,28 +3,35 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-26 (quantitative measurement tools: profiles, distance, ROI)
+**Last updated:** 2026-06-26 (Scientific Description API)
 
 ---
 
 ## Current Phase
 
 **Phase 1 is COMPLETE** (backend + Zarr round-trip) and the **read-only Measurement
-Explorer** now spans understand -> compare -> measure:
+Explorer is COMPLETE**: understand -> compare -> measure -> publish, all without
+ever changing the measurement.
 - **Quantitative visualization:** colorbar + histogram with units, interactive
   contrast (display-only), cross-channel cursor readout under the image.
-- **Comparative exploration:** side-by-side presets (Amplitude/Phase,
-  Optical/Topography, Sample/Reference, Harmonic series) with synchronized
+- **Comparative exploration:** side-by-side presets with synchronized
   zoom/pan/cursor (crosshair in every pane + shared readout) + harmonic contact sheet.
 - **Quantitative measurement:** draggable line / rectangle / polygon overlays
-  (read-only, amber, live) giving a line **profile** across every visible channel
-  with length/dx/dy, and **ROI statistics** (mean/median/min/max/std, area) per
-  channel; a session **measurement history** (rename/hide/delete). Validated math in
-  Qt-free `viz.measure` (known-answer tests, Rule 6).
+  (read-only, amber, live): line **profile** across every visible channel with
+  length/dx/dy, **ROI statistics** per channel, a session history (rename/hide/delete).
+- **Publication export:** save the current view (single / comparison / harmonic /
+  measurement) as a publication figure (PDF/PNG/SVG) with colorbars, scale bar,
+  overlays, and a **provenance sidecar** (measurement + sha256, channels, ranges,
+  colormaps, conventions, software versions, timestamp) that **regenerates** the
+  figure. `viz.figure` (Qt-free matplotlib).
 
-These closed Must-haves #1-#3 from `docs/product-review-v0.1.md`. Verified on the real
-CdO measurement (e.g. a region's Z height reads 835.9 nm). `ruff`, `mypy --strict`,
-and `pytest` (146 passed) are green; the backend stays Qt-free. Committed on `main`.
+These closed Must-haves #1-#4 from `docs/product-review-v0.1.md`. Verified on the real
+CdO measurement (publication figures render at quality; a region's Z height reads
+835.9 nm). `ruff`, `mypy --strict`, and `pytest` (157 passed) are green; the backend
+stays Qt-free. Committed on `main`.
+
+**The project is now ready for PROCESSING** - the first features that *change* data
+(as recorded, non-destructive derivations).
 
 Launch: `python -m snomniman.gui [measurement-directory]` (requires the `gui`
 extra: `uv sync --extra gui`).
@@ -103,12 +110,40 @@ in impact order:
     area) across every visible channel; draggable read-only overlays + a session
     history (rename/hide/delete). *Done 2026-06-26:* `viz.measure` (validated math)
     + model methods + `gui.measurement` (controller/panel).
-15. **Provenance-preserving export** of the current view (a captioned figure + the
-    numbers, not a bare screenshot). *(Last read-only Must-have; now the top item.)*
-16. **First processing derivations** - topography leveling + reference normalization,
-    as explicit, recorded, non-destructive steps. *Sequence after export* (explore
-    before you process); each returns a new Dataset whose provenance appends one
-    StepRecord, never silent (OHD-2/5/6D); the Zarr store already persists the DAG.
+15. [x] **Provenance-preserving export** - save the current view as a publication
+    figure (PDF/PNG/SVG) with colorbars/scale bar/overlays + a provenance sidecar
+    that regenerates it. *Done 2026-06-26:* `viz.figure` (FigureSpec, render, export,
+    render_from_record) + model `figure_spec` + GUI "Export figure...".
+    **This completes the read-only Explorer.**
+16. [x] **Processing engine framework** - `ProcessingStep` ABC + `ParameterSpec` +
+    step registry (`register`/`get_step`/`list_steps`). Every future operation
+    must use this machinery. `ProcessingError` added to `snomniman.core`.
+    39 tests covering registration, param validation, immutability, provenance
+    (step_id/version/params/software/inputs), multi-input DAG, JSON serialization,
+    and chained DAG round-trip. `docs/processing-engine.md` created.
+    *Done 2026-06-26.*
+17. [x] **First processing derivation: `image.plane_level`** - polynomial plane /
+    surface fit (order 1-3) on a real-valued channel; Preview → Accept/Cancel
+    workflow in the Explorer; linear history stack with "Back" navigation.
+    Validated analytically (tilted plane residual ≈ 0, paraboloid residual ≈ 0).
+    33 GUI integration tests + 23 backend tests. *Done 2026-06-26.*
+18. [x] **Scientific Description API (`snomniman.describe`)** - a Qt-free, read-only
+    layer projecting the scientific core + the step registry into structured,
+    JSON-serializable descriptors (`describe_measurement` / `describe_channels` /
+    `summarize_metadata` / `summarize_provenance` / `describe_operations`). Built for
+    *present-day* consumers (Explorer, export, reports, debugging, tests); a future
+    AI layer is one more client (Rule 7 - justified by today's architecture, not by
+    AI). The Explorer's provenance view is wired as the first live consumer (output
+    unchanged). 11 tests incl. a real-data golden, a JSON round-trip, and the
+    non-mutation invariant. ADR-0018; `docs/description-api.md`. *Done 2026-06-26.*
+19. **Next processing derivation: `image.reference_normalize`** - complex
+    sample/reference division (`step_id="image.reference_normalize"`), multi-input
+    step (`{"sample": ds, "reference": ref_ds}`).  Implement as a second
+    `ProcessingStep` subclass; the framework and Explorer workflow already support
+    multi-input apply and linear history. The Process panel will need a "Reference
+    channel" selector (second combo box) to pick the reference.  Validate:
+    `ref_normalize(sample, ref) * ref = sample` analytically.  After that:
+    `image.phase_unwrap` (unwrapped phase as a first-class channel, OHD-4).
 
 **Deferred refinements (read-only, lower priority):** mirror a measurement overlay
 into every comparison pane (results are already multi-channel); a measurement

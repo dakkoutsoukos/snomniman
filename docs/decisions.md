@@ -172,6 +172,35 @@ requirements; `DataKind` drives UX and defaults.
 **Consequences.** New modalities add capabilities without enum-driven core edits,
 while users still see a clear dataset type.
 
+## ADR-0018 - Scientific Description API (`snomniman.describe`)  [ACCEPTED]
+**Context.** Several present-day consumers (the Measurement Explorer, publication/
+provenance export, future reports, debugging, tests) each need the same structured
+answers about a measurement - kind, channels, capabilities, conventions, lineage,
+available operations - and were re-deriving them independently. A future AI layer
+will need the same context. Rule 7 forbids speculative abstraction, so the
+justification must stand on present-day value, not on anticipated AI.
+**Decision.** Add a Qt-free backend package `snomniman.describe` that projects the
+scientific core (`Dataset`, `Metadata`, the provenance DAG, `RawSource`) and the
+processing registry into structured, typed, JSON-serializable *descriptors*. It is
+strictly **read-only**: no scientific computation, no mutation, no provenance
+bypass. It depends on `core` + `processing` only (the `pipeline` tier) and is
+consumed by `gui`, `batch`, and the future `ai` layer - **not** by `viz` (which
+stays `core`-only). It is named for what it does today (description/introspection);
+it is explicitly **not** a "Knowledge Layer" / "Reasoning Layer" (it does no
+reasoning) and it excludes GUI/Explorer state and all AI-specific concepts. AI is
+one future client of the same API.
+**Alternatives.** (a) Defer until the first AI feature defines the need - rejected:
+the consumers and the duplication exist *today*. (b) Build a broader AI-oriented
+"Knowledge Layer" - rejected as speculative (Rule 7) and mis-named. (c) Put
+introspection on `Dataset` itself - rejected: the operation catalogue needs
+`processing`, which `core` must never import (it would invert the dependency graph).
+**Consequences.** One canonical, tested source of structured measurement facts; the
+Explorer's provenance view already consumes it (backend owns the facts, GUI owns the
+words). Per-dataset operation *applicability* stays shallow until steps declare
+required capabilities as data - a separate, future refinement to the processing
+engine, deliberately **not** done here. `viz` keeps its own figure-provenance record
+(it is below `describe` in the stack). Full detail: `docs/description-api.md`.
+
 ---
 
 ## Decision Closure (OHD-1..9 resolved)

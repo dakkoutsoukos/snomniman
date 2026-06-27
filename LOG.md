@@ -1377,3 +1377,92 @@ implemented.
 
 ---
 
+## 2026-06-26 - Scientific Description API (snomniman.describe)
+
+A new Qt-free backend layer that projects the scientific core + the processing
+registry into structured, JSON-serializable descriptors. Built deliberately for
+*present-day* consumers (Explorer, export, reports, debugging, tests), not for a
+future AI - AI will simply be one more client of the same API (Rule 7). No AI, no
+LLM, no prompts, no new processing algorithms; the processing engine is unchanged.
+
+### Completed
+- **`snomniman.describe` (new package):**
+  - `descriptors.py` - ten frozen, JSON-serializable value objects with `to_dict()`:
+    `ChannelDescription`, `ConventionsDescription`, `GeometryDescription`,
+    `MetadataSummary`, `SourceDescription`, `LineageStep`, `ProvenanceSummary`,
+    `OperationParameter`, `OperationDescription`, and the aggregate
+    `MeasurementDescription`. Honest values (`None` for unknown - never an
+    "unknown" placeholder; formatting is a consumer concern).
+  - `summarize.py` - pure, read-only projection functions: `describe_channels`,
+    `summarize_metadata`, `summarize_provenance` (walks the DAG topologically),
+    `describe_operations` / `describe_operation` (the registry catalogue), and
+    `describe_measurement` (the one-call aggregate). No computation, no mutation.
+  - Depends on `core` + `processing` only (the `pipeline` tier); Qt-free.
+- **First live consumer wired:** `ExplorerModel.provenance_summary` /
+  `provenance_steps` now source their facts from `describe.summarize_provenance`
+  and only format the wording (backend owns the facts, the GUI owns the words).
+  Output is byte-identical, so the existing GUI tests pass unchanged - evidence the
+  seam is not shelfware.
+- **Qt-free invariant extended:** `snomniman.describe` added to `BACKEND_PACKAGES`
+  in `tests/test_smoke.py`, so the subprocess check guards it.
+- **Tests (+11; 256 total):** `tests/test_describe.py` - channel/metadata/
+  provenance projections on the synthetic dataset; raw vs post-`PlaneLevel`
+  lineage; the operation catalogue (registry isolated via monkeypatch) + the real
+  `image.plane_level` schema; the aggregate; a JSON round-trip; the cardinal
+  non-mutation invariant (describing never changes the dataset, arrays stay frozen);
+  and a golden test on the real CdO measurement (capabilities, channel count,
+  directory-source sha256, full JSON-serializability).
+- **Gates green:** `ruff` clean, `mypy --strict` no issues (60 files), `pytest`
+  256 passed, backend Qt-free invariant holds.
+
+### Decisions
+- **ADR-0018 (new): the Scientific Description API.** A read-only projection layer,
+  justified by present-day consumers, not by future AI. Named for what it does
+  (description/introspection) - explicitly **not** a "Knowledge Layer" / "Reasoning
+  Layer" (it does no reasoning) - and it excludes GUI/Explorer state and all
+  AI-specific concepts. Alternatives rejected: defer until the first AI feature
+  (the consumers exist today); a broader AI-oriented "Knowledge Layer" (speculative,
+  Rule 7); introspection on `Dataset` itself (the operation catalogue needs
+  `processing`, which `core` must never import).
+- **`viz` deliberately does not consume `describe`.** `viz` stays `core`-only (it
+  sits below `processing`); figure export keeps building its provenance record
+  directly from the `Dataset`. `describe` is for consumers already above
+  `processing` (`gui`, `batch`, future `ai`).
+- **Summary, not archive.** `MetadataSummary` omits the verbatim vendor header and
+  other bulk; the full `Metadata` / `Dataset` remain the source of truth.
+- **Scope held (user direction).** The original "Knowledge Layer" brief was
+  rescoped and renamed before any code; "Explorer state" was dropped (it would
+  invert the dependency graph / pull Qt into the backend, Rule 4). The architectural
+  pushback was explicitly requested and endorsed by the user.
+
+### Issues Found
+- **Honest limitation (documented, not fixed here):** per-dataset operation
+  *applicability* is shallow - `describe_operations()` lists the catalogue but does
+  not precisely answer "which apply to *this* dataset", because `ProcessingStep`
+  does not declare required capabilities as data (e.g. `PlaneLevel` enforces
+  "real-valued channel" internally). Deepening that is a separate, future refinement
+  to the processing engine and was intentionally out of scope (this layer consumes;
+  it must not modify the engine).
+- No architecture issues. The layering, OHDs, and ADRs held; the new layer slots in
+  at the `pipeline` tier with no cycle and no Qt.
+
+### Documentation Updated
+- Created: `src/snomniman/describe/{__init__,descriptors,summarize}.py`;
+  `tests/test_describe.py`; `docs/description-api.md`.
+- Updated: `src/snomniman/gui/model.py` (provenance via `describe`);
+  `tests/test_smoke.py` (Qt-free list); `docs/decisions.md` (ADR-0018);
+  `docs/architecture.md` (the `describe` layer + AI-layer note); `CLAUDE.md` (status,
+  architecture summary, module list, Qt-free list, doc-hierarchy row); this `LOG.md`
+  entry; `NEXT.md`.
+
+### Next Recommended Actions
+The description seam now exists and has a live consumer. Per the agreed roadmap, the
+next high-leverage work is **more processing operations** (so there is more for a
+future AI to reason about, and more for `describe_operations` to expose): start with
+`image.reference_normalize` (multi-input sample / reference complex division,
+OHD-6D), then `image.phase_unwrap` (first-class unwrapped-phase channel, OHD-4). A
+natural, separately-justified refinement that would deepen `describe`: have
+`ProcessingStep` declare `required_capabilities` as data, enabling precise
+per-dataset applicability. **AI remains deliberately deferred** until the operation
+set is rich enough to orchestrate - at which point it consumes `snomniman.describe`
+without an architectural redesign.

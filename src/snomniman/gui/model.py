@@ -26,6 +26,7 @@ import numpy.typing as npt
 
 from snomniman import viz
 from snomniman.core import Dataset, Metadata, current_software
+from snomniman.describe import summarize_provenance
 from snomniman.io import read
 from snomniman.viz import AMPLITUDE, PHASE, REAL, FigureSpec, OverlaySpec, RegionStats, RenderData
 
@@ -354,27 +355,29 @@ class ExplorerModel:
     # -- provenance -----------------------------------------------------------
 
     def provenance_summary(self) -> str:
-        steps = list(self._ds.provenance.iter_nodes())
-        if self._ds.is_raw:
+        summary = summarize_provenance(self._ds.provenance)
+        if summary.is_raw:
             return "This is the raw measurement - nothing has been done to it."
-        return f"Derived result - {len(steps)} step(s) from the raw measurement."
+        return f"Derived result - {summary.n_steps} step(s) from the raw measurement."
 
     def provenance_steps(self) -> list[ProvenanceStep]:
+        # The structured lineage comes from the backend Scientific Description API;
+        # this method only formats it for the inspector (backend owns the facts,
+        # the GUI owns the words).
         out: list[ProvenanceStep] = []
-        for node in self._ds.provenance.iter_nodes():
-            rec = node.record
+        for step in summarize_provenance(self._ds.provenance).steps:
             sources = tuple(
-                f"{name}: {Path(src.path).name} "
-                f"(sha256 {src.sha256[:12]}..., reader {src.reader})"
-                for name, src in node.sources.items()
+                f"{s.name}: {s.filename} "
+                f"(sha256 {s.sha256[:12]}..., reader {s.reader})"
+                for s in step.sources
             )
             out.append(ProvenanceStep(
-                node_id=node.node_id,
-                step_id=rec.step_id,
-                description=_step_description(rec.step_id),
-                deterministic=rec.deterministic,
-                params=dict(rec.params),
-                software=dict(rec.software),
+                node_id=step.node_id,
+                step_id=step.step_id,
+                description=_step_description(step.step_id),
+                deterministic=step.deterministic,
+                params=dict(step.params),
+                software=dict(step.software),
                 sources=sources,
             ))
         return out

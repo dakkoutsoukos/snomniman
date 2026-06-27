@@ -9,19 +9,24 @@ rather than repeating them.
 2. `NEXT.md` - what to work on right now, blockers, open questions.
 3. `LOG.md` - recent history (newest entries at the bottom).
 
-> **Project status (2026-06-25): Phase 1 COMPLETE; first GUI experience shipped.**
+> **Project status (2026-06-26): Phase 1 COMPLETE; read-only Explorer + first
+> processing derivation + Scientific Description API shipped.**
 > Backend validated end-to-end against the real neaSNOM GSF measurement directory:
-> `snomniman.core`, `snomniman.io` (GSF parser, neaSNOM reader, registry, canonical
-> **Zarr** store - `Dataset -> Zarr -> Dataset` round-trips loss-lessly, OHD-3),
-> and `snomniman.viz` (display-ready render data: honest amplitude/phase, colormaps,
-> ranges, extent, scale bar). The first user-facing experience now exists: a
-> **read-only Measurement Explorer** (`snomniman.gui`, PySide6 + PyQtGraph;
-> `python -m snomniman.gui <dir>`) - open a measurement, browse channels, inspect
-> metadata/provenance, hover for a cross-channel readout, toggle amplitude/phase -
-> verified on the real CdO data. 100 tests pass; `ruff`, `mypy --strict`, and the
-> Qt-free invariant (now subprocess-checked) are green. All OHD-1..9 settled. No
-> processing/editing/export/AI yet, by design - the Explorer is strictly read-only
-> (`docs/measurement-explorer.md`; new GUI Rule 9 gates every GUI feature).
+> `snomniman.core`; `snomniman.io` (GSF parser, neaSNOM reader, registry, canonical
+> **Zarr** store - `Dataset -> Zarr -> Dataset` round-trips loss-lessly, OHD-3);
+> `snomniman.viz` (display-ready render data, quantitative line/ROI measurement,
+> provenance-bearing publication figures); `snomniman.processing` (the
+> `ProcessingStep` engine + the first operation, `image.plane_level`); and
+> `snomniman.describe` (the **Scientific Description API**: structured, JSON-
+> serializable descriptors of a measurement, consumed by the GUI / export / tests).
+> The user-facing experience is the **Measurement Explorer** (`snomniman.gui`,
+> PySide6 + PyQtGraph; `python -m snomniman.gui <dir>`): open a measurement,
+> browse/compare channels, inspect metadata/provenance, measure profiles/ROI stats,
+> export publication figures, and apply plane leveling via an explicit
+> Preview -> Accept/Cancel derivation - never mutating the raw measurement. 256 tests
+> pass; `ruff`, `mypy --strict`, and the Qt-free invariant (subprocess-checked) are
+> green. All OHD-1..9 settled. No AI yet, by design - AI will arrive as a later client
+> of `snomniman.describe` (`docs/description-api.md`; GUI Rule 9 gates every GUI feature).
 
 This is documentation-driven development: keep `/docs` authoritative and in sync
 with code.
@@ -105,6 +110,7 @@ Layered, with a **strict, acyclic dependency graph**. Full diagram and detail:
 gui            -> consumes all backend layers (PySide6 + PyQtGraph)
 batch          -> pipeline, io, core
 pipeline       -> processing, core         (provenance DAG, replay, serialization, version capture)
+describe       -> processing, core         (Scientific Description API: structured, JSON-serializable descriptors)
 processing     -> core                      (ProcessingStep ABC + registry + operations)
 io             -> core                      (reader registry, readers (neaSNOM first), Zarr writers)
 viz            -> core                      (display-ready data + matplotlib static export)
@@ -118,6 +124,9 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
 - `snomniman.processing` - operations as `ProcessingStep`s (command pattern) + registry.
 - `snomniman.pipeline` - the reproducibility engine: provenance **DAG**, replay,
   (de)serialization, environment/operation-version capture, `Project`.
+- `snomniman.describe` - the Scientific Description API: a Qt-free, read-only
+  projection of `core` + the step registry into structured, JSON-serializable
+  descriptors (consumed by `gui`/`batch`/future `ai`; not `viz`).
 - `snomniman.viz` - display-ready render data + matplotlib static export.
 - `snomniman.batch` - headless application of a DAG across many sources.
 - `snomniman.gui` - the desktop app; presentation/interaction only.
@@ -125,7 +134,7 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
 **Dependency rules:**
 - No cycles. `core` imports nothing else in the project.
 - **Rule 4 (load-bearing): backend code must NEVER depend on Qt.** Nothing in
-  `core/io/processing/pipeline/viz/batch` may import PySide6, PyQt, or pyqtgraph.
+  `core/io/processing/describe/pipeline/viz/batch` may import PySide6, PyQt, or pyqtgraph.
   Enforced by `tests/test_smoke.py::test_backend_is_qt_free`. Do not weaken it.
 - Nothing in the backend imports `gui`.
 
@@ -264,6 +273,8 @@ the design changed, and (for scientific code) a validation test.
 | `docs/ai-principles.md` | AI architecture principles; detailed design guidance (to be written when AI design begins). |
 | `docs/measurement-discovery.md` | First real-data validation: observed neaSNOM GSF format, confirmed/corrected assumptions, Phase 1 impact. |
 | `docs/product-review-v0.1.md` | Researcher's-perspective critique of the running Explorer v0.1; the **product backlog** (Must/Should/Nice) and the "ready to switch from neaPLOT" obstacle list. Re-run per iteration (v0.2, ...). |
+| `docs/processing-engine.md` | Processing engine: philosophy, operation lifecycle, preview model, provenance integration, extension model (template for new steps). |
+| `docs/description-api.md` | **Scientific Description API** (`snomniman.describe`): purpose, position, descriptors, relationships (Dataset/Explorer/Processing/future AI), honest limitations, extension model. |
 
 ---
 
