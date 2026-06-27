@@ -1535,3 +1535,69 @@ Diagnostics panel, Rule 9), not by the AI (Rule 7).
   (`describe` + `diagnostics`) and emit reviewable recommendations the deterministic
   engine alone executes. Still gated behind a richer operation vocabulary
   (`image.reference_normalize`, `image.phase_unwrap`) - design-first, with an ADR.
+
+---
+
+## 2026-06-27 - AI Scientist v1: the Scientific Briefing (snomniman.ai)
+
+The first AI capability - and deliberately the smallest, safest, most useful one:
+**measurement orientation** ("tell me about this measurement"), not recommendations
+and not execution. Everything built over the prior milestones now has a natural AI
+consumer, and the AI reasons over validated facts instead of pixels.
+
+### Decisions (the forks, settled with the user)
+- **No model SDK this milestone.** Ship the deterministic Briefing + the provider
+  *seam* only (protocol + grounded prompt builder + a network-free mock). A concrete
+  provider (Anthropic/OpenAI/local) arrives later as an *optional* extra,
+  lazy-imported, never required for backend/CI. Zero new dependency now (so no major
+  dependency to justify beyond the new layer itself).
+- **The briefing is always useful (deterministic fallback).** Facts always render;
+  the optional AI narrative layers on top only when a provider is configured. Adopted
+  as a permanent product principle: *AI enhances understanding; it never gates it.*
+- **Renamed to "Scientific Briefing"** (not "AI Scientist") in the GUI - a briefing,
+  not a chatbot: no input box, no history, no agent behaviour.
+
+### Completed
+- New Qt-free package `snomniman.ai` (depends on `describe` + `diagnostics` + `core`):
+  - `report.py` - frozen, JSON-serializable `Briefing` / `BriefingSection` /
+    `BriefingStatement` (kind=fact|interpretation, source-tagged) / `BriefingContext`
+    (the exact describe+diagnostics payload = grounding + audit trail).
+  - `provider.py` - `NarrativeProvider` Protocol, `MockNarrativeProvider`
+    (network-free), `ORIENTATION_SYSTEM` + `build_orientation_prompt` (embeds the
+    facts verbatim; forbids invention; testable offline).
+  - `briefing.py` - `build_briefing(dataset, *, title, provider=None)` composing three
+    deterministic fact sections (Measurement Summary, Scientific Observations, What
+    This Measurement Enables).
+- Explorer **Briefing tab** (`gui/briefing.py` `BriefingPanel` +
+  `ExplorerModel.scientific_briefing` + window wiring): collapsible fact sections, an
+  "Interpretation (AI)" area that shows a clear "no provider configured - facts are
+  complete and authoritative" note in this build, and a "Copy briefing" action.
+- Two permanent AI rules added to `CLAUDE.md` (reason only over deterministic facts;
+  always have a deterministic fallback).
+
+### Grounding (and an honest limitation)
+- By construction: a provider receives ONLY the facts payload; the prompt forbids
+  invention; the briefing stores `context` so any statement is auditable against it.
+- NOT done: per-sentence machine verification of a free-text narrative (would need an
+  NLI checker). Stated plainly in the docs rather than overclaimed; candidate future.
+
+### Tests / gates
+- 289 tests pass (was 274; +15 across `test_ai_briefing.py` and `test_gui_briefing.py`).
+  `snomniman.ai` added to the Qt-free backend invariant. Deterministic facts asserted
+  exactly; every fact statement checked to cite only description/diagnostics; provider
+  seam exercised with the mock; prompt builder checked to embed facts + "do not
+  invent"; JSON round-trip + non-mutation invariants. No external API in any test.
+  `ruff` clean; `mypy --strict` clean (73 source files).
+
+### Documentation
+- New `docs/ai-scientist-v1.md`; ADR-0020 in `decisions.md`; `architecture.md` layer +
+  module entry; `CLAUDE.md` status/stack/responsibilities/Rule-4 list/two AI
+  rules/doc table; this entry; `NEXT.md` refreshed.
+
+### Next recommended
+- A concrete `NarrativeProvider` (optional `ai` extra, lazy import) so the
+  interpretation renders when a key is configured - small, isolated change behind the
+  existing seam. Separately, the deterministic operation vocabulary
+  (`image.reference_normalize`, then `image.phase_unwrap`) so a *later* AI milestone
+  can offer reviewable recommendations the deterministic engine alone executes.
+  Design-first, with an ADR. Real-user validation still strongly recommended.

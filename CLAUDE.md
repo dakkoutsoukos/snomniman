@@ -9,9 +9,9 @@ rather than repeating them.
 2. `NEXT.md` - what to work on right now, blockers, open questions.
 3. `LOG.md` - recent history (newest entries at the bottom).
 
-> **Project status (2026-06-26): Phase 1 COMPLETE; read-only Explorer + first
-> processing derivation + Scientific Description API + Scientific Diagnostics Engine
-> shipped.**
+> **Project status (2026-06-27): Phase 1 COMPLETE; read-only Explorer + first
+> processing derivation + Description API + Diagnostics Engine + AI Scientist v1
+> (Scientific Briefing) shipped.**
 > Backend validated end-to-end against the real neaSNOM GSF measurement directory:
 > `snomniman.core`; `snomniman.io` (GSF parser, neaSNOM reader, registry, canonical
 > **Zarr** store - `Dataset -> Zarr -> Dataset` round-trips loss-lessly, OHD-3);
@@ -19,19 +19,22 @@ rather than repeating them.
 > provenance-bearing publication figures); `snomniman.processing` (the
 > `ProcessingStep` engine + the first operation, `image.plane_level`, with steps now
 > declaring `required_capabilities`); `snomniman.describe` (the **Scientific
-> Description API**: structured descriptors *projecting* a measurement); and
+> Description API**: structured descriptors *projecting* a measurement);
 > `snomniman.diagnostics` (the **Scientific Diagnostics Engine**: deterministic
 > *computed* facts - tilt, roughness, statistics, amplitude decay, operation
-> applicability - a sibling of `describe`, consumed by the GUI today and the future AI).
+> applicability - a sibling of `describe`); and `snomniman.ai` (the **AI Scientist
+> v1**: a Scientific Briefing that composes `describe` + `diagnostics` into a
+> deterministic measurement orientation, with an optional narrative provider seam -
+> **no model SDK bundled**).
 > The user-facing experience is the **Measurement Explorer** (`snomniman.gui`,
 > PySide6 + PyQtGraph; `python -m snomniman.gui <dir>`): open a measurement,
-> browse/compare channels, inspect metadata/provenance/diagnostics, measure
-> profiles/ROI stats, export publication figures, and apply plane leveling via an
-> explicit Preview -> Accept/Cancel derivation - never mutating the raw measurement.
-> 274 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
-> (subprocess-checked) are green. All OHD-1..9 settled. No AI yet, by design - the AI
-> Scientist will arrive as a later client of `snomniman.describe` + `snomniman.diagnostics`
-> (`docs/diagnostics-engine.md`; GUI Rule 9 gates every GUI feature).
+> browse/compare channels, inspect metadata/provenance/diagnostics, read a Scientific
+> Briefing, measure profiles/ROI stats, export publication figures, and apply plane
+> leveling via an explicit Preview -> Accept/Cancel derivation - never mutating the raw
+> measurement. 289 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> (subprocess-checked) are green. All OHD-1..9 settled. The AI is orientation-only
+> (no recommendations, no execution) and grounded entirely in the deterministic layers
+> (`docs/ai-scientist-v1.md`; GUI Rule 9 gates every GUI feature).
 
 This is documentation-driven development: keep `/docs` authoritative and in sync
 with code.
@@ -114,6 +117,7 @@ Layered, with a **strict, acyclic dependency graph**. Full diagram and detail:
 ```
 gui            -> consumes all backend layers (PySide6 + PyQtGraph)
 batch          -> pipeline, io, core
+ai             -> describe, diagnostics, core  (AI Scientist: Scientific Briefing; deterministic facts + optional narrative renderer)
 pipeline       -> processing, core         (provenance DAG, replay, serialization, version capture)
 describe       -> processing, core         (Scientific Description API: structured descriptors; projection, no computation)
 diagnostics    -> processing, core         (Scientific Diagnostics Engine: deterministic computed facts; sibling of describe)
@@ -136,7 +140,11 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
 - `snomniman.diagnostics` - the Scientific Diagnostics Engine: a Qt-free layer that
   *computes* deterministic facts about a dataset (statistics, tilt/roughness,
   amplitude decay, operation applicability). Sibling of `describe` (computation vs
-  projection); consumed by `gui`/`batch`/future `ai`.
+  projection); consumed by `gui`/`batch`/`ai`.
+- `snomniman.ai` - the AI Scientist: composes `describe` + `diagnostics` into a
+  deterministic measurement-orientation Briefing (facts always; optional narrative via
+  a `NarrativeProvider` seam, no model SDK bundled). Read-only; never mutates data or
+  the provenance DAG.
 - `snomniman.viz` - display-ready render data + matplotlib static export.
 - `snomniman.batch` - headless application of a DAG across many sources.
 - `snomniman.gui` - the desktop app; presentation/interaction only.
@@ -144,7 +152,7 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
 **Dependency rules:**
 - No cycles. `core` imports nothing else in the project.
 - **Rule 4 (load-bearing): backend code must NEVER depend on Qt.** Nothing in
-  `core/io/processing/describe/diagnostics/pipeline/viz/batch` may import PySide6, PyQt, or pyqtgraph.
+  `core/io/processing/describe/diagnostics/ai/pipeline/viz/batch` may import PySide6, PyQt, or pyqtgraph.
   Enforced by `tests/test_smoke.py::test_backend_is_qt_free`. Do not weaken it.
 - Nothing in the backend imports `gui`.
 
@@ -155,7 +163,20 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
 AI is a **first-class analysis subsystem** in the long-term vision of SNOMNIMAN -
 not a cosmetic chatbot, not a UI add-on, and not a replacement for provenance or
 scientific metadata. Full detail: `docs/ai-principles.md` (to be written when AI
-design begins; the summary below is authoritative until then).
+design begins; the summary below is authoritative until then). The first capability
+is shipped: the **Scientific Briefing** (`snomniman.ai`, ADR-0020,
+`docs/ai-scientist-v1.md`).
+
+### Two load-bearing AI rules (permanent)
+
+1. **The AI may only reason over deterministic facts produced by SNOMNIMAN. It must
+   never become the primary interpreter of raw scientific data when deterministic
+   algorithms can establish those facts.** (The AI consumes `describe` + `diagnostics`;
+   if a fact can be computed deterministically, compute it - do not ask the AI to infer
+   it from arrays.)
+2. **Every AI-powered feature must have a useful deterministic fallback. AI enhances
+   understanding; it never gates access to understanding.** (A panel must remain useful
+   with no provider/API key configured - cloud-AI-free labs lose nothing essential.)
 
 ### Position in the layer stack
 
@@ -286,6 +307,7 @@ the design changed, and (for scientific code) a validation test.
 | `docs/processing-engine.md` | Processing engine: philosophy, operation lifecycle, preview model, provenance integration, extension model (template for new steps). |
 | `docs/description-api.md` | **Scientific Description API** (`snomniman.describe`): purpose, position, descriptors, relationships (Dataset/Explorer/Processing/future AI), honest limitations, extension model. |
 | `docs/diagnostics-engine.md` | **Scientific Diagnostics Engine** (`snomniman.diagnostics`): philosophy (observations vs operations), the descriptors, sibling relationship to `describe`, scientific choices + deferred metrics, extension model, relationship to the future AI Scientist. |
+| `docs/ai-scientist-v1.md` | **AI Scientist v1** (`snomniman.ai`): the Scientific Briefing - philosophy (orientation, not action; grounding + deterministic fallback), architecture, the provider seam (no SDK yet), prompt/grounding strategy, Explorer integration, honest limitations, future evolution. |
 
 ---
 

@@ -19,6 +19,7 @@ BACKEND_PACKAGES = [
     "snomniman.processing",
     "snomniman.describe",
     "snomniman.diagnostics",
+    "snomniman.ai",
     "snomniman.pipeline",
     "snomniman.viz",
     "snomniman.batch",

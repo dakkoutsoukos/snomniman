@@ -77,13 +77,18 @@ consumers (`gui`/`batch`/future `ai`) compose the two. It never mutates a datase
 adds nothing to the provenance DAG. Full detail: `docs/diagnostics-engine.md`
 (ADR-0019).
 
-**Future AI layer:** the long-term architecture adds a `snomniman.ai` analysis
-layer that sits above `core` (consuming `Dataset`, `Metadata`, and `Provenance`,
-via the `snomniman.describe` projection and the `snomniman.diagnostics` facts)
-without modifying them. AI-generated outputs are recorded as provenance nodes. AI
-is a first-class analysis subsystem, not a UI add-on. Full principles: `CLAUDE.md`
-(AI Architecture Principles section) and `docs/ai-principles.md` (to be written when
-AI design begins).
+**AI Scientist:** `snomniman.ai` is a Qt-free layer (depends on `describe` +
+`diagnostics` + `core`) whose first capability is **measurement orientation** - a
+Scientific Briefing that turns the deterministic Description + Diagnostics facts into
+an expert explanation. Its facts are always deterministic and authoritative; an
+optional natural-language interpretation is rendered by a `NarrativeProvider` when one
+is configured (no model SDK is bundled yet - only the provider seam). It consumes only
+the deterministic layers, never raw arrays/Qt/Explorer state; it never mutates a
+dataset and adds nothing to the provenance DAG (a briefing is read-only text, not a
+derivation). Two permanent principles: the AI reasons only over deterministic facts
+SNOMNIMAN produced, and every AI feature has a useful deterministic fallback (AI
+enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
+(ADR-0020); principles in `CLAUDE.md` (AI Architecture Principles).
 
 ## 3. Module responsibilities
 
@@ -163,6 +168,23 @@ AI design begins).
   Scientifically shaky metrics (SNR, clipping, drift) are deferred rather than
   guessed (Rule 6). The future `ai` layer composes these facts with `describe`.
 - **Implemented.** See `docs/diagnostics-engine.md` (ADR-0019).
+
+### `snomniman.ai` - the AI Scientist (depends on `describe`, `diagnostics`, `core`)
+- First capability: **measurement orientation** - `build_briefing(dataset)` composes
+  the Description API + Diagnostics Engine into a `Briefing` with three deterministic
+  **fact** sections (Summary, Observations, Enables; each statement source-tagged) plus
+  an optional natural-language **interpretation**.
+- The facts are always present and authoritative; the optional interpretation is
+  rendered by a `NarrativeProvider` (a Protocol). **No model SDK is bundled** - only the
+  seam (protocol + grounded `build_orientation_prompt` + a network-free
+  `MockNarrativeProvider`); a concrete provider arrives later as an optional extra,
+  lazy-imported, never required for backend/CI.
+- Consumes only the deterministic layers (never raw arrays/Qt/Explorer state); never
+  mutates a dataset and adds nothing to the provenance DAG (a briefing is read-only
+  text). Grounding is by construction: the provider gets only the facts payload
+  (`BriefingContext`), which the briefing stores for audit. Orientation only - **no
+  recommendations, no execution** (a later milestone).
+- **Implemented (v1).** See `docs/ai-scientist-v1.md` (ADR-0020).
 
 ### `snomniman.pipeline` - reproducibility engine (depends on `processing`, `core`)
 - The **provenance DAG** (OHD-2): nodes are operations with named inputs, allowing

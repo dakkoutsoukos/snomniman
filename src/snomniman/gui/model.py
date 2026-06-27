@@ -26,6 +26,7 @@ import numpy.typing as npt
 
 import snomniman.processing.image  # noqa: F401  (registers image ops for applicability)
 from snomniman import viz
+from snomniman.ai import Briefing, build_briefing
 from snomniman.core import Dataset, Metadata, current_software
 from snomniman.describe import summarize_provenance
 from snomniman.diagnostics import diagnose
@@ -615,6 +616,18 @@ class ExplorerModel:
         sections.append(DiagnosticSection("Processing applicability", tuple(op_rows)))
 
         return tuple(sections)
+
+    # -- scientific briefing (read-only AI orientation) -----------------------
+
+    def scientific_briefing(self) -> Briefing:
+        """The measurement-orientation briefing (deterministic facts; no provider).
+
+        The facts come from the backend AI Scientist (`snomniman.ai.build_briefing`,
+        grounded in the Description API + Diagnostics Engine). No narrative provider
+        is configured in the app yet, so this returns facts only - which are complete
+        and authoritative on their own (AI never gates understanding).
+        """
+        return build_briefing(self._ds, title=self._title)
 
     def _x_coords(self) -> npt.NDArray[np.float64]:
         return np.asarray(self._ds.coordinate("x").values, dtype=np.float64)

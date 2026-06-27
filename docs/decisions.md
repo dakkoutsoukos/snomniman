@@ -235,6 +235,46 @@ is data-driven across the GUI and future layers. The engine is the first realiza
 the project compass: *every scientific operation and observation is deterministic; only
 interpretation is left to reviewable AI.* Full detail: `docs/diagnostics-engine.md`.
 
+## ADR-0020 - First AI capability: the Scientific Briefing (`snomniman.ai`)  [ACCEPTED]
+**Context.** With the deterministic foundation complete (Dataset, provenance, processing
+engine, Description API, Diagnostics Engine), the AI finally has something meaningful and
+*safe* to consume. The first AI capability should not perform or recommend processing; it
+should help a researcher **understand** what they have loaded ("tell me about this
+measurement"). Two hard project lines apply: a new major dependency needs an ADR, and AI
+must never become a silent scientific authority.
+**Decision.** Add a Qt-free package `snomniman.ai` whose first capability is **measurement
+orientation**. `build_briefing(dataset)` composes `describe` (structure) + `diagnostics`
+(computed facts) into a `Briefing`: three deterministic **fact** sections (Summary,
+Observations, Enables), each statement tagged with its source layer, plus an optional
+natural-language **interpretation** rendered by a `NarrativeProvider`. The briefing is
+read-only text - it never mutates the Dataset and adds nothing to the provenance DAG. It
+depends only on `describe` + `diagnostics` + `core`; it never touches raw arrays, Qt, or
+Explorer state. The present-day consumer is the Explorer's read-only **Briefing** panel
+(Rule 9). Grounding is by construction: a provider receives only the facts payload
+(`BriefingContext`), the prompt forbids invention, and the briefing stores that payload for
+audit. **No model SDK is bundled** (zero new dependency this milestone): only the provider
+seam (protocol + grounded prompt builder + a network-free mock). A concrete provider
+arrives later as an *optional* extra, lazy-imported, never required for the backend or CI.
+Two principles are made permanent in `CLAUDE.md`: (1) the AI may reason only over
+deterministic facts SNOMNIMAN produced, never the primary interpreter of raw data when a
+deterministic algorithm exists; (2) every AI feature has a useful deterministic fallback -
+AI enhances understanding, never gates it.
+**Alternatives.** (a) Start with processing recommendations - rejected: higher risk, and
+orientation is the smaller, safer, immediately-useful first step. (b) A chat interface -
+rejected: this is a briefing, not a chatbot (no input box, history, or agent behaviour).
+(c) Bundle a model SDK now - rejected: not needed for the deterministic briefing, would add
+a major dependency and a network/key requirement to CI; deferred to an optional extra
+behind the provider protocol. (d) Fold AI into `describe`/`diagnostics` - rejected: AI is a
+non-deterministic renderer; it belongs above the deterministic layers, consuming them.
+(e) Claim per-sentence narrative traceability - rejected as overclaiming; grounding is by
+construction and auditable against `context`, but free-text is not machine-verified
+sentence-by-sentence (a candidate future milestone).
+**Consequences.** Everything built over the prior milestones now has a natural AI consumer,
+and the AI reasons over validated facts instead of pixels. The app is fully useful with no
+API key (facts always render). The seam makes adding a real provider a small, isolated,
+optional change. The deterministic core remains the single source of truth. Full detail:
+`docs/ai-scientist-v1.md`.
+
 ---
 
 ## Decision Closure (OHD-1..9 resolved)

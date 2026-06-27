@@ -3,7 +3,7 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-26 (Scientific Diagnostics Engine)
+**Last updated:** 2026-06-27 (AI Scientist v1 - Scientific Briefing)
 
 ---
 
@@ -46,8 +46,11 @@ Implemented:
 
 **Now implemented since:** processing engine + `image.plane_level` (Preview ->
 Accept/Cancel), provenance-preserving figure export, the Scientific Description API,
-and the Scientific Diagnostics Engine (+ Explorer Diagnostics tab).
-**Still NOT implemented (out of scope so far):** AI, batch, additional processing
+the Scientific Diagnostics Engine (+ Explorer Diagnostics tab), and the AI Scientist
+v1 - a deterministic **Scientific Briefing** (+ Explorer Briefing tab; provider seam,
+no model SDK).
+**Still NOT implemented (out of scope so far):** a concrete AI narrative provider
+(only the seam exists), AI recommendations/execution, batch, additional processing
 operations (`reference_normalize`, `phase_unwrap`), and Zarr-export of derived
 datasets from the GUI.
 
@@ -151,7 +154,23 @@ in impact order:
     clipping, drift deferred rather than guessed (Rule 6). 18 new tests
     (known-answer/analytical); 274 total green. ADR-0019;
     `docs/diagnostics-engine.md`. *Done 2026-06-26.*
-20. **Next processing derivation: `image.reference_normalize`** - complex
+20. [x] **AI Scientist v1 - Scientific Briefing (`snomniman.ai`)** - a Qt-free layer
+    that composes `describe` + `diagnostics` into a deterministic measurement
+    orientation (`build_briefing`): three fact sections (Summary / Observations /
+    Enables), each statement source-tagged. Optional AI narrative via a
+    `NarrativeProvider` seam (protocol + grounded prompt builder + network-free mock);
+    **no model SDK bundled**. Explorer **Briefing** tab (facts always; "no provider
+    configured - facts are complete and authoritative" otherwise; copy action).
+    Orientation only - no recommendations/execution. Two permanent AI rules added to
+    `CLAUDE.md` (reason only over deterministic facts; always a deterministic
+    fallback). 15 new tests (no external API); 289 total green. ADR-0020;
+    `docs/ai-scientist-v1.md`. *Done 2026-06-27.*
+21. **Concrete AI narrative provider** - add ONE real provider behind the existing
+    `NarrativeProvider` seam as an *optional* extra (`uv sync --extra ai`),
+    lazy-imported, never required for backend/CI; wire a "provider" selection so the
+    Briefing's interpretation renders when configured. Tests mock the provider; CI
+    never calls a network. (Design note: a major dependency - needs its own ADR.)
+22. **Next processing derivation: `image.reference_normalize`** - complex
     sample/reference division (`step_id="image.reference_normalize"`), multi-input
     step (`{"sample": ds, "reference": ref_ds}`).  Implement as a second
     `ProcessingStep` subclass; the framework and Explorer workflow already support
