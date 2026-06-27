@@ -18,15 +18,16 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 
 from snomniman import viz
-from snomniman.core import Dataset, Metadata
+from snomniman.core import Dataset, Metadata, current_software
 from snomniman.io import read
-from snomniman.viz import AMPLITUDE, PHASE, REAL, RegionStats, RenderData
+from snomniman.viz import AMPLITUDE, PHASE, REAL, FigureSpec, OverlaySpec, RegionStats, RenderData
 
 # --------------------------------------------------------------------------- #
 # View value objects (plain data the widgets render verbatim)
@@ -462,6 +463,67 @@ class ExplorerModel:
             rows.append(RegionStatRow(label=spec.title, unit=rd.unit, stats=stats))
             count, area = stats.count, stats.area_nm2
         return RegionReport(kind, count, area, tuple(rows))
+
+    # -- publication figure (read-only) ---------------------------------------
+
+    def figure_spec(
+        self,
+        panels: Sequence[tuple[PaneSpec, tuple[float, float]]],
+        overlays: Sequence[OverlaySpec],
+        *,
+        kind: str,
+        title: str,
+    ) -> FigureSpec:
+        """Build a serializable, provenance-bearing :class:`FigureSpec` (read-only).
+
+        ``panels`` pairs each visible pane with its current display levels; the
+        colormap, unit, extent and conventions are filled from the dataset so the
+        figure carries everything needed to explain and regenerate itself.
+        """
+        panel_specs: list[viz.PanelSpec] = []
+        extent: tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0)
+        for spec, (vmin, vmax) in panels:
+            rd = self.render_spec(spec)
+            extent = rd.extent_nm
+            panel_specs.append(
+                viz.PanelSpec(
+                    channel=spec.channel,
+                    representation=spec.representation,
+                    title=spec.title,
+                    unit=rd.unit,
+                    colormap=rd.colormap,
+                    cyclic=rd.cyclic,
+                    vmin=float(vmin),
+                    vmax=float(vmax),
+                )
+            )
+        length, label = viz.pick_scale_bar(extent[1] - extent[0])
+        conventions = self._ds.metadata.conventions
+        software = current_software()
+        source = self._ds.source
+        return FigureSpec(
+            title=title,
+            kind=kind,
+            measurement=self._title,
+            source_path=source.path if source is not None else None,
+            source_sha256=source.sha256 if source is not None else None,
+            panels=tuple(panel_specs),
+            extent_nm=extent,
+            scale_bar_nm=length,
+            scale_bar_label=label,
+            overlays=tuple(overlays),
+            conventions={
+                "spatial_unit": conventions.spatial_unit,
+                "origin": conventions.origin,
+                "x_dir": conventions.x_dir,
+                "y_dir": conventions.y_dir,
+                "phase_unit": conventions.phase_unit,
+                "phase": "as imported",
+            },
+            created_at=datetime.now(UTC).isoformat(),
+            snomniman_version=software.get("snomniman", ""),
+            software=software,
+        )
 
     def _x_coords(self) -> npt.NDArray[np.float64]:
         return np.asarray(self._ds.coordinate("x").values, dtype=np.float64)

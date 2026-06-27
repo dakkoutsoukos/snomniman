@@ -12,13 +12,14 @@ contrast ever modifies the Dataset.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
 
 from snomniman.core import Dataset
-from snomniman.gui.model import ExplorerModel
+from snomniman.gui.model import PRESET_AMP_PHASE, ExplorerModel
 from snomniman.viz import PHASE
 
 pytest.importorskip("PySide6")
@@ -119,6 +120,32 @@ def test_app_entry_point_importable(qapp: Any) -> None:
     from snomniman.gui import app
 
     assert callable(app.run)
+
+
+# -- publication export ------------------------------------------------------ #
+
+
+def test_figure_inputs_track_the_view_mode(window: MeasurementExplorerWindow) -> None:
+    kind, panels, _ = window._figure_inputs()
+    assert kind == "single" and len(panels) == 1
+    window._show_comparison(PRESET_AMP_PHASE)
+    kind, panels, _ = window._figure_inputs()
+    assert kind == "comparison" and len(panels) == 2  # O2 amplitude + O2 phase
+
+
+def test_export_writes_figure_and_provenance(
+    window: MeasurementExplorerWindow, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6 import QtWidgets
+
+    out = tmp_path / "figure.png"
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "PNG (*.png)")
+    )
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *a, **k: None)
+    window._export_figure()
+    assert out.exists() and out.stat().st_size > 0
+    assert (tmp_path / "figure.png.provenance.json").exists()
 
 
 def test_window_does_not_modify_dataset(window: MeasurementExplorerWindow) -> None:

@@ -9,6 +9,17 @@ at the GUI boundary so this package stays Qt-free (ADR-0007).
 
 from __future__ import annotations
 
+from .figure import (
+    FIGURE_SCHEMA_VERSION,
+    FigureSpec,
+    OverlaySpec,
+    PanelSpec,
+    export,
+    provenance_caption,
+    provenance_record,
+    render_figure,
+    render_from_record,
+)
 from .measure import (
     RegionStats,
     distance,
@@ -35,22 +46,31 @@ from .render import (
 
 __all__ = [
     "AMPLITUDE",
+    "FIGURE_SCHEMA_VERSION",
     "LEVEL_DEFAULT",
     "LEVEL_FULL",
     "LEVEL_MODES",
     "PHASE",
     "REAL",
+    "FigureSpec",
+    "OverlaySpec",
+    "PanelSpec",
     "RegionStats",
     "RenderData",
     "available_representations",
     "default_representation",
     "distance",
+    "export",
     "level_range",
     "pick_scale_bar",
     "pixel_area",
     "polygon_mask",
     "prepare_channel",
+    "provenance_caption",
+    "provenance_record",
     "rect_mask",
     "region_stats",
+    "render_figure",
+    "render_from_record",
     "sample_line",
 ]

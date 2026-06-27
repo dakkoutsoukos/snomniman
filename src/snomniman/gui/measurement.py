@@ -23,6 +23,8 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6 import QtCore, QtWidgets
 
+from snomniman.viz import OverlaySpec
+
 from .imageview import ChannelImageView
 from .model import ExplorerModel, PaneSpec, ProfileSet, RegionReport
 
@@ -117,6 +119,25 @@ class MeasurementController(QtCore.QObject):
         for item in self._items:
             self._recompute(item, emit=False)
         self.resultChanged.emit()
+
+    def overlay_specs(self) -> list[OverlaySpec]:
+        """Geometry of the visible measurements, for drawing on an exported figure."""
+        view_box = self._image.view_box
+        specs: list[OverlaySpec] = []
+        for item in self._items:
+            if not item.visible:
+                continue
+            if item.kind == "line":
+                p0, p1 = _line_points(item.roi, view_box)
+                specs.append(OverlaySpec("line", item.name, (p0, p1)))
+            elif item.kind == "rectangle":
+                x0, y0, x1, y1 = _rect_bounds(item.roi)
+                corners = ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+                specs.append(OverlaySpec("rectangle", item.name, corners))
+            else:  # polygon
+                points = tuple(_poly_vertices(item.roi, view_box))
+                specs.append(OverlaySpec("polygon", item.name, points))
+        return specs
 
     # -- internals ------------------------------------------------------------
 

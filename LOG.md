@@ -1071,3 +1071,86 @@ phase unwrap - each an explicit, recorded, non-destructive step that returns a n
 Dataset whose provenance appends one StepRecord (OHD-2/5/6D); the Zarr store already
 persists the resulting DAG. Strongly recommended first: real user validation, then
 `product-review-v0.2.md`.
+
+---
+
+## 2026-06-26 - Provenance-preserving publication export (read-only Explorer COMPLETE)
+
+A publication figure is one of the most important *derivations* of a measurement,
+so it must never become an orphan. This adds figure export that carries complete
+provenance and is regenerable from the original measurement. Read-only: a figure
+only shows data (fetched from the immutable Dataset at render time), never changes
+it. This **completes the read-only Explorer** (understand -> compare -> measure ->
+communicate).
+
+### Completed
+- **`snomniman.viz.figure` (new, Qt-free, matplotlib):** a serializable
+  `FigureSpec` (panels with channel/representation/colormap/levels/units, shared
+  extent, scale bar, measurement overlays, conventions, source path+sha256,
+  SNOMNIMAN + software versions, timestamp) with `to_dict`/`from_dict`;
+  `render_figure` (standalone `Figure` + Agg canvas - panels via imshow with the
+  lower-left convention, per-panel colorbar with units, scale bar, title; amber
+  measurement overlays; a normalized **profile subplot** for measurement figures);
+  `export` (saves the figure + a `<name>.provenance.json` sidecar);
+  `render_from_record` (regenerates the figure from a saved record);
+  `provenance_record` / `provenance_caption`.
+- **Model:** `figure_spec(panels, overlays, *, kind, title)` builds the spec from
+  the current view, filling colormap/unit/extent/conventions/source/versions from
+  the dataset (Qt-free, tested).
+- **Controller:** `overlay_specs()` reads the visible measurements' geometry into
+  `OverlaySpec`s for drawing on the figure.
+- **GUI:** an "Export figure..." control gathers the current view's panels (single /
+  comparison / harmonic series) + their display levels + measurement overlays,
+  builds the spec, and saves via a file dialog (PDF / PNG / SVG) + the provenance
+  sidecar.
+- **Presets via the current view:** single panel, comparison, harmonic series, and
+  a measurement figure (panel + overlay + profile subplot) all fall out of which
+  view is active and whether measurements exist.
+- **Verified on the real CdO measurement:** a measurement figure (O2 amplitude +
+  line overlay + profile subplot, 2 um scale bar, a.u. colorbar) and a 3-panel
+  comparison (O2 amplitude / O2 phase twilight / Z afmhot, each with a titled
+  colorbar in correct units) render at publication quality; the provenance caption
+  records measurement + sha256, panels + colormaps + ranges, overlays, conventions,
+  software versions and timestamp.
+- **Tests (+11; 157 total):** figure spec JSON round-trip; render produces the
+  expected axes for single/comparison/measurement layouts; provenance record +
+  caption content; **reproducibility** (regenerate from the saved record); export
+  writes the figure + provenance and **does not mutate the Dataset**; model
+  `figure_spec`; and a GUI export smoke test (file dialog stubbed). `ruff` clean,
+  `mypy --strict` clean (48 files), `pytest` 157 passed.
+
+### Decisions
+- **The provenance record is the FigureSpec.** Reproducibility = keep the original
+  measurement + the saved spec, then `render_from_record`. The figure file (PDF/
+  PNG/SVG) is the self-contained visual; the JSON explains and regenerates it.
+- **Export lives in `viz`** (the architecture's home for "matplotlib export for
+  publication figures"); the GUI only gathers the current view and calls it. Pure
+  matplotlib `Figure` + Agg (no pyplot global state, no Qt) so it is headless and
+  tested. Added `mpl_toolkits.*` to the mypy missing-stub overrides
+  (`AnchoredSizeBar`).
+- **Export is observational, not transformational** - no Dataset mutation, no
+  provenance DAG node, no derived dataset. A figure is a recorded derivation in the
+  philosophical sense, captured here as a self-describing artifact + sidecar.
+
+### Issues Found
+- None. matplotlib 3.11 renders crisp text headless (its own font stack), so the
+  exported figures are fully legible (unlike the Qt offscreen screenshots).
+
+### Documentation Updated
+- Created: `src/snomniman/viz/figure.py`; `tests/test_viz_figure.py`.
+- Updated: `src/snomniman/viz/__init__.py`; `src/snomniman/gui/{model,measurement,
+  window}.py`; `tests/test_gui_model.py`, `tests/test_gui_window.py`;
+  `pyproject.toml` (mypy override). This `LOG.md` entry; `NEXT.md`.
+
+### Next Recommended Actions
+**The read-only Explorer is complete** (understand / compare / measure / publish),
+all without ever changing the measurement. The project is now genuinely **ready for
+processing derivations** - leveling, reference normalization, explicit phase unwrap -
+the first features that create a *recorded* derivation: each returns a new Dataset
+whose provenance appends one `StepRecord`, never silent (OHD-2/5/6D); the Zarr store
+already persists the resulting DAG, and `figure_spec`/provenance can later cite the
+processing node. Strongly recommended first: real user validation, then
+`product-review-v0.2.md`.
+
+---
+

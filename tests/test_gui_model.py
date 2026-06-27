@@ -247,6 +247,25 @@ def test_values_at_reports_every_pane(golden_model: ExplorerModel) -> None:
     assert golden_model.values_at(specs, x1 + 1e6, (y0 + y1) / 2).in_bounds is False
 
 
+# -- publication figure spec ------------------------------------------------- #
+
+
+def test_figure_spec_captures_display_and_provenance(synthetic_dataset: Dataset) -> None:
+    model = ExplorerModel(synthetic_dataset)
+    panels = [(PaneSpec("O2", AMPLITUDE), (0.5, 2.0))]
+    spec = model.figure_spec(panels, [], kind="single", title="My figure")
+    assert spec.kind == "single" and spec.title == "My figure"
+    assert len(spec.panels) == 1
+    panel = spec.panels[0]
+    assert panel.channel == "O2" and panel.colormap == "viridis" and panel.unit == "a.u."
+    assert (panel.vmin, panel.vmax) == (0.5, 2.0)
+    # Provenance is baked in so the figure can explain and regenerate itself.
+    assert spec.conventions["spatial_unit"] == "nm"
+    assert spec.conventions["origin"] == "lower-left"
+    assert spec.snomniman_version and "numpy" in spec.software
+    assert spec.scale_bar_nm > 0 and spec.created_at
+
+
 # -- measurements ------------------------------------------------------------ #
 
 

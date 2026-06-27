@@ -11,12 +11,16 @@ process").
 
 from __future__ import annotations
 
+from typing import Any
+
 from PySide6 import QtCore, QtWidgets
+
+from snomniman import viz
 
 from .comparison import ComparisonView, ContactSheet
 from .imageview import ChannelImageView
 from .measurement import MeasurementController, MeasurementPanel
-from .model import PRESET_LABELS, ExplorerModel, MeasurementIdentity
+from .model import PRESET_LABELS, ExplorerModel, MeasurementIdentity, PaneSpec
 from .panels import ChannelBrowser, MetadataInspector, ProvenanceInspector
 
 
@@ -108,6 +112,10 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         contact.clicked.connect(self._show_contact)
         row.addWidget(contact)
         row.addStretch(1)
+        export = QtWidgets.QPushButton("Export figure...")
+        export.setToolTip("Save the current view as a publication figure + provenance")
+        export.clicked.connect(self._export_figure)
+        row.addWidget(export)
         return bar
 
     def _wire(self) -> None:
@@ -161,6 +169,48 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._contact.set_panes(specs, self._model.render_spec)
         self._stack.setCurrentWidget(self._contact)
         self._active.setText(f"Contact sheet  -  {len(specs)} optical harmonics")
+
+    # -- publication export ---------------------------------------------------
+
+    def _figure_inputs(self) -> tuple[str, list[tuple[PaneSpec, tuple[float, float]]], list[Any]]:
+        """Gather (kind, panels-with-levels, overlays) for the current view."""
+        current = self._stack.currentWidget()
+        if current is self._comparison and self._comparison.specs:
+            panels = [
+                (spec, pane.levels)
+                for spec, pane in zip(self._comparison.specs, self._comparison.panes, strict=True)
+            ]
+            return "comparison", panels, []
+        if current is self._contact:
+            panels = []
+            for spec in self._model.harmonic_panes():
+                rd = self._model.render_spec(spec)
+                panels.append((spec, (rd.vmin, rd.vmax)))
+            return "harmonic_series", panels, []
+        # single view: the current channel, plus any measurement overlays
+        overlays = self._measure.overlay_specs()
+        kind = "measurement" if overlays else "single"
+        current_spec = PaneSpec(self._model.current_channel, self._model.current_representation)
+        return kind, [(current_spec, self._image.levels)], overlays
+
+    def _export_figure(self) -> None:
+        kind, panels, overlays = self._figure_inputs()
+        spec = self._model.figure_spec(panels, overlays, kind=kind, title=self._model.title)
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export figure",
+            f"{self._model.title}.pdf",
+            "PDF (*.pdf);;PNG (*.png);;SVG (*.svg)",
+        )
+        if not path:
+            return
+        figure_path, provenance_path = viz.export(spec, self._model.dataset, path)
+        QtWidgets.QMessageBox.information(
+            self,
+            "Figure exported",
+            f"Saved publication figure:\n{figure_path}\n\n"
+            f"with provenance:\n{provenance_path.name}",
+        )
 
     def _refresh_channel(self) -> None:
         self._browser.set_representations(
