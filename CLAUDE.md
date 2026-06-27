@@ -17,7 +17,8 @@ rather than repeating them.
 > **Zarr** store - `Dataset -> Zarr -> Dataset` round-trips loss-lessly, OHD-3);
 > `snomniman.viz` (display-ready render data, quantitative line/ROI measurement,
 > provenance-bearing publication figures); `snomniman.processing` (the
-> `ProcessingStep` engine + the first operation, `image.plane_level`, with steps now
+> `ProcessingStep` engine + a growing operation vocabulary - `image.plane_level`,
+> `image.reference_normalize`, `image.phase_unwrap`, `image.crop` - with steps
 > declaring `required_capabilities`); `snomniman.describe` (the **Scientific
 > Description API**: structured descriptors *projecting* a measurement);
 > `snomniman.diagnostics` (the **Scientific Diagnostics Engine**: deterministic
@@ -31,7 +32,9 @@ rather than repeating them.
 > browse/compare channels, inspect metadata/provenance/diagnostics, read a Scientific
 > Briefing, measure profiles/ROI stats, export publication figures, and apply plane
 > leveling via an explicit Preview -> Accept/Cancel derivation - never mutating the raw
-> measurement. 289 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> measurement (the newer operations are first-class in the engine/Description/
+> Diagnostics/AI; their Explorer preview UI is the next step). 305 tests pass;
+> `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI is orientation-only
 > (no recommendations, no execution) and grounded entirely in the deterministic layers
 > (`docs/ai-scientist-v1.md`; GUI Rule 9 gates every GUI feature).

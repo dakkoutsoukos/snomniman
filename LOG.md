@@ -1601,3 +1601,66 @@ consumer, and the AI reasons over validated facts instead of pixels.
   (`image.reference_normalize`, then `image.phase_unwrap`) so a *later* AI milestone
   can offer reviewable recommendations the deterministic engine alone executes.
   Design-first, with an ADR. Real-user validation still strongly recommended.
+
+---
+
+## 2026-06-27 - Scientific vocabulary: reference_normalize, phase_unwrap, crop
+
+"Teach SNOMNIMAN more science, not more software." Three new deterministic
+`ProcessingStep` operations, each a verb the whole system gains at once - they appear
+automatically in the Description API catalogue, the Diagnostics applicability report,
+and the AI Scientist's briefing with **zero changes to those layers** (proven by new
+tests). No new infrastructure, no new abstractions; the architecture is treated as
+complete.
+
+### Completed (all in `snomniman.processing.image`)
+- `image.reference_normalize` (req: `complex_optical` + `reference`) - divides each
+  complex optical signal channel by its matching reference (`O{n}/R_O{n}`); amplitude
+  -> ratio, phase -> difference. The phase re-reference is **explicit and recorded**
+  (OHD-6D): `conventions.phase_reference` is updated; channel `state` -> normalized.
+  Single-input (signal + reference live in one measurement), not the two-dataset case.
+- `image.phase_unwrap` (req: `spatial_2d`; channel param) - appends an unwrapped-phase
+  channel `{ch}_phase_unwrapped` (rad, state unwrapped, OHD-4); raw phase untouched
+  (OHD-6D). 2-D unwrap = sequential `numpy.unwrap` x then y (no new dependency; exact
+  for smooth fields, documented limitation on true 2-D residues).
+- `image.crop` (req: `spatial_2d`; x/y min/max nm) - slices every channel to a
+  rectangular region, preserves absolute coordinates, updates scan geometry
+  (pixels/size/offset/center).
+
+### Decisions
+- **No `image.polynomial_flatten` (Rule 2).** `image.plane_level` already *is*
+  polynomial surface flattening (orders 1-3); a separate polynomial_flatten would
+  duplicate it. The genuinely-new flattening verb is `image.line_flatten` (per-scan-
+  line subtraction) - proposed as next, not built as a duplicate.
+- **GUI preview deferred deliberately.** The Explorer's Preview->Accept/Cancel flow is
+  bound to `_on_preview_requested(channel, order)` with 30+ tests; exposing arbitrary
+  operations needs a registry-driven, `param_specs`-built parameter form + per-op
+  preview rendering - a real UI task (NEXT.md), not engine work. The new ops are
+  first-class everywhere else today. (Respects "do not redesign the GUI".)
+
+### Validation (Rule 6 - known answers)
+- reference_normalize: `(O/R)*R == O` to complex64 precision; normalized phase ==
+  `angle(O)-angle(R)`; state + phase_reference updated; missing-pair raises.
+- phase_unwrap: analytical wrapped ramp recovered exactly (up to a constant); new
+  channel added, raw retained; real channel rejected.
+- crop: exact sub-region equality, geometry update (pixels/size/offset), empty-region
+  and inverted-bounds errors.
+- Propagation: explicit tests that all four ops appear in Diagnostics applicability
+  AND the AI briefing's "What This Measurement Enables" with no diagnostics/AI change.
+- Immutability + provenance step_id/params asserted for every op.
+
+### Tests / gates
+- 305 tests pass (was 289; +14 op tests +2 propagation tests). `ruff` clean;
+  `mypy --strict` clean (77 source files); Qt-free invariant green.
+
+### Documentation
+- `docs/processing-engine.md` - new "Registered operations (the scientific
+  vocabulary)" table + the polynomial_flatten/line_flatten Rule-2 note + Explorer
+  exposure status. `docs/ai-scientist-v1.md` - vocabulary grows automatically.
+  `CLAUDE.md` status (op list + 305). This entry; `NEXT.md` refreshed.
+
+### Next recommended
+- `image.line_flatten` (the genuinely-new flattening verb). Then the **generic
+  operation panel** for the Explorer (registry + `param_specs`-driven form + per-op
+  preview) so the new verbs are usable in the GUI. Then a concrete AI
+  `NarrativeProvider` (optional extra). Design-first; real-user validation.

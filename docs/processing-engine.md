@@ -1,6 +1,6 @@
 # Processing Engine
 
-**Status:** Implemented. **Last updated:** 2026-06-26
+**Status:** Implemented. **Last updated:** 2026-06-27
 
 The processing engine is the generic framework that every future scientific
 derivation in SNOMNIMAN will use. It establishes the pattern once, so that
@@ -142,6 +142,36 @@ result = step.apply({
 ```
 
 The DAG serializes this multi-input structure without losing any edge.
+
+---
+
+## Registered operations (the scientific vocabulary)
+
+The engine is intentionally small; the *vocabulary* is what grows. Each registered
+operation is a verb the whole system gains at once - it appears automatically in the
+Description API's operation catalogue, in the Diagnostics Engine's applicability
+report, and in the AI Scientist's briefing, with **no changes to those layers**
+(verified by tests). Implemented in `snomniman.processing.image`:
+
+| step_id | required capabilities | what it does |
+|---|---|---|
+| `image.plane_level` | `spatial_2d` | Subtract a fitted polynomial **surface** (order 1-3: plane / paraboloid / cubic) from a real channel. |
+| `image.reference_normalize` | `complex_optical`, `reference` | Divide each complex optical signal channel by its matching reference (`O{n} / R_O{n}`); amplitude becomes a ratio, phase a difference (explicit, recorded re-reference - OHD-6D). Single-input (signal + reference share one measurement). |
+| `image.phase_unwrap` | `spatial_2d` | Add an unwrapped-phase channel `{channel}_phase_unwrapped` for a complex channel; raw phase untouched (OHD-6D), unwrapped phase is its own channel (OHD-4). 2-D unwrap = sequential `numpy.unwrap` (x then y): exact for smooth fields, can mis-handle true 2-D residues (documented limitation; no extra dependency). |
+| `image.crop` | `spatial_2d` | Restrict every channel to a rectangular nm region; coordinates sliced (absolute positions preserved), scan geometry updated. |
+
+**On `image.polynomial_flatten` (Rule 2):** not added as a separate step, because
+`image.plane_level` *is* polynomial surface flattening (orders 1-3) - a parallel
+"polynomial_flatten" would duplicate it. The genuinely distinct, not-yet-implemented
+operation is **`image.line_flatten`** (per-scan-line polynomial subtraction, which
+removes line-to-line offsets/drift rather than a global surface); it is the next
+flattening verb to add, not a rename of an existing one.
+
+**Explorer exposure.** Every operation is usable through the engine (`apply`) and is
+first-class in Description/Diagnostics/AI. The Explorer's *Preview -> Accept/Cancel*
+GUI currently wires `image.plane_level`; exposing arbitrary operations through that
+flow needs a registry-driven, `param_specs`-built parameter form (a deliberate UI
+task, tracked in `NEXT.md`), not new engine work.
 
 ---
 

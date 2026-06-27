@@ -56,7 +56,13 @@ Measurement -> Dataset -> Description API + Diagnostics Engine -> AI Scientist
     is applied, the strongest optical harmonic, invalid-pixel notes (from
     `diagnostics`).
   - *What This Measurement Enables* - capability statements and per-operation
-    applicability (capability description, **not advice**).
+    applicability (capability description, **not advice**). This section grows
+    automatically as the deterministic vocabulary grows: when a new
+    `ProcessingStep` is registered (e.g. `image.reference_normalize`,
+    `image.phase_unwrap`, `image.crop`), it appears here with **no AI-specific
+    change** - the briefing reads applicability from the Diagnostics Engine, which
+    reads each step's declared capabilities (verified by tests). The AI's vocabulary
+    is exactly the deterministic engine's vocabulary.
 - **`interpretation`** - the optional AI narrative (`None` when no provider).
 - **`provider`** / **`generated_at`** - what produced the narrative, for audit.
 - **`context`** - the exact `BriefingContext` (the `describe` + `diagnostics` JSON

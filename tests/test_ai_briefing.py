@@ -63,6 +63,15 @@ def test_enables_lists_applicable_plane_level(synthetic_dataset: Dataset) -> Non
     assert "image.plane_level" in text and "applicable" in text
 
 
+def test_ai_vocabulary_grows_with_new_operations(synthetic_dataset: Dataset) -> None:
+    # Every registered operation enriches the AI briefing with NO AI-specific change.
+    briefing = build_briefing(synthetic_dataset)
+    enables = next(s for s in briefing.sections if s.title == "What This Measurement Enables")
+    text = " ".join(st.text for st in enables.statements)
+    for step_id in ("image.reference_normalize", "image.phase_unwrap", "image.crop"):
+        assert step_id in text, f"AI briefing did not gain vocabulary for {step_id}"
+
+
 def test_observations_note_plane_level_not_yet_applied(synthetic_dataset: Dataset) -> None:
     briefing = build_briefing(synthetic_dataset)
     obs = next(s for s in briefing.sections if s.title == "Scientific Observations")

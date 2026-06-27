@@ -3,7 +3,7 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-27 (AI Scientist v1 - Scientific Briefing)
+**Last updated:** 2026-06-27 (scientific vocabulary: reference_normalize, phase_unwrap, crop)
 
 ---
 
@@ -44,15 +44,19 @@ Implemented:
   presenter; **imageview** - colorbar/histogram/contrast/readout;
   **panels/window** widgets; **colormap**; **app/__main__** entry point).
 
-**Now implemented since:** processing engine + `image.plane_level` (Preview ->
-Accept/Cancel), provenance-preserving figure export, the Scientific Description API,
-the Scientific Diagnostics Engine (+ Explorer Diagnostics tab), and the AI Scientist
-v1 - a deterministic **Scientific Briefing** (+ Explorer Briefing tab; provider seam,
-no model SDK).
-**Still NOT implemented (out of scope so far):** a concrete AI narrative provider
-(only the seam exists), AI recommendations/execution, batch, additional processing
-operations (`reference_normalize`, `phase_unwrap`), and Zarr-export of derived
-datasets from the GUI.
+**Now implemented since:** processing engine + a growing operation vocabulary
+(`image.plane_level` with full Explorer Preview->Accept/Cancel; plus
+`image.reference_normalize`, `image.phase_unwrap`, `image.crop` - first-class in the
+engine/provenance/Description API/Diagnostics/AI, validated, but not yet wired into
+the Explorer preview UI), provenance-preserving figure export, the Scientific
+Description API, the Scientific Diagnostics Engine (+ Explorer Diagnostics tab), and
+the AI Scientist v1 - a deterministic **Scientific Briefing** (+ Explorer Briefing
+tab; provider seam, no model SDK).
+**Still NOT implemented (out of scope so far):** a generic Explorer operation panel
+(registry/`param_specs`-driven) to preview the newer ops; a concrete AI narrative
+provider (only the seam exists); AI recommendations/execution; batch; further
+operations (`image.line_flatten`, masking, background subtraction); and Zarr-export of
+derived datasets from the GUI.
 
 ---
 
@@ -170,14 +174,32 @@ in impact order:
     lazy-imported, never required for backend/CI; wire a "provider" selection so the
     Briefing's interpretation renders when configured. Tests mock the provider; CI
     never calls a network. (Design note: a major dependency - needs its own ADR.)
-22. **Next processing derivation: `image.reference_normalize`** - complex
-    sample/reference division (`step_id="image.reference_normalize"`), multi-input
-    step (`{"sample": ds, "reference": ref_ds}`).  Implement as a second
-    `ProcessingStep` subclass; the framework and Explorer workflow already support
-    multi-input apply and linear history. The Process panel will need a "Reference
-    channel" selector (second combo box) to pick the reference.  Validate:
-    `ref_normalize(sample, ref) * ref = sample` analytically.  After that:
-    `image.phase_unwrap` (unwrapped phase as a first-class channel, OHD-4).
+22. [x] **Scientific vocabulary: reference_normalize, phase_unwrap, crop** - three
+    new `ProcessingStep` operations in `snomniman.processing.image`, each first-class
+    everywhere (engine/provenance/Description API/Diagnostics/AI) with NO changes to
+    those layers (propagation proven by tests). `image.reference_normalize` is
+    single-input (signal + reference share one measurement: `O{n}/R_O{n}`), not the
+    two-dataset case the old note assumed; phase re-reference is explicit/recorded
+    (OHD-6D). `image.phase_unwrap` adds an unwrapped-phase channel (OHD-4), numpy-only
+    2-D unwrap. `image.crop` slices to an nm region and updates scan geometry. 16 new
+    tests (analytical/known-answer + propagation); 305 total green. Rule-2 note:
+    `polynomial_flatten` NOT added (plane_level already does polynomial surface
+    flatten). `docs/processing-engine.md`. *Done 2026-06-27.*
+23. **`image.line_flatten`** - per-scan-line polynomial subtraction (removes
+    line-to-line offsets/drift); the genuinely-new flattening verb (distinct from the
+    surface flatten plane_level already provides). Same pattern: register, declare
+    `required_capabilities` (`spatial_2d`), validate analytically.
+24. **Generic Explorer operation panel** - make the Process panel registry-driven:
+    list registered ops, build a parameter form from each op's `param_specs()`
+    (channel combos for `str` channel params, spin boxes for numbers), and route
+    Preview->Accept/Cancel through a per-op preview. Replaces the plane-level-specific
+    `_on_preview_requested(channel, order)` wiring (and its ~30 tests). A deliberate UI
+    task - the only piece of the new vocabulary not yet usable in the GUI.
+25. **Concrete AI narrative provider** - add ONE real provider behind the existing
+    `NarrativeProvider` seam as an *optional* extra (`uv sync --extra ai`),
+    lazy-imported, never required for backend/CI; wire provider selection so the
+    Briefing's interpretation renders when configured. Tests mock the provider; CI
+    never calls a network. (A major dependency - needs its own ADR.)
 
 **Deferred refinements (read-only, lower priority):** mirror a measurement overlay
 into every comparison pane (results are already multi-channel); a measurement

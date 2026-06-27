@@ -195,6 +195,19 @@ def test_already_applied_tracks_provenance(synthetic_dataset: Dataset) -> None:
     assert apps["image.plane_level"].already_applied is True
 
 
+def test_applicability_grows_with_the_vocabulary(synthetic_dataset: Dataset) -> None:
+    # Newly-registered operations appear in applicability with NO diagnostics changes.
+    apps = {a.step_id: a for a in operation_applicability(synthetic_dataset)}
+    for step_id in (
+        "image.plane_level",
+        "image.reference_normalize",
+        "image.phase_unwrap",
+        "image.crop",
+    ):
+        assert step_id in apps, f"{step_id} not surfaced in applicability"
+        assert apps[step_id].applicable is True  # synthetic has 2D + complex optical + reference
+
+
 # --------------------------------------------------------------------------- #
 # Serialization and immutability
 # --------------------------------------------------------------------------- #
