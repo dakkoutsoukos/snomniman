@@ -19,7 +19,7 @@ import numpy as np
 import numpy.typing as npt
 import xarray as xr
 
-from snomniman.core import DataKind, Dataset, Metadata
+from snomniman.core import Capability, DataKind, Dataset, Metadata
 from snomniman.core.exceptions import ProcessingError
 from snomniman.processing.registry import register
 from snomniman.processing.step import ParameterSpec, ProcessingStep
@@ -80,6 +80,7 @@ class PlaneLevel(ProcessingStep):
     version = 1
     description = "Subtract a fitted polynomial surface from the target channel."
     deterministic = True
+    required_capabilities = (Capability.SPATIAL_2D,)
 
     @classmethod
     def param_specs(cls) -> list[ParameterSpec]:

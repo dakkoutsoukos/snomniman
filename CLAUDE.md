@@ -10,23 +10,28 @@ rather than repeating them.
 3. `LOG.md` - recent history (newest entries at the bottom).
 
 > **Project status (2026-06-26): Phase 1 COMPLETE; read-only Explorer + first
-> processing derivation + Scientific Description API shipped.**
+> processing derivation + Scientific Description API + Scientific Diagnostics Engine
+> shipped.**
 > Backend validated end-to-end against the real neaSNOM GSF measurement directory:
 > `snomniman.core`; `snomniman.io` (GSF parser, neaSNOM reader, registry, canonical
 > **Zarr** store - `Dataset -> Zarr -> Dataset` round-trips loss-lessly, OHD-3);
 > `snomniman.viz` (display-ready render data, quantitative line/ROI measurement,
 > provenance-bearing publication figures); `snomniman.processing` (the
-> `ProcessingStep` engine + the first operation, `image.plane_level`); and
-> `snomniman.describe` (the **Scientific Description API**: structured, JSON-
-> serializable descriptors of a measurement, consumed by the GUI / export / tests).
+> `ProcessingStep` engine + the first operation, `image.plane_level`, with steps now
+> declaring `required_capabilities`); `snomniman.describe` (the **Scientific
+> Description API**: structured descriptors *projecting* a measurement); and
+> `snomniman.diagnostics` (the **Scientific Diagnostics Engine**: deterministic
+> *computed* facts - tilt, roughness, statistics, amplitude decay, operation
+> applicability - a sibling of `describe`, consumed by the GUI today and the future AI).
 > The user-facing experience is the **Measurement Explorer** (`snomniman.gui`,
 > PySide6 + PyQtGraph; `python -m snomniman.gui <dir>`): open a measurement,
-> browse/compare channels, inspect metadata/provenance, measure profiles/ROI stats,
-> export publication figures, and apply plane leveling via an explicit
-> Preview -> Accept/Cancel derivation - never mutating the raw measurement. 256 tests
-> pass; `ruff`, `mypy --strict`, and the Qt-free invariant (subprocess-checked) are
-> green. All OHD-1..9 settled. No AI yet, by design - AI will arrive as a later client
-> of `snomniman.describe` (`docs/description-api.md`; GUI Rule 9 gates every GUI feature).
+> browse/compare channels, inspect metadata/provenance/diagnostics, measure
+> profiles/ROI stats, export publication figures, and apply plane leveling via an
+> explicit Preview -> Accept/Cancel derivation - never mutating the raw measurement.
+> 274 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> (subprocess-checked) are green. All OHD-1..9 settled. No AI yet, by design - the AI
+> Scientist will arrive as a later client of `snomniman.describe` + `snomniman.diagnostics`
+> (`docs/diagnostics-engine.md`; GUI Rule 9 gates every GUI feature).
 
 This is documentation-driven development: keep `/docs` authoritative and in sync
 with code.
@@ -110,7 +115,8 @@ Layered, with a **strict, acyclic dependency graph**. Full diagram and detail:
 gui            -> consumes all backend layers (PySide6 + PyQtGraph)
 batch          -> pipeline, io, core
 pipeline       -> processing, core         (provenance DAG, replay, serialization, version capture)
-describe       -> processing, core         (Scientific Description API: structured, JSON-serializable descriptors)
+describe       -> processing, core         (Scientific Description API: structured descriptors; projection, no computation)
+diagnostics    -> processing, core         (Scientific Diagnostics Engine: deterministic computed facts; sibling of describe)
 processing     -> core                      (ProcessingStep ABC + registry + operations)
 io             -> core                      (reader registry, readers (neaSNOM first), Zarr writers)
 viz            -> core                      (display-ready data + matplotlib static export)
@@ -127,6 +133,10 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
 - `snomniman.describe` - the Scientific Description API: a Qt-free, read-only
   projection of `core` + the step registry into structured, JSON-serializable
   descriptors (consumed by `gui`/`batch`/future `ai`; not `viz`).
+- `snomniman.diagnostics` - the Scientific Diagnostics Engine: a Qt-free layer that
+  *computes* deterministic facts about a dataset (statistics, tilt/roughness,
+  amplitude decay, operation applicability). Sibling of `describe` (computation vs
+  projection); consumed by `gui`/`batch`/future `ai`.
 - `snomniman.viz` - display-ready render data + matplotlib static export.
 - `snomniman.batch` - headless application of a DAG across many sources.
 - `snomniman.gui` - the desktop app; presentation/interaction only.
@@ -134,7 +144,7 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
 **Dependency rules:**
 - No cycles. `core` imports nothing else in the project.
 - **Rule 4 (load-bearing): backend code must NEVER depend on Qt.** Nothing in
-  `core/io/processing/describe/pipeline/viz/batch` may import PySide6, PyQt, or pyqtgraph.
+  `core/io/processing/describe/diagnostics/pipeline/viz/batch` may import PySide6, PyQt, or pyqtgraph.
   Enforced by `tests/test_smoke.py::test_backend_is_qt_free`. Do not weaken it.
 - Nothing in the backend imports `gui`.
 
@@ -275,6 +285,7 @@ the design changed, and (for scientific code) a validation test.
 | `docs/product-review-v0.1.md` | Researcher's-perspective critique of the running Explorer v0.1; the **product backlog** (Must/Should/Nice) and the "ready to switch from neaPLOT" obstacle list. Re-run per iteration (v0.2, ...). |
 | `docs/processing-engine.md` | Processing engine: philosophy, operation lifecycle, preview model, provenance integration, extension model (template for new steps). |
 | `docs/description-api.md` | **Scientific Description API** (`snomniman.describe`): purpose, position, descriptors, relationships (Dataset/Explorer/Processing/future AI), honest limitations, extension model. |
+| `docs/diagnostics-engine.md` | **Scientific Diagnostics Engine** (`snomniman.diagnostics`): philosophy (observations vs operations), the descriptors, sibling relationship to `describe`, scientific choices + deferred metrics, extension model, relationship to the future AI Scientist. |
 
 ---
 

@@ -201,6 +201,40 @@ required capabilities as data - a separate, future refinement to the processing
 engine, deliberately **not** done here. `viz` keeps its own figure-provenance record
 (it is below `describe` in the stack). Full detail: `docs/description-api.md`.
 
+## ADR-0019 - Scientific Diagnostics Engine (`snomniman.diagnostics`)  [ACCEPTED]
+**Context.** A researcher opening a measurement wants objective quality facts at a
+glance - global tilt, height range, dynamic range per channel, invalid-pixel counts,
+which operations apply. These are *computed* observations, not projections of stored
+metadata, so `describe` (which performs no computation, ADR-0018) cannot provide them,
+and they are not *transformations*, so they are not `processing` steps either. A future
+AI Scientist will also need verified facts to reason over rather than inferring them
+from raw arrays. Rule 7 requires a present-day consumer, not an AI justification.
+**Decision.** Add a Qt-free backend package `snomniman.diagnostics` that **computes**
+deterministic, reproducible, JSON-serializable facts about a dataset: per-channel
+statistics, topography slope/roughness/height range, optical harmonic amplitude +
+decay, and per-operation structural applicability. Its present-day consumer is the
+Explorer's **Diagnostics panel** (Rule 9); the AI is a later, second consumer. It
+depends on `core` + `processing` only, never mutates a dataset, and adds nothing to the
+provenance DAG (reading a diagnostic is not an operation). It is the **sibling** of
+`describe`, **not** an input to it: `describe` stays a pure projection and consumers
+compose the two. To make applicability an honest fact, `ProcessingStep` gains a declared
+`required_capabilities` class field (implementing the ADR-0017 hybrid-dispatch intent
+the code already documented); `image.plane_level` declares `SPATIAL_2D`.
+**Alternatives.** (a) Fold diagnostics into `describe` - rejected: it would break
+ADR-0018's no-computation contract. (b) Ship backend-only for the future AI - rejected
+as the Rule-7 speculative-infrastructure trap; it earns its place via the Explorer
+today. (c) Compute an "SNR" and clipping/drift metrics now - rejected (Rule 6): SNR
+needs a noise model or signal-free region, clipping needs an ADC limit often absent from
+metadata, and single-image drift is ill-posed. The **amplitude-decay ratio** (a
+convention-free proxy) and **invalid-pixel counts** are reported instead; the others are
+deferred, not guessed.
+**Consequences.** One canonical, tested source of computed measurement facts, consumed
+by the Explorer today and the AI later; the AI reasons over validated observations
+instead of pixels. `ProcessingStep` now carries declared capabilities, so applicability
+is data-driven across the GUI and future layers. The engine is the first realization of
+the project compass: *every scientific operation and observation is deterministic; only
+interpretation is left to reviewable AI.* Full detail: `docs/diagnostics-engine.md`.
+
 ---
 
 ## Decision Closure (OHD-1..9 resolved)

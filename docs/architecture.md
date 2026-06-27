@@ -66,12 +66,24 @@ the step registry into structured, JSON-serializable descriptors. It is consumed
 no state and performs no scientific computation. Full detail:
 `docs/description-api.md` (ADR-0018).
 
+**Scientific Diagnostics Engine:** `snomniman.diagnostics` is a Qt-free layer
+(depends on `core` + `processing`; the `pipeline` tier) that **computes** objective,
+reproducible facts about a dataset - per-channel statistics, topography slope/
+roughness, optical amplitude decay, and per-operation applicability (read from each
+step's declared `required_capabilities`). It is the **sibling** of `describe`:
+`describe` *projects* what the core already knows (no computation), `diagnostics`
+*measures* the dataset (computation). `describe` does not consume `diagnostics`;
+consumers (`gui`/`batch`/future `ai`) compose the two. It never mutates a dataset and
+adds nothing to the provenance DAG. Full detail: `docs/diagnostics-engine.md`
+(ADR-0019).
+
 **Future AI layer:** the long-term architecture adds a `snomniman.ai` analysis
 layer that sits above `core` (consuming `Dataset`, `Metadata`, and `Provenance`,
-via the `snomniman.describe` projection) without modifying them. AI-generated
-outputs are recorded as provenance nodes. AI is a first-class analysis subsystem,
-not a UI add-on. Full principles: `CLAUDE.md` (AI Architecture Principles section)
-and `docs/ai-principles.md` (to be written when AI design begins).
+via the `snomniman.describe` projection and the `snomniman.diagnostics` facts)
+without modifying them. AI-generated outputs are recorded as provenance nodes. AI
+is a first-class analysis subsystem, not a UI add-on. Full principles: `CLAUDE.md`
+(AI Architecture Principles section) and `docs/ai-principles.md` (to be written when
+AI design begins).
 
 ## 3. Module responsibilities
 
@@ -136,6 +148,21 @@ and `docs/ai-principles.md` (to be written when AI design begins).
   reports, debugging, tests); a future `ai` layer is one more client. It does **not**
   modify the processing engine and registers nothing itself.
 - **Implemented.** See `docs/description-api.md` (ADR-0018).
+
+### `snomniman.diagnostics` - the Scientific Diagnostics Engine (depends on `processing`, `core`)
+- A Qt-free layer that **computes** objective, reproducible facts about a dataset:
+  per-channel statistics (`ChannelStatistics`), topography slope/roughness/height
+  range (`TopographyDiagnostics`), optical harmonic amplitude + decay
+  (`HarmonicDiagnostics`), and per-operation structural applicability
+  (`OperationApplicability`, from each step's declared `required_capabilities`).
+- Computation is the line between this and `describe`: `describe` projects what the
+  core already knows; `diagnostics` measures the dataset. They are siblings;
+  `describe` does not consume `diagnostics`. Never mutates a dataset and adds nothing
+  to the provenance DAG (reading a diagnostic is not an operation).
+- Produces **facts, not opinions**: no recommendations, no LLM, no providers.
+  Scientifically shaky metrics (SNR, clipping, drift) are deferred rather than
+  guessed (Rule 6). The future `ai` layer composes these facts with `describe`.
+- **Implemented.** See `docs/diagnostics-engine.md` (ADR-0019).
 
 ### `snomniman.pipeline` - reproducibility engine (depends on `processing`, `core`)
 - The **provenance DAG** (OHD-2): nodes are operations with named inputs, allowing

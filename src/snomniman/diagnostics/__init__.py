@@ -1,0 +1,50 @@
+"""snomniman.diagnostics - the Scientific Diagnostics Engine (depends on processing, core).
+
+A Qt-free, read-only backend package that computes objective, reproducible,
+scientifically defensible *facts* about a measurement: per-channel statistics,
+topography geometry (plane slope, roughness, height range), optical harmonic
+content (amplitude decay), and which registered operations structurally apply.
+
+The processing engine performs deterministic scientific *operations*; the
+diagnostics engine performs deterministic scientific *observations*. A future AI
+Scientist reasons over these observations - it must never re-derive a fact from
+raw arrays when a deterministic algorithm can establish it. The engine produces
+facts, not opinions: no recommendations, no LLM calls, no provider APIs.
+
+It is a sibling of :mod:`snomniman.describe` (which *projects* structure without
+computing): consumers compose the two. Outputs are frozen, typed, and
+JSON-serializable via each descriptor's ``to_dict``. See
+``docs/diagnostics-engine.md`` (ADR-0019).
+"""
+
+from __future__ import annotations
+
+from .descriptors import (
+    ChannelStatistics,
+    HarmonicAmplitude,
+    HarmonicDiagnostics,
+    MeasurementDiagnostics,
+    OperationApplicability,
+    TopographyDiagnostics,
+)
+from .diagnose import (
+    channel_statistics,
+    diagnose,
+    harmonic_diagnostics,
+    operation_applicability,
+    topography_diagnostics,
+)
+
+__all__ = [
+    "ChannelStatistics",
+    "HarmonicAmplitude",
+    "HarmonicDiagnostics",
+    "MeasurementDiagnostics",
+    "OperationApplicability",
+    "TopographyDiagnostics",
+    "channel_statistics",
+    "diagnose",
+    "harmonic_diagnostics",
+    "operation_applicability",
+    "topography_diagnostics",
+]

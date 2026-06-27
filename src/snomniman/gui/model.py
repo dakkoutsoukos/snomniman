@@ -24,9 +24,11 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
+import snomniman.processing.image  # noqa: F401  (registers image ops for applicability)
 from snomniman import viz
 from snomniman.core import Dataset, Metadata, current_software
 from snomniman.describe import summarize_provenance
+from snomniman.diagnostics import diagnose
 from snomniman.io import read
 from snomniman.viz import AMPLITUDE, PHASE, REAL, FigureSpec, OverlaySpec, RegionStats, RenderData
 
@@ -173,6 +175,22 @@ class RegionReport:
     count: int
     area_nm2: float
     rows: tuple[RegionStatRow, ...]
+
+
+@dataclass(frozen=True)
+class DiagnosticRow:
+    """One labelled diagnostic fact, already formatted for display."""
+
+    label: str
+    value: str
+
+
+@dataclass(frozen=True)
+class DiagnosticSection:
+    """A titled group of diagnostic facts (topography, channels, ...)."""
+
+    title: str
+    rows: tuple[DiagnosticRow, ...]
 
 
 #: Comparison preset identifiers (see :meth:`ExplorerModel.comparison_layout`).
@@ -536,6 +554,68 @@ class ExplorerModel:
             software=software,
         )
 
+    # -- diagnostics (read-only deterministic observations) -------------------
+
+    def diagnostics_report(self) -> tuple[DiagnosticSection, ...]:
+        """Formatted diagnostics for the inspector.
+
+        The numbers come from the backend Scientific Diagnostics Engine
+        (``snomniman.diagnostics``); this method only formats them for reading
+        (backend owns the facts, the GUI owns the words). All values are
+        deterministic observations, never recommendations.
+        """
+        report = diagnose(self._ds)
+        sections: list[DiagnosticSection] = []
+
+        topo = report.topography
+        if topo is not None:
+            unit = topo.unit or ""
+            sections.append(DiagnosticSection("Topography", (
+                DiagnosticRow("Channel", topo.channel),
+                DiagnosticRow("Plane tilt", f"{topo.slope_magnitude_per_um:.3g} {unit}/µm".strip()),
+                DiagnosticRow(
+                    "Tilt x / y",
+                    f"{topo.slope_x_per_um:.3g} / {topo.slope_y_per_um:.3g} {unit}/µm".strip(),
+                ),
+                DiagnosticRow("Height range", _fmt_value(topo.height_range, unit)),
+                DiagnosticRow("RMS roughness (detilted)", _fmt_value(topo.rms_roughness, unit)),
+            )))
+
+        harm = report.harmonics
+        if harm is not None:
+            rows = []
+            for amp in harm.amplitudes:
+                decay = "" if amp.decay_ratio is None else f"  (x{amp.decay_ratio:.2f} vs lower)"
+                rows.append(DiagnosticRow(
+                    f"O{amp.order} mean amplitude", f"{amp.mean_amplitude:.3g} a.u.{decay}"
+                ))
+            sections.append(DiagnosticSection("Optical harmonics", tuple(rows)))
+
+        channel_rows = []
+        for stat in report.channel_statistics:
+            unit = stat.unit or ""
+            if stat.finite_count == 0:
+                channel_rows.append(DiagnosticRow(stat.channel, "no finite values"))
+                continue
+            detail = f"range {stat.minimum:.3g} - {stat.maximum:.3g} {unit}".strip()
+            if stat.invalid_count:
+                detail += f", {stat.invalid_count} invalid"
+            channel_rows.append(DiagnosticRow(f"{stat.channel} ({stat.view})", detail))
+        sections.append(DiagnosticSection("Channels", tuple(channel_rows)))
+
+        op_rows = []
+        for app in report.applicability:
+            if not app.applicable:
+                status = f"needs {', '.join(app.missing_capabilities)}"
+            elif app.already_applied:
+                status = "available (already applied)"
+            else:
+                status = "available"
+            op_rows.append(DiagnosticRow(app.step_id, status))
+        sections.append(DiagnosticSection("Processing applicability", tuple(op_rows)))
+
+        return tuple(sections)
+
     def _x_coords(self) -> npt.NDArray[np.float64]:
         return np.asarray(self._ds.coordinate("x").values, dtype=np.float64)
 
@@ -674,6 +754,13 @@ def _step_description(step_id: str) -> str:
     if step_id == "image.plane_level":
         return "Subtracted a fitted polynomial surface from the target channel."
     return step_id
+
+
+def _fmt_value(value: float | None, unit: str) -> str:
+    """Format a possibly-missing numeric diagnostic with its unit."""
+    if value is None:
+        return "unknown"
+    return f"{value:.3g} {unit}".strip()
 
 
 def _s(value: object) -> str:

@@ -1466,3 +1466,72 @@ natural, separately-justified refinement that would deepen `describe`: have
 per-dataset applicability. **AI remains deliberately deferred** until the operation
 set is rich enough to orchestrate - at which point it consumes `snomniman.describe`
 without an architectural redesign.
+
+---
+
+## 2026-06-26 - Scientific Diagnostics Engine (snomniman.diagnostics)
+
+The first subsystem that *measures the measurement*: deterministic, reproducible,
+scientifically defensible facts about a dataset, computed once in a Qt-free backend
+and surfaced in the Explorer. This is the factual foundation a future AI Scientist
+will reason over - but it ships justified by a present-day consumer (the Explorer's
+Diagnostics panel, Rule 9), not by the AI (Rule 7).
+
+### Decisions (the forks, settled with the user)
+- **Wire into the Explorer this milestone**, not backend-only. A diagnostics package
+  whose only consumer is a future AI is the speculative-infrastructure trap; the
+  Explorer makes it earn its place today.
+- **Defensible facts only (Rule 6).** Ship tilt, height range, RMS roughness,
+  per-channel statistics, dynamic range, invalid-pixel counts, and harmonic
+  amplitude decay. **No SNR** (needs a noise model / signal-free region), **no
+  clipping** (needs an ADC limit absent from metadata), **no drift** (ill-posed from
+  one image). Deferred, not guessed. Decay ratio replaces "SNR" as an honest proxy.
+- **Extend `ProcessingStep` now.** Steps declare `required_capabilities`
+  (implementing the ADR-0017 hybrid-dispatch intent the docstring already promised);
+  `image.plane_level` declares `SPATIAL_2D`. Applicability is now a data-driven fact.
+- **Sibling of `describe`, not an input to it.** `describe` stays a pure projection
+  (ADR-0018 intact); consumers compose description + diagnostics. (The original
+  prompt suggested folding diagnostics into the Description API; rejected to preserve
+  the no-computation contract.)
+
+### Completed
+- New package `snomniman.diagnostics` (`descriptors.py` + `diagnose.py`): frozen,
+  JSON-serializable descriptors (`ChannelStatistics`, `TopographyDiagnostics`,
+  `HarmonicDiagnostics`/`HarmonicAmplitude`, `OperationApplicability`,
+  `MeasurementDiagnostics`) and pure functions (`channel_statistics`,
+  `topography_diagnostics`, `harmonic_diagnostics`, `operation_applicability`,
+  `diagnose`). Mirrors the `describe` descriptor pattern (`to_dict` + `_jsonify`).
+- `ProcessingStep.required_capabilities` class field (default `()`), documented;
+  `image.plane_level` declares `(Capability.SPATIAL_2D,)`.
+- Explorer **Diagnostics tab** (`gui/diagnostics.py` `DiagnosticsPanel` +
+  `ExplorerModel.diagnostics_report` formatting + `window` wiring). Backend computes,
+  GUI formats (Rule 4).
+- Updated the now-stale `describe.describe_operations` comment to point applicability
+  at `diagnostics` (code/doc drift fixed).
+
+### Validation (Rule 6 - known answers only)
+- Synthetic tilted plane -> exact slope (per-um) and ~0 roughness after detilt.
+- Constant field -> zero dynamic range; injected NaN/inf -> exact invalid counts.
+- Harmonic decay ratio analytically equal to 1.0 on the fixture; reference/mechanical
+  channels correctly excluded.
+- Applicability: `image.plane_level` applicable to a 2-D image, inapplicable to a
+  line scan (missing `spatial_2d`), and `already_applied` after a derivation.
+- JSON round-trip and non-mutation invariants.
+
+### Tests / gates
+- 274 tests pass (was 256; +18 across backend diagnostics and the GUI panel).
+  `snomniman.diagnostics` added to the Qt-free backend list in `test_smoke.py`.
+  `ruff` clean; `mypy --strict` clean (66 source files).
+
+### Documentation
+- New `docs/diagnostics-engine.md`; ADR-0019 in `decisions.md`; `architecture.md`
+  layer + module entry; `CLAUDE.md` status/stack/responsibilities/Rule-4 list/doc
+  table; this entry; `NEXT.md` refreshed.
+
+### Next recommended
+- The project compass is now real: *every scientific operation and observation is
+  deterministic; only interpretation is left to reviewable AI.* With diagnostics in
+  place, the AI Scientist can finally be designed to **reason over verified facts**
+  (`describe` + `diagnostics`) and emit reviewable recommendations the deterministic
+  engine alone executes. Still gated behind a richer operation vocabulary
+  (`image.reference_normalize`, `image.phase_unwrap`) - design-first, with an ADR.

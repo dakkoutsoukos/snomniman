@@ -35,6 +35,7 @@ from typing import Any, ClassVar
 import xarray as xr
 
 from snomniman.core import (
+    Capability,
     DataKind,
     Dataset,
     Metadata,
@@ -92,12 +93,21 @@ class ProcessingStep(ABC):
         ``True`` iff identical params + identical input arrays always produce
         bit-identical output.  Set ``False`` for steps that call random
         algorithms, external solvers, or AI inference.
+
+    ``required_capabilities``
+        The :class:`~snomniman.core.Capability` values a Dataset must have for
+        this step to apply (hybrid dispatch, ADR-0017). A dataset supports the
+        step iff its capabilities are a superset. Empty (the default) means the
+        step has no structural prerequisites. This declaration is *data* - it is
+        read by :mod:`snomniman.diagnostics` to report applicability without
+        running anything; ``apply`` still validates its own preconditions.
     """
 
     step_id: ClassVar[str]
     version: ClassVar[int] = 1
     description: ClassVar[str]
     deterministic: ClassVar[bool] = True
+    required_capabilities: ClassVar[tuple[Capability, ...]] = ()
 
     def __init__(self, **params: Any) -> None:
         self._params: dict[str, Any] = type(self).validate(params)

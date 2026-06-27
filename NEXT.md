@@ -3,7 +3,7 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-26 (Scientific Description API)
+**Last updated:** 2026-06-26 (Scientific Diagnostics Engine)
 
 ---
 
@@ -44,8 +44,12 @@ Implemented:
   presenter; **imageview** - colorbar/histogram/contrast/readout;
   **panels/window** widgets; **colormap**; **app/__main__** entry point).
 
-**Still NOT implemented (out of scope so far):** any processing/derivation,
-editing, export, AI, batch, or writing derived datasets.
+**Now implemented since:** processing engine + `image.plane_level` (Preview ->
+Accept/Cancel), provenance-preserving figure export, the Scientific Description API,
+and the Scientific Diagnostics Engine (+ Explorer Diagnostics tab).
+**Still NOT implemented (out of scope so far):** AI, batch, additional processing
+operations (`reference_normalize`, `phase_unwrap`), and Zarr-export of derived
+datasets from the GUI.
 
 ---
 
@@ -136,7 +140,18 @@ in impact order:
     AI). The Explorer's provenance view is wired as the first live consumer (output
     unchanged). 11 tests incl. a real-data golden, a JSON round-trip, and the
     non-mutation invariant. ADR-0018; `docs/description-api.md`. *Done 2026-06-26.*
-19. **Next processing derivation: `image.reference_normalize`** - complex
+19. [x] **Scientific Diagnostics Engine (`snomniman.diagnostics`)** - a Qt-free
+    layer that *computes* deterministic facts about a dataset (per-channel
+    statistics, topography slope/roughness/height range, optical amplitude decay,
+    per-operation applicability) and the Explorer's **Diagnostics tab** that shows
+    them. `ProcessingStep` now declares `required_capabilities`
+    (`image.plane_level` -> `SPATIAL_2D`) so applicability is a data-driven fact.
+    Sibling of `describe` (computation vs projection), justified by the Explorer
+    today (Rule 9), not the future AI (Rule 7). Defensible metrics only - SNR,
+    clipping, drift deferred rather than guessed (Rule 6). 18 new tests
+    (known-answer/analytical); 274 total green. ADR-0019;
+    `docs/diagnostics-engine.md`. *Done 2026-06-26.*
+20. **Next processing derivation: `image.reference_normalize`** - complex
     sample/reference division (`step_id="image.reference_normalize"`), multi-input
     step (`{"sample": ds, "reference": ref_ds}`).  Implement as a second
     `ProcessingStep` subclass; the framework and Explorer workflow already support

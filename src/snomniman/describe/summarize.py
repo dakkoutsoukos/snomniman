@@ -136,10 +136,10 @@ def describe_operations() -> tuple[OperationDescription, ...]:
     Reflects whatever is currently registered: the caller is responsible for
     importing the operation sub-packages it cares about (e.g.
     ``import snomniman.processing.image``) before calling, exactly as the GUI and
-    the future pipeline replay engine do.  Per-dataset *applicability* filtering
-    is intentionally not done here yet - steps do not declare their required
-    capabilities as data (see ``docs/description-api.md``), and this layer must not
-    modify the processing engine to add that.
+    the future pipeline replay engine do.  This is the registry-wide catalogue;
+    per-dataset *applicability* (does this operation apply to this measurement?)
+    is computed by :mod:`snomniman.diagnostics`, which reads each step's declared
+    ``required_capabilities`` - ``describe`` stays a pure projection.
     """
     return tuple(_describe_step_class(get_step(step_id)) for step_id in list_steps())
 

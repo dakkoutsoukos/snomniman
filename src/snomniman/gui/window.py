@@ -25,6 +25,7 @@ from snomniman.core.exceptions import ProcessingError
 from snomniman.viz import REAL, RenderData
 
 from .comparison import ComparisonView, ContactSheet
+from .diagnostics import DiagnosticsPanel
 from .imageview import ChannelImageView
 from .measurement import MeasurementController, MeasurementPanel
 from .model import PRESET_LABELS, ExplorerModel, MeasurementIdentity, PaneSpec
@@ -55,6 +56,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._metadata = MetadataInspector()
         self._provenance = ProvenanceInspector()
         self._conventions = QtWidgets.QLabel()
+        self._diagnostics = DiagnosticsPanel()
         self._process = ProcessPanel()
         # Measurements are read-only observations placed on the single image; they
         # report across the single view's channels (current + phase + topography).
@@ -98,6 +100,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._inspect_tabs = tabs
         tabs.addTab(self._metadata, "Metadata")
         tabs.addTab(self._provenance, "Provenance")
+        tabs.addTab(self._diagnostics, "Diagnostics")
         tabs.addTab(self._measure_panel, "Measure")
         tabs.addTab(self._process, "Process")
         inspect = QtWidgets.QDockWidget("Inspect")
@@ -164,6 +167,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._provenance.set_provenance(
             self._model.provenance_summary(), self._model.provenance_steps()
         )
+        self._diagnostics.set_report(self._model.diagnostics_report())
         self._process.set_channels(self._real_channels())
         self._browser.select(self._model.current_channel)
         self._show_single()
