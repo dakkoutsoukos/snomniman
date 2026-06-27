@@ -24,4 +24,14 @@ class MetadataError(SnomnimanError):
     """Metadata was malformed or violated a stored scientific convention."""
 
 
-__all__ = ["DatasetError", "MetadataError", "ReaderError", "SnomnimanError"]
+class ProcessingError(SnomnimanError):
+    """A processing step was invalid, mis-parameterized, or failed to execute."""
+
+
+__all__ = [
+    "DatasetError",
+    "MetadataError",
+    "ProcessingError",
+    "ReaderError",
+    "SnomnimanError",
+]

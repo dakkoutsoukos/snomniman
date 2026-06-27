@@ -114,6 +114,17 @@ class MeasurementController(QtCore.QObject):
         self.historyChanged.emit()
         self.resultChanged.emit()
 
+    def set_model(self, model: ExplorerModel) -> None:
+        """Switch to a new model (e.g. after a processing derivation).
+
+        Clears all session measurements — their geometry is still valid but
+        the result values must be recomputed against the new dataset, and the
+        old overlays belong to the previous view.
+        """
+        self.clear()
+        self._model = model
+        self._specs = model.single_view_specs
+
     def refresh(self) -> None:
         """Recompute every measurement (e.g. after the active channel changed)."""
         for item in self._items:

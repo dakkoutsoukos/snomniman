@@ -115,13 +115,21 @@ class CursorReadout:
 
 @dataclass(frozen=True)
 class PaneSpec:
-    """One pane of a comparison: a channel shown in a given representation."""
+    """One pane of a comparison: a channel shown in a given representation.
+
+    ``label`` overrides the auto-generated title (used for preview panes where
+    the same channel appears twice with different context, e.g. "Z (original)"
+    vs "Z (leveled)").
+    """
 
     channel: str
     representation: str  # AMPLITUDE | PHASE | REAL
+    label: str | None = None
 
     @property
     def title(self) -> str:
+        if self.label is not None:
+            return self.label
         if self.representation == REAL:
             return self.channel
         return f"{self.channel} {self.representation}"
@@ -660,6 +668,8 @@ def _convention_items(m: Metadata) -> tuple[MetadataItem, ...]:
 def _step_description(step_id: str) -> str:
     if step_id == "io.read":
         return "Imported the raw measurement from the vendor files."
+    if step_id == "image.plane_level":
+        return "Subtracted a fitted polynomial surface from the target channel."
     return step_id
 
 

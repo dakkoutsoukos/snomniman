@@ -1154,3 +1154,226 @@ processing node. Strongly recommended first: real user validation, then
 
 ---
 
+## 2026-06-26 - Processing engine framework
+
+The generic machinery that every future scientific derivation will use. This
+establishes the pattern before any algorithm: subclass, register, validate,
+apply - and every result carries complete provenance automatically. No
+scientific algorithms implemented (by design: the framework comes first).
+
+### Completed
+- **`ProcessingError` added to `snomniman.core.exceptions`** and exported from
+  `snomniman.core`. Architecture.md already listed it as a core exception; it
+  was not yet defined.
+- **`snomniman.processing.step` (new):** `ParameterSpec` frozen dataclass
+  (`name`, `description`, `py_type`, `required`, `default`) and `ProcessingStep`
+  ABC. The ABC provides: `__init__(**params)` with `validate()` (checks unknown
+  names, types, missing required); `apply(inputs)` which calls `_execute()`,
+  builds the `StepRecord` + `ProvenanceNode` (UUID node_id, named inputs,
+  software versions, UTC timestamp), and constructs the immutable output
+  `Dataset` with `source=None`; `_execute()` abstract, returning
+  `(xr.Dataset, DataKind, Metadata)`. Class variables `step_id`, `version`,
+  `description`, `deterministic` declared on the ABC; defaults provided for
+  `version=1` and `deterministic=True`.
+- **`snomniman.processing.registry` (new):** `register(cls)` (decorator or
+  direct call; guards against missing `step_id`/`description` and duplicate
+  registration), `get_step(step_id)` (raises `ProcessingError` on unknown),
+  `list_steps()` (sorted list). Module-level `_REGISTRY` dict; no entry-point
+  discovery (Rule 7).
+- **`snomniman.processing.__init__` (updated):** exports `ParameterSpec`,
+  `ProcessingStep`, `register`, `get_step`, `list_steps`.
+- **`docs/processing-engine.md` (new):** processing philosophy, operation
+  lifecycle, parameter system, preview model, provenance integration, extension
+  model (template code), dependency rules, and explicit scope boundaries (no
+  algorithms, no GUI, no AI, no pipeline replay).
+- **Tests (+39; 196 total):** `tests/test_processing.py`. Four synthetic
+  operations (`_AddConstant`, `_ScaleOptional`, `_NoParams`, `_CombineAdd`)
+  exercise the framework without touching the global registry (monkeypatch
+  fixture isolates state). Tests cover: registration/list/lookup; duplicate-
+  registration and unknown-step guards; missing-step_id and missing-description
+  guards; parameter validation (valid, missing required, wrong type, unknown);
+  no-params and optional-params patterns; multi-type params (`(int, float)`);
+  `validate` as standalone classmethod; `apply` returns Dataset; input arrays
+  unchanged and still frozen after apply; empty-inputs guard; result values
+  differ from input; step_id/version/params/deterministic/software all recorded;
+  inputs map references parent provenance nodes; is_raw=False for derived;
+  source=None for derived; multi-input (both nodes named); chained steps build
+  a 3-node DAG; UUID node_ids are unique across calls; params JSON-serializable;
+  params JSON round-trip; provenance DAG serializes/deserializes after a step;
+  chained DAG serializes to 3 nodes.
+- **Gates green:** `ruff` clean, `mypy --strict` no issues (51 files),
+  `pytest` 196 passed, backend Qt-free invariant still holds.
+
+### Decisions
+- **`ParameterSpec.py_type` is always a tuple** (`tuple[type[Any], ...]`).
+  Single-type params use a one-element tuple (`(float,)`); multi-type params
+  use `(int, float)`. This makes isinstance calls mypy-clean with no casts or
+  ignores, and keeps the field semantics unambiguous.
+- **UUID node_ids** for processing steps (the reader uses `"n0"`; processing
+  steps generate `str(uuid.uuid4())`). Node IDs are opaque identifiers; UUID
+  ensures they are globally unique across calls.
+- **`source=None` for all derived Datasets.** Only raw-import Datasets carry a
+  `RawSource`; derived datasets reference their ancestry through the provenance
+  DAG, not through the source field.
+- **Registry is module-level state; test isolation via monkeypatch.** Rather
+  than a dependency-injected registry object, the global `_REGISTRY` dict is the
+  canonical registry, and tests patch it with `monkeypatch.setattr`. This keeps
+  production code clean and tests isolated.
+
+### Issues Found
+- None. The framework design (ClassVar attributes, validate classmethod,
+  functional apply, UUID node_ids) worked cleanly with `mypy --strict` and the
+  test suite on the first pass.
+
+### Documentation Updated
+- Created: `src/snomniman/processing/step.py`;
+  `src/snomniman/processing/registry.py`; `docs/processing-engine.md`;
+  `tests/test_processing.py`.
+- Updated: `src/snomniman/core/exceptions.py` (ProcessingError);
+  `src/snomniman/core/__init__.py` (export ProcessingError);
+  `src/snomniman/processing/__init__.py` (exports). This `LOG.md` entry;
+  `NEXT.md`.
+
+### Next Recommended Actions
+**The processing engine is ready.** The next step is implementing the first
+real processing derivation using this framework. Recommended starting point:
+`image.plane_level` - polynomial plane fit and subtraction on the topography
+(Z) channel. Validate with a synthetic tilted-plane dataset that has a known
+analytical answer (Rule 6). After that: `image.reference_normalize`
+(sample / reference complex division, OHD-6D). Each operation is a concrete
+`ProcessingStep` subclass; no new framework code needed.
+
+---
+
+## 2026-06-26 - First processing derivation: image.plane_level + Explorer preview/navigation
+
+Implemented the first production processing operation and integrated it into
+the Explorer as a full Preview → Accept/Cancel → Back navigation workflow.
+
+### Completed
+- **`snomniman.processing.image.plane_level` (new):** `PlaneLevel` step
+  (`step_id="image.plane_level"`, `version=1`, `deterministic=True`) using
+  ordinary least squares via `numpy.linalg.lstsq`. Parameters: `channel` (str,
+  default `"Z"`) and `order` (int 1-3, default 1). The design matrix supports
+  order 1 (plane, 3 coefficients), order 2 (paraboloid, 6), and order 3 (10).
+  `fit_surface()` is exported separately for direct use and tests.  The step
+  validates order range (1-3) in its `validate()` override - error raised at
+  construction time, not at apply time. `@register` decorator registers
+  `PlaneLevel` in the global step registry when the module is imported.
+  Sub-package `snomniman.processing.image` created with `__init__.py` that
+  re-exports `PlaneLevel`.
+- **`PaneSpec.label` (model.py):** Added optional `label: str | None = None`
+  field to `PaneSpec` (frozen dataclass, backward-compatible). When set,
+  `title` returns the label instead of the auto-generated channel+representation
+  string. Used by the preview comparison to show "Z (original)" vs
+  "Z (leveled, order 1)".
+- **`_step_description` for `"image.plane_level"`** (model.py): Added human
+  description used in the Provenance inspector tab.
+- **`MeasurementController.set_model` (measurement.py):** New method that
+  clears all session measurements and updates `_model`/`_specs` to a new
+  `ExplorerModel`. Called when the window switches to a derived model after
+  accepting a derivation.
+- **`snomniman.gui.process.ProcessPanel` (new):** Thin panel (Rule 4 - no
+  science) with a channel selector (real-valued channels only), an order
+  SpinBox (1-3), and three buttons: "Preview" → emits `previewRequested(channel,
+  order)`; "Apply" (preview mode only) → emits `previewAccepted()`; "Cancel"
+  (preview mode only) → emits `previewCancelled()`. `set_channels(channels)` and
+  `set_preview_mode(active)` are the public interface.
+- **Explorer window (window.py) - processing workflow:**
+  - `_on_preview_requested(channel, order)`: runs `PlaneLevel.apply()` on the
+    current model's dataset, builds a temporary `ExplorerModel` for the preview,
+    creates two labeled `PaneSpec` objects ("original" vs "leveled"), shows
+    them in `ComparisonView` via `renders.__getitem__` (pre-computed RenderData
+    dict), calls `_process.set_preview_mode(True)`.
+  - `_on_preview_accepted()`: wraps the preview Dataset in a new
+    `ExplorerModel` with title `"<old title> → plane leveled (<channel>)"`,
+    calls `_update_model(new_model)` to push old model to history.
+  - `_on_preview_cancelled()`: discards the preview, calls `_show_single()`.
+  - `_update_model(new_model, push_history=True)`: replaces `self._model`,
+    calls `_measure.set_model(new_model)`, `_refresh_navigation()`, `_load()`.
+  - `_navigate_back()`: pops the history stack, calls `_update_model(prev,
+    push_history=False)`.
+  - `_refresh_navigation()`: shows/hides `_back_btn` and updates its text
+    (`"← Back to <prev title>"`).
+  - `_real_channels()`: filters the current model's channels to real-valued only
+    (used to populate the process panel selector).
+  - `_back_btn`: a `QPushButton` in the view controls bar (leftmost, initially
+    hidden). `_process`: `ProcessPanel` added as "Process" tab in the inspect
+    dock (after Metadata, Provenance, Measure).
+- **Validate on real CdO data (golden, manual):** The plane level preview opens
+  the CdO measurement's Z channel (topography, ~400-1200 nm range with
+  significant tilt), computes the polynomial surface, and the comparison view
+  shows both panes correctly. Accept switches to the derived model (title
+  updates; back button appears). Back navigation restores the raw measurement.
+- **Tests (new):**
+  - `tests/test_processing_image.py` (23 tests): 3 fit_surface known-answer
+    tests (plane, paraboloid, cubic residuals ≈ 0 analytically); 2 PlaneLevel
+    correctness tests (tilt removed, paraboloid removed); 5 immutability /
+    channel isolation tests; 5 provenance tests; 2 default-parameter tests;
+    4 validation tests (order 0, order 4, missing channel, complex channel);
+    1 registry test.
+  - `tests/test_gui_process.py` (33 tests): panel existence + tab membership;
+    channel selector shows Z not O2/O3/M1; preview switches to comparison view,
+    shows 2 panes with labels, doesn't change model, disables preview button;
+    cancel restores single view without model change; accept updates model,
+    records step_id/params, returns to single view, restores buttons; back
+    button hidden initially, appears after accept (with prev title in text),
+    hidden after back; navigate back restores original model and clears history;
+    cardinal immutability invariants through full accept + back cycle.
+- **Gates green:** `ruff` clean, `mypy --strict` no issues (56 files),
+  `pytest` 245 passed, backend Qt-free invariant holds.
+
+### Decisions
+- **`processing.image` NOT auto-imported from `processing/__init__.py`.**
+  The circular-import risk (and ruff import-sort conflict) outweigh the
+  convenience of auto-registration. Sub-packages must be imported explicitly
+  by callers that need their operations. The window imports `PlaneLevel`
+  directly (`from snomniman.processing.image.plane_level import PlaneLevel`)
+  in `_on_preview_requested`; the test file imports it at the top. Pipeline
+  replay (future) will handle bulk registration.
+- **Preview uses pre-computed `RenderData` dict (`renders.__getitem__`).**
+  The `ComparisonView.set_panes(specs, renderer)` renderer is supplied as
+  `dict.__getitem__` on a pre-built `{PaneSpec: RenderData}` dict. Clean,
+  ruff-compliant, no lambda assignment.
+- **History stack is linear (back = undo one step).** The "Back" button pops
+  exactly one entry. Deeper history is trivially supported by the same mechanism
+  as more operations are chained.
+- **Comparison cursor during preview shows original-model values for both
+  panes.** Both preview specs share `channel="Z"`; `values_at` queries the
+  original model for both. This is a known, acceptable limitation of the first
+  iteration - the preview is primarily visual. A future improvement would split
+  the cursor readout between original and derived models.
+
+### Issues Found
+- **ruff E731 (lambda assignment):** Replaced `renderer = lambda s: renders[s]`
+  with `renders.__getitem__` - cleaner and ruff-compliant.
+- **Qt `isVisible()` unreliable for non-shown widgets:** `isVisible()` requires
+  the full ancestor chain to be visible. Fixed GUI tests to use
+  `widget.testAttribute(Qt.WidgetAttribute.WA_WState_Hidden)` via the
+  `_is_shown()` helper (checks the widget's OWN explicit hide state, not
+  ancestors).
+
+### Documentation Updated
+- Created: `src/snomniman/processing/image/__init__.py`;
+  `src/snomniman/processing/image/plane_level.py`;
+  `src/snomniman/gui/process.py`;
+  `tests/test_processing_image.py`; `tests/test_gui_process.py`.
+- Updated: `src/snomniman/processing/__init__.py` (comment + remove image
+  auto-import); `src/snomniman/gui/model.py` (PaneSpec.label, _step_description);
+  `src/snomniman/gui/measurement.py` (set_model); `src/snomniman/gui/window.py`
+  (process panel, history, preview/accept/cancel/back); `LOG.md`; `NEXT.md`.
+
+### Next Recommended Actions
+The derivation workflow is now a template other operations can follow. The
+next processing derivation is `image.reference_normalize` (sample / reference
+complex division, OHD-6D): `step_id="image.reference_normalize"`, takes two
+inputs (`"sample"` and `"reference"`), divides complex channel by reference
+channel. After that, a plausible third would be `image.phase_unwrap`. The
+Explorer workflow (Process panel → Preview → Accept/Cancel → Back) already
+handles single-input steps; reference normalization would require a "pick
+reference" UI in the Process panel. No framework changes needed - the
+multi-input `apply({"sample": ds, "reference": ref_ds})` contract is already
+implemented.
+
+---
+

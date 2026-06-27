@@ -18,6 +18,7 @@ from .dataset import Dataset
 from .exceptions import (
     DatasetError,
     MetadataError,
+    ProcessingError,
     ReaderError,
     SnomnimanError,
 )
@@ -60,6 +61,7 @@ __all__ = [
     "Instrument",
     "Metadata",
     "MetadataError",
+    "ProcessingError",
     "ProvenanceNode",
     "RawSource",
     "ReaderError",

@@ -7,6 +7,10 @@ cursor readout in the status bar. It is wiring only - it translates user gesture
 into model queries and pushes the results into widgets; it computes nothing
 scientific and never modifies the measurement (Rule 4; "explore before you
 process").
+
+Processing derivations (plane level, future operations) produce new immutable
+Datasets via the processing engine.  The window keeps a linear history stack so
+the researcher can navigate back to the original measurement after a derivation.
 """
 
 from __future__ import annotations
@@ -16,24 +20,33 @@ from typing import Any
 from PySide6 import QtCore, QtWidgets
 
 from snomniman import viz
+from snomniman.core import Dataset
+from snomniman.core.exceptions import ProcessingError
+from snomniman.viz import REAL, RenderData
 
 from .comparison import ComparisonView, ContactSheet
 from .imageview import ChannelImageView
 from .measurement import MeasurementController, MeasurementPanel
 from .model import PRESET_LABELS, ExplorerModel, MeasurementIdentity, PaneSpec
 from .panels import ChannelBrowser, MetadataInspector, ProvenanceInspector
+from .process import ProcessPanel
 
 
 class MeasurementExplorerWindow(QtWidgets.QMainWindow):
-    """The central, read-only Explorer surface for one measurement."""
+    """The central Explorer surface for one measurement and its derivations."""
 
     def __init__(self, model: ExplorerModel) -> None:
         super().__init__()
         self._model = model
+        self._history: list[ExplorerModel] = []
+        self._preview_ds: Dataset | None = None
+        self._preview_channel: str = ""
+        self._preview_order: int = 1
 
         self._title = QtWidgets.QLabel()
         self._facts = QtWidgets.QLabel()
         self._active = QtWidgets.QLabel()
+        self._back_btn = QtWidgets.QPushButton()
         self._image = ChannelImageView()
         self._comparison = ComparisonView()
         self._contact = ContactSheet()
@@ -42,6 +55,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._metadata = MetadataInspector()
         self._provenance = ProvenanceInspector()
         self._conventions = QtWidgets.QLabel()
+        self._process = ProcessPanel()
         # Measurements are read-only observations placed on the single image; they
         # report across the single view's channels (current + phase + topography).
         self._measure = MeasurementController(model, self._image, model.single_view_specs)
@@ -85,6 +99,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         tabs.addTab(self._metadata, "Metadata")
         tabs.addTab(self._provenance, "Provenance")
         tabs.addTab(self._measure_panel, "Measure")
+        tabs.addTab(self._process, "Process")
         inspect = QtWidgets.QDockWidget("Inspect")
         inspect.setWidget(tabs)
         inspect.setFeatures(QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable)
@@ -97,6 +112,12 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         bar = QtWidgets.QWidget()
         row = QtWidgets.QHBoxLayout(bar)
         row.setContentsMargins(0, 2, 0, 2)
+
+        self._back_btn.setVisible(False)
+        self._back_btn.clicked.connect(self._navigate_back)
+        row.addWidget(self._back_btn)
+        row.addSpacing(8)
+
         single = QtWidgets.QPushButton("Single")
         single.setToolTip("Show one channel with full colorbar and contrast controls")
         single.clicked.connect(self._show_single)
@@ -126,6 +147,10 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._contact.channelSelected.connect(self._on_channel_selected)
         # Measurements live on the single image; adding one focuses that view.
         self._measure.measurementAdded.connect(self._show_single)
+        # Processing signals
+        self._process.previewRequested.connect(self._on_preview_requested)
+        self._process.previewAccepted.connect(self._on_preview_accepted)
+        self._process.previewCancelled.connect(self._on_preview_cancelled)
 
     # -- loading / refreshing -------------------------------------------------
 
@@ -139,6 +164,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._provenance.set_provenance(
             self._model.provenance_summary(), self._model.provenance_steps()
         )
+        self._process.set_channels(self._real_channels())
         self._browser.select(self._model.current_channel)
         self._show_single()
 
@@ -151,6 +177,37 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
     def _on_representation_selected(self, representation: str) -> None:
         self._model.set_representation(representation)
         self._show_single()
+
+    # -- model switching (derivation navigation) ------------------------------
+
+    def _update_model(self, new_model: ExplorerModel, *, push_history: bool = True) -> None:
+        """Replace the active model; optionally push the old one to the history stack."""
+        if push_history:
+            self._history.append(self._model)
+        self._model = new_model
+        self._measure.set_model(new_model)
+        self._refresh_navigation()
+        self._load()
+
+    def _navigate_back(self) -> None:
+        if not self._history:
+            return
+        self._preview_ds = None
+        self._process.set_preview_mode(False)
+        self._update_model(self._history.pop(), push_history=False)
+
+    def _refresh_navigation(self) -> None:
+        has_history = bool(self._history)
+        self._back_btn.setVisible(has_history)
+        if has_history:
+            self._back_btn.setText(f"← Back to {self._history[-1].title}")
+
+    def _real_channels(self) -> list[str]:
+        """Real-valued (non-complex) channels of the current dataset."""
+        return [
+            ch for ch in self._model.dataset.channel_names
+            if not self._model.dataset.is_complex(ch)
+        ]
 
     # -- view switching -------------------------------------------------------
 
@@ -169,6 +226,55 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._contact.set_panes(specs, self._model.render_spec)
         self._stack.setCurrentWidget(self._contact)
         self._active.setText(f"Contact sheet  -  {len(specs)} optical harmonics")
+
+    # -- processing (plane level and future operations) -----------------------
+
+    def _on_preview_requested(self, channel: str, order: int) -> None:
+        from snomniman.processing.image.plane_level import PlaneLevel
+
+        step = PlaneLevel(channel=channel, order=order)
+        try:
+            preview_ds = step.apply({"primary": self._model.dataset})
+        except ProcessingError as exc:
+            QtWidgets.QMessageBox.warning(self, "Preview failed", str(exc))
+            return
+
+        self._preview_ds = preview_ds
+        self._preview_channel = channel
+        self._preview_order = order
+
+        preview_model = ExplorerModel(preview_ds, title="preview")
+        orig_spec = PaneSpec(channel, REAL, label=f"{channel} (original)")
+        leveled_spec = PaneSpec(channel, REAL, label=f"{channel} (leveled, order {order})")
+
+        orig_rd = self._model.render_spec(PaneSpec(channel, REAL))
+        leveled_rd = preview_model.render_spec(PaneSpec(channel, REAL))
+        renders: dict[PaneSpec, RenderData] = {orig_spec: orig_rd, leveled_spec: leveled_rd}
+
+        self._comparison.set_panes([orig_spec, leveled_spec], renders.__getitem__)
+        self._stack.setCurrentWidget(self._comparison)
+        self._active.setText(
+            f"Preview: plane level on '{channel}' (order {order})"
+            " — Apply to commit, Cancel to discard"
+        )
+        self._process.set_preview_mode(True)
+
+    def _on_preview_accepted(self) -> None:
+        if self._preview_ds is None:
+            return
+        ch = self._preview_channel
+        derived_title = f"{self._model.title} → plane leveled ({ch})"
+        new_model = ExplorerModel(self._preview_ds, title=derived_title)
+        self._preview_ds = None
+        self._preview_channel = ""
+        self._process.set_preview_mode(False)
+        self._update_model(new_model)
+
+    def _on_preview_cancelled(self) -> None:
+        self._preview_ds = None
+        self._preview_channel = ""
+        self._process.set_preview_mode(False)
+        self._show_single()
 
     # -- publication export ---------------------------------------------------
 
