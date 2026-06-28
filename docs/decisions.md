@@ -454,6 +454,47 @@ a clean leaf (no internal deps), so it does not entangle the architecture. Full 
 
 ---
 
+## ADR-0025 - Governance: Beta Readiness as the product roadmap; the Scientific Validation Phase as the scientific methodology  [ACCEPTED]
+**Context.** Foundational development is complete (architecture, Explorer, processing engine,
+Description/Diagnostics/AI/Knowledge layers - ADR-0018..0024). The bottleneck is no longer
+software architecture; it is **deciding which capabilities deserve implementation** - which
+workflow gaps actually prevent researchers from replacing neaPLOT, and which scientific
+judgments can be automated *and defended*. Without a framework, the project risks drifting back
+to speculative feature-by-feature accumulation - exactly what the maxim warns against. This ADR
+records **governance, not functionality**: no code, no architecture change, and no existing
+scientific rule is altered.
+**Decision.** Adopt **two complementary, permanent planning systems** as the decision framework,
+and require future work to trace to one of them: (1) the **Product Roadmap** -
+[`beta-readiness-v1.md`](beta-readiness-v1.md), a recurring full-workday readiness review that
+identifies the validated *workflow gaps* (the neaPLOT switch-back points) and is the authoritative
+product backlog; and (2) the **Scientific Validation Phase** -
+[`scientific-validation.md`](scientific-validation.md), the permanent methodology by which a
+*scientific capability* enters the engine (Scientific Question -> Literature Review -> Candidate
+Deterministic Diagnostics -> Analytical -> Synthetic -> Real-data Validation -> Decision ->
+Implementation, **last**), with three legitimate Decision outcomes (validate-and-implement /
+defer / stop) in which **honest deferral is a success**. Implement only at their intersection
+(*needed* and *validated*); a validated capability **extends an existing layer** (diagnostics /
+`ai.reasoning` / processing / knowledge), never a new subsystem without its own ADR (Rule 7).
+Rename the "Scientific Knowledge Phase" to the **Scientific Validation Phase** (validation, not
+accumulation, is the discipline; and "Knowledge" collided with the shipped Knowledge Center).
+**Alternatives.** (a) Continue choosing features case-by-case - rejected: drifts toward
+unjustified features; the maxim ("two we can defend over four we can't") demands a gate. (b) One
+combined roadmap mixing product and science - rejected: they answer different questions ("what do
+researchers need?" vs "what can we honestly automate?") under different authorities; conflating
+them hides the scientific gate. (c) Keep the "Scientific Knowledge Phase" name - rejected: it
+frames the goal as accumulation and collides with `snomniman.knowledge`. (d) Record this only in
+the docs, no ADR - rejected: Rule 3 records decisions in `decisions.md`, and this is a permanent
+governance decision worth citing (cf. ADR-0015, a process ADR).
+**Consequences.** Future contributors learn how capabilities are proposed, validated, and
+implemented from two authoritative documents; the validation template + Future Validation Queue
+make scientific milestones repeatable; the maxim is operationalized (deferral is a recorded
+outcome, not a failure). The Beta Readiness review is re-run per iteration
+(`beta-readiness-v2`, ...). No functional change (373 tests unaffected). `CLAUDE.md` ("Planning
+and Governance"), `roadmap.md` ("Current driver"), `architecture.md` (Section 10), and `NEXT.md`
+are updated to point here. Full detail: `docs/scientific-validation.md`, `docs/beta-readiness-v1.md`.
+
+---
+
 ## Decision Closure (OHD-1..9 resolved)
 
 | OHD | Topic | Resolution | ADR |

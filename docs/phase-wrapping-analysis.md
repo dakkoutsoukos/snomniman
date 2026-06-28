@@ -1,4 +1,4 @@
-# Phase-Wrapping Detectability Analysis (a scientific-knowledge milestone)
+# Phase-Wrapping Detectability Analysis (a Scientific Validation milestone)
 
 > **Question:** *When should an experienced SNOM researcher recommend phase
 > unwrapping - and can that judgment be made deterministically, with enough
@@ -9,9 +9,12 @@
 > unjustified one). This document records the science, the candidate diagnostics, an
 > empirical validation, and a conclusion about whether a rule is warranted **yet**.
 
-This is the first milestone of the **Scientific Knowledge Phase**: the deliverable is
-not a feature but an answer - *teach SNOMNIMAN one expert judgment, deterministically,
-or conclude honestly that we cannot yet*.
+This is the first milestone of - and the worked exemplar for - the **Scientific
+Validation Phase** ([`scientific-validation.md`](scientific-validation.md), the canonical
+methodology; this document predates and motivated its formalization). The deliverable is
+not a feature but an answer - *validate one expert judgment, deterministically, or conclude
+honestly that we cannot yet*. Its sections map onto the standard validation template; the
+conclusion is **Outcome 2** (defensible criterion, recommendation rule deferred).
 
 ---
 

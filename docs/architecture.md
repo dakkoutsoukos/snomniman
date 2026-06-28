@@ -1,10 +1,13 @@
 # Architecture
 
-**Status:** Phase 0 complete; all OHD decisions applied. **Last updated:** 2026-06-23
+**Status:** all OHD decisions applied; the layered backend + Explorer + Description /
+Diagnostics / AI / Knowledge layers are implemented (ADR-0018..0024). **Foundational
+development is complete** - new capability now enters via the governance process
+(Section 10), extending these layers rather than adding new ones.
+**Last updated:** 2026-06-28
 
-Authoritative description of the system's structure, written before
-implementation. When the architecture changes, this file changes in the same
-commit, with rationale in [`decisions.md`](decisions.md).
+Authoritative description of the system's structure. When the architecture changes,
+this file changes in the same commit, with rationale in [`decisions.md`](decisions.md).
 
 ---
 
@@ -322,3 +325,27 @@ Plugin discovery / entry points, a user scripting console, cloud/remote compute,
 multi-user collaboration, and performance optimization (until a measured need
 exists, per Rule 1). Each remains a candidate recorded in `decisions.md` if and
 when a concrete need appears.
+
+## 10. Extending the system: where new capabilities land
+
+Foundational development is complete; the architecture's job is now to *receive*
+validated capability, not to grow new layers. New work enters through the two
+governance documents - [`beta-readiness-v1.md`](beta-readiness-v1.md) (product:
+which workflow gaps to close) and [`scientific-validation.md`](scientific-validation.md)
+(science: whether a capability is justified, ADR-0025) - and a capability that clears
+both **extends an existing abstraction** (Rule 7). The mapping is fixed:
+
+| New capability | Lands in (existing layer) | Mechanism |
+|---|---|---|
+| A deterministic **fact / metric** | `snomniman.diagnostics` | a new descriptor (ADR-0019) |
+| A deterministic **recommendation** | `snomniman.ai.reasoning` | a registered `ReasoningRule` (ADR-0023) |
+| A deterministic **operation** | `snomniman.processing` | a registered `ProcessingStep` (ADR-0021) |
+| Its **teaching** content | `snomniman.knowledge` | a curated `Article` (ADR-0024) |
+| An **export / persistence** path | `snomniman.io`, `snomniman.viz` | a writer the GUI calls (the top product gap) |
+
+Because the Diagnostics panel, the AI Scientist panel, the Processing Workspace, and
+the Knowledge Center are **generic and registry-driven**, a capability registered in
+the backend surfaces in the Explorer with little or no GUI code (ADR-0021/0024). This
+is the architectural payoff that makes the governance loop cheap: *teach more science,
+not more software.* Adding a new subsystem instead of extending one of these layers
+requires its own ADR and a justification against Rule 7.

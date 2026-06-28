@@ -2058,3 +2058,85 @@ from a canonical source rather than improvising).
   mechanism is generic. More articles as accuracy allows (nano-FTIR, polariton imaging). Then
   the next Scientific Knowledge judgment (poor-scan/drift detection, harmonic ranking), or a
   concrete `NarrativeProvider` that grounds its prose in the knowledge base.
+
+---
+
+## 2026-06-28 - Governance milestone: Scientific Validation Phase + Beta Readiness roadmap (ADR-0025)
+
+A **documentation-and-governance** milestone (no code, no architecture change, no scientific
+rule altered). With foundational development complete, the project's bottleneck is no longer
+architecture but *deciding what to build*; this milestone establishes the permanent decision
+framework. The user had already drafted a **Beta Readiness Review** (`docs/beta-readiness-v1.md`,
+the successor to `product-review-v0.1`): an experienced-researcher critique answering "can I use
+SNOMNIMAN for a whole day without neaPLOT?" - identifying the beta-blocking workflow cluster
+(C1 export data, C2 export numbers, C3 multi-measurement open, C4 `image.line_flatten`), the
+neaPLOT switch-back points, a user-testing protocol, and a ~4.0/5 readiness score. This milestone
+adopts it as the authoritative product roadmap and pairs it with a formal scientific methodology.
+
+### Completed
+- **Created `docs/scientific-validation.md`** - the canonical methodology for how scientific
+  capability enters SNOMNIMAN: the lifecycle (Scientific Question -> Literature -> Candidate
+  Deterministic Diagnostics -> Analytical -> Synthetic -> Real-data Validation -> Decision ->
+  Implementation, **last**), the six permanent engineering principles + the maxim, the **three
+  Decision outcomes** (validate-and-implement / defer / stop, with honest deferral a success),
+  the rule that diagnostics precede recommendations and real-data validation must be two-sided,
+  the reusable **9-section validation template**, a table of *where validated capabilities land*
+  (existing layers, Rule 7), and the seeded **Future Validation Queue** (harmonic ranking,
+  phase-wrapping recommendation, reference-normalization criteria, poor-scan / drift /
+  tip-artifact detection). Phase-wrapping is named as the worked exemplar (Outcome 2).
+- **Renamed "Scientific Knowledge Phase" -> "Scientific Validation Phase"** in current docs:
+  *validation*, not *accumulation*, is the governing discipline (a judgment ships only when
+  evidence justifies it; declining is legitimate), and "Knowledge" collided with the shipped
+  Knowledge Center (`snomniman.knowledge`). Historical LOG entries keep their original wording.
+- **CLAUDE.md:** new top-level **"Planning and Governance"** section (the two-system table + the
+  load-bearing order: Beta Readiness finds gaps -> Scientific Validation justifies science ->
+  implement only the intersection -> feedback -> repeat); a governance paragraph in the status
+  block; two new doc-hierarchy rows (`beta-readiness-v1.md`, `scientific-validation.md`); the
+  phase-wrapping row reworded as the Validation exemplar.
+- **roadmap.md:** refreshed the badly-stale header ("Phase 1 ready to begin" -> foundational
+  development complete); a **"Current driver"** section (the 5-step priority loop + the Beta
+  Readiness Critical cluster as the live product priority); a subsection explaining the rename
+  and why validation beats knowledge-accumulation; and honest per-phase status markers
+  (1 COMPLETE; 2/3/7 PARTIAL; 4 IN PROGRESS with its exit criterion explicitly *not yet met*;
+  5/6 NOT STARTED; 8 DEFERRED). Updated the stale "Phase 1 unblocked" risk bullet.
+- **architecture.md:** refreshed the stale status header; added **Section 10 "Extending the
+  system: where new capabilities land"** - the fixed mapping of a validated fact/recommendation/
+  operation/article/export onto the existing diagnostics / `ai.reasoning` / processing /
+  knowledge / io+viz layers, surfaced by the generic registry-driven panels with little GUI code.
+- **NEXT.md:** rewritten around the two tracks - a Product track (C1-C4 then H1-H5, each reusing
+  an existing abstraction) and a Science track (the Validation Queue, none to be implemented
+  ahead of validation) - with the done-items history retired to `LOG.md`, and the durable
+  toolchain reminders / design-doc pointers / definition-of-done preserved.
+- **decisions.md: ADR-0025** records the governance decision (two planning systems; implement only
+  at the intersection; the rename; validated capability extends an existing layer, never a new
+  subsystem without its own ADR). Modeled on ADR-0015 (a process ADR).
+
+### Decisions
+- **ADR-0025 (governance, not functionality).** Beta Readiness = authoritative product roadmap;
+  the Scientific Validation Phase = permanent scientific methodology; the two are complementary
+  (need vs justification) and future work lives at their intersection. Recording it as an ADR
+  (rather than docs-only) follows Rule 3; alternatives considered: feature-by-feature (rejected -
+  the maxim), one combined roadmap (rejected - conflates two authorities), keeping the old name
+  (rejected - accumulation framing + name collision).
+
+### Issues Found
+- None. This milestone is the doc-side payoff of an already-defended architecture: every
+  beta-blocking gap reuses an existing abstraction, and every science-track item routes through
+  the same validation gate that (correctly) deferred the phase-unwrap rule.
+
+### Tests / gates
+- No code touched; 373 tests still green, gates unaffected. Docs are ASCII/UTF-8.
+
+### Documentation
+- Added `docs/scientific-validation.md`; adopted `docs/beta-readiness-v1.md` into the hierarchy.
+  Updated `CLAUDE.md`, `docs/roadmap.md`, `docs/architecture.md`, `NEXT.md`, `docs/decisions.md`
+  (ADR-0025), and this entry. (Memory: renamed the phase memory to `scientific-validation-phase`,
+  added a beta-readiness governance note, refreshed cross-links.)
+
+### Next recommended
+- **Product:** start the Beta Readiness Critical cluster - C1 (wire `io.write_zarr` into the GUI
+  as "Export data...") is the highest-leverage single change; then C2, C4 (`image.line_flatten`),
+  C3. **Science:** the next validation investigation that *is* groundable on present data
+  (harmonic ranking is the strongest candidate and a real workflow need). **Strongly recommended
+  first:** run the user-testing protocol (Beta Readiness Section 5) with two or three neaPLOT
+  users and let their forced exits order the backlog.

@@ -9,9 +9,11 @@ rather than repeating them.
 2. `NEXT.md` - what to work on right now, blockers, open questions.
 3. `LOG.md` - recent history (newest entries at the bottom).
 
-> **Project status (2026-06-27): Phase 1 COMPLETE; read-only Explorer + generic
+> **Project status (2026-06-28): Phase 1 COMPLETE; read-only Explorer + generic
 > Processing Workspace + Description API + Diagnostics Engine + AI Scientist
-> (Scientific Briefing + deterministic Suggested Next Steps) shipped.**
+> (Scientific Briefing + deterministic Suggested Next Steps) + Knowledge Center
+> shipped. Foundational development is complete; the project is now governed by two
+> permanent planning systems (see "Planning and Governance").**
 > Backend validated end-to-end against the real neaSNOM GSF measurement directory:
 > `snomniman.core`; `snomniman.io` (GSF parser, neaSNOM reader, registry, canonical
 > **Zarr** store - `Dataset -> Zarr -> Dataset` round-trips loss-lessly, OHD-3);
@@ -54,6 +56,12 @@ rather than repeating them.
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
 > LLM only *explains*), grounded entirely in the deterministic layers
 > (`docs/scientific-reasoning.md`, `docs/ai-scientist-v1.md`; GUI Rule 9 gates every GUI feature).
+> **Governance:** with the foundation complete, work is now driven by two complementary,
+> permanent planning systems - the **Beta Readiness Review** (`docs/beta-readiness-v1.md`,
+> the authoritative *product* roadmap: which validated workflow gaps block a researcher's
+> full day) and the **Scientific Validation Phase** (`docs/scientific-validation.md`, the
+> permanent *scientific* methodology: how a capability is proposed, validated, and only
+> then implemented). Future work happens at their intersection - *needed* and *validated*.
 
 This is documentation-driven development: keep `/docs` authoritative and in sync
 with code.
@@ -333,6 +341,35 @@ the design changed, and (for scientific code) a validation test.
 
 ---
 
+## Planning and Governance
+
+Foundational development is complete. New work is no longer chosen feature-by-feature;
+it is driven by **two complementary, permanent planning systems**. A change should
+generally trace to one of them.
+
+| System | Document | Answers | Authority over |
+|---|---|---|---|
+| **Product Roadmap** | `docs/beta-readiness-v1.md` | *What do researchers still need?* | Which **workflow gaps** block a researcher's full day (the neaPLOT switch-back points). The authoritative product backlog; re-run per iteration (`beta-readiness-v2`, ...). |
+| **Scientific Validation** | `docs/scientific-validation.md` | *What can we honestly automate?* | Whether a proposed **scientific capability** (a diagnostic, a recommendation rule, an automated judgment) is justified by deterministic evidence. The permanent scientific methodology. |
+
+**The governing rule (the order is load-bearing):**
+
+1. **Beta Readiness identifies the workflow gaps** worth closing - the product priority.
+2. **Scientific Validation determines whether a scientific capability is justified** -
+   the scientific gate (Question -> Literature -> Candidate Diagnostics -> Analytical ->
+   Synthetic -> Real-data -> Decision). **Honest deferral is a successful outcome.**
+3. **Only a capability that is both *needed* and *validated* is implemented** - and it
+   extends an existing abstraction (diagnostics / `ai.reasoning` / knowledge /
+   processing), never a new subsystem (Rule 7).
+4. **Gather researcher feedback** (the Beta Readiness user-testing protocol) and repeat.
+
+Avoid speculative infrastructure. Most product-track gaps (data egress, persistence,
+multi-measurement sessions, `image.line_flatten`) *reuse abstractions that already
+exist*; most science-track work is a validated diagnostic that the generic panels
+surface automatically. See `docs/roadmap.md` for the current priority order.
+
+---
+
 ## Documentation Hierarchy
 
 | File | Purpose |
@@ -353,12 +390,14 @@ the design changed, and (for scientific code) a validation test.
 | `docs/ai-principles.md` | AI architecture principles; detailed design guidance (to be written when AI design begins). |
 | `docs/measurement-discovery.md` | First real-data validation: observed neaSNOM GSF format, confirmed/corrected assumptions, Phase 1 impact. |
 | `docs/product-review-v0.1.md` | Researcher's-perspective critique of the running Explorer v0.1; the **product backlog** (Must/Should/Nice) and the "ready to switch from neaPLOT" obstacle list. Re-run per iteration (v0.2, ...). |
+| `docs/beta-readiness-v1.md` | **The authoritative Product Roadmap** (successor to `product-review-v0.1`): a full-workday readiness review against the one question "can I use SNOMNIMAN all day without neaPLOT?" Identifies the validated **workflow gaps** (G1-G7), the **beta blockers** (C1-C4 Critical: data/dataset export, multi-measurement open, `image.line_flatten`), the neaPLOT switch-back points, a user-testing protocol, and a readiness score. Drives near-term product priority; re-run per iteration. |
+| `docs/scientific-validation.md` | **The Scientific Validation Phase** - the permanent *scientific* methodology (ADR-0025): how a capability enters the engine (Question -> Literature -> Candidate Diagnostics -> Analytical -> Synthetic -> Real-data -> Decision -> Implementation, last). The engineering principles + the maxim, the three Decision outcomes (incl. honest deferral as success), the reusable validation template, where validated capabilities land (existing layers, Rule 7), and the Future Validation Queue. The scientific half of the decision framework (`beta-readiness-v1.md` is the product half). |
 | `docs/processing-engine.md` | Processing engine: philosophy, operation lifecycle, preview model, provenance integration, extension model (template for new steps). |
 | `docs/description-api.md` | **Scientific Description API** (`snomniman.describe`): purpose, position, descriptors, relationships (Dataset/Explorer/Processing/future AI), honest limitations, extension model. |
 | `docs/diagnostics-engine.md` | **Scientific Diagnostics Engine** (`snomniman.diagnostics`): philosophy (observations vs operations), the descriptors, sibling relationship to `describe`, scientific choices + deferred metrics, extension model, relationship to the future AI Scientist. |
 | `docs/ai-scientist-v1.md` | **AI Scientist** (`snomniman.ai`): the Scientific Briefing (orientation; ADR-0020) **and Suggested Next Steps** (deterministic, grounded workflow recommendations that Preview into the Workspace; ADR-0022) - philosophy (grounding + deterministic fallback; recommend-not-execute), architecture, the provider seam (no SDK yet), Explorer integration, honest limitations, future evolution. |
 | `docs/scientific-reasoning.md` | **Scientific Reasoning Rule Engine** (`snomniman.ai.reasoning`; ADR-0023): the deterministic rules that turn diagnostics into recommendations - philosophy (deterministic judgment, AI explains), what a `ReasoningRule` is, the rule lifecycle (applicability/prereq/exclusion/ordering guards), the shipped rules + what is deliberately deferred (phase-unwrap/crop) and why, the Rule-7 scope note, and the extension model. |
-| `docs/phase-wrapping-analysis.md` | **Scientific Knowledge milestone** (analysis only, no code): can phase wrapping be detected deterministically well enough to justify an auto-recommendation? Background, candidate diagnostics (residues - Goldstein/Ghiglia-Pritt - + unwrap-range ratio + amplitude mask; literature-grounded), analytical + real-data validation, and the honest conclusion: the criterion is defensible/validatable, but the *rule* is **deferred** until a genuinely-wrapping real measurement can validate its positive branch (the real CdO optical phase does not wrap). The template for the Scientific Knowledge Phase. |
+| `docs/phase-wrapping-analysis.md` | **The worked exemplar of the Scientific Validation Phase** (`scientific-validation.md`); analysis only, no code: can phase wrapping be detected deterministically well enough to justify an auto-recommendation? Background, candidate diagnostics (residues - Goldstein/Ghiglia-Pritt - + unwrap-range ratio + amplitude mask; literature-grounded), analytical + real-data validation, and the honest conclusion (Outcome 2): the criterion is defensible/validatable, but the *rule* is **deferred** until a genuinely-wrapping real measurement can validate its positive branch (the real CdO optical phase does not wrap). |
 | `docs/knowledge-center.md` | **Knowledge Center** (`snomniman.knowledge`; ADR-0024): a living, in-app scientific knowledge base - philosophy (teach the science while performing it; ground the AI), architecture (a Qt-free leaf), the structured `Article` model, the Explorer panel + "Learn more" deep-links, AI integration, the integrity/no-drift guarantees, and future expansion. |
 
 ---
