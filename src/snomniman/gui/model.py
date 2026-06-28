@@ -27,7 +27,7 @@ import numpy.typing as npt
 
 import snomniman.processing.image  # noqa: F401  (registers image ops for applicability)
 from snomniman import viz
-from snomniman.ai import Briefing, build_briefing
+from snomniman.ai import Briefing, WorkflowSuggestions, build_briefing, recommend_workflow
 from snomniman.core import Dataset, Metadata, current_software
 from snomniman.core.exceptions import ProcessingError
 from snomniman.describe import (
@@ -727,6 +727,17 @@ class ExplorerModel:
         and authoritative on their own (AI never gates understanding).
         """
         return build_briefing(self._ds, title=self._title)
+
+    def workflow_suggestions(self) -> WorkflowSuggestions:
+        """Ranked, grounded 'suggested next steps' for this measurement (read-only).
+
+        The suggestions are produced **deterministically** by the AI Scientist
+        (`snomniman.ai.recommend_workflow`) from the Description API + Diagnostics
+        Engine: each points at a registered operation that is applicable and not
+        already applied, with pre-filled parameters the Processing Workspace can
+        preview. No provider is required; nothing is executed or mutated here.
+        """
+        return recommend_workflow(self._ds, title=self._title)
 
     # -- processing workspace (generic, registry-driven) ----------------------
 

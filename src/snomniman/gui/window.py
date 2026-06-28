@@ -161,6 +161,8 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._process.previewRequested.connect(self._on_preview_requested)
         self._process.previewAccepted.connect(self._on_preview_accepted)
         self._process.previewCancelled.connect(self._on_preview_cancelled)
+        # AI Scientist: a suggested next step hands off to the Processing Workspace.
+        self._briefing.recommendationPreviewRequested.connect(self._on_recommendation_preview)
 
     # -- loading / refreshing -------------------------------------------------
 
@@ -176,6 +178,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         )
         self._diagnostics.set_report(self._model.diagnostics_report())
         self._briefing.set_briefing(self._model.scientific_briefing())
+        self._briefing.set_suggestions(self._model.workflow_suggestions())
         self._process.set_catalog(self._model.operation_catalog())
         self._browser.select(self._model.current_channel)
         self._show_single()
@@ -237,6 +240,19 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
     def _on_operation_selected(self, step_id: str) -> None:
         """Show the selected operation's description + parameter form."""
         self._process.show_operation(self._model.operation_option(step_id))
+
+    def _on_recommendation_preview(self, step_id: str, params: dict[str, Any]) -> None:
+        """A suggested next step (from the AI Scientist) opens, pre-configured, in the Workspace.
+
+        This is the whole point of building the Workspace first: an AI recommendation
+        needs no special execution path - it selects a registered operation, fills its
+        parameters, and runs the same generic preview every operation uses.
+        """
+        self._inspect_tabs.setCurrentWidget(self._process)
+        self._process.highlight_operation(step_id)
+        self._process.show_operation(self._model.operation_option(step_id))
+        self._process.apply_params(params)
+        self._on_preview_requested(step_id, params)
 
     def _on_preview_requested(self, step_id: str, params: dict[str, Any]) -> None:
         """Run the operation on a copy and show a before/after preview.

@@ -16,6 +16,7 @@ control back into a value. The window runs the computation and owns dataset/hist
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from PySide6 import QtCore, QtWidgets
@@ -199,6 +200,33 @@ class ProcessingWorkspace(QtWidgets.QWidget):
             params[name] = _read_widget(field, widget)
         return params
 
+    def apply_params(self, params: Mapping[str, Any]) -> None:
+        """Set the parameter form from *params* (used by a pre-configured preview)."""
+        for name, value in params.items():
+            entry = self._fields.get(name)
+            if entry is not None:
+                _write_widget(entry[0], entry[1], value)
+
+    def highlight_operation(self, step_id: str) -> None:
+        """Select an operation in the list without emitting (the window drives the rest)."""
+        item = self._find_item(step_id)
+        if item is None:
+            return
+        self._tree.blockSignals(True)
+        self._tree.setCurrentItem(item)
+        self._tree.blockSignals(False)
+
+    def _find_item(self, step_id: str) -> QtWidgets.QTreeWidgetItem | None:
+        for i in range(self._tree.topLevelItemCount()):
+            group = self._tree.topLevelItem(i)
+            if group is None:
+                continue
+            for j in range(group.childCount()):
+                child = group.child(j)
+                if child is not None and child.data(0, QtCore.Qt.ItemDataRole.UserRole) == step_id:
+                    return child
+        return None
+
     def show_preview(self, preview: OperationPreview) -> None:
         """Show the change/provenance summary and switch to Accept/Cancel."""
         self._preview_info.setText(_preview_html(preview))
@@ -308,6 +336,25 @@ def _make_widget(field: OperationField) -> QtWidgets.QWidget:
     if field.default is not None:
         line.setText(str(field.default))
     return line
+
+
+def _write_widget(field: OperationField, widget: QtWidgets.QWidget, value: Any) -> None:
+    """Set a control's value (the inverse of :func:`_read_widget`)."""
+    if field.kind == FIELD_BOOL and isinstance(widget, QtWidgets.QCheckBox):
+        widget.setChecked(bool(value))
+    elif field.kind == FIELD_INT and isinstance(widget, QtWidgets.QSpinBox):
+        widget.setValue(int(value))
+    elif field.kind == FIELD_FLOAT and isinstance(widget, QtWidgets.QDoubleSpinBox):
+        widget.setValue(float(value))
+    elif field.kind == FIELD_ENUM and isinstance(widget, QtWidgets.QComboBox):
+        if value in field.choices:
+            widget.setCurrentIndex(field.choices.index(value))
+    elif field.kind == FIELD_CHANNEL and isinstance(widget, QtWidgets.QComboBox):
+        idx = widget.findText(str(value))
+        if idx >= 0:
+            widget.setCurrentIndex(idx)
+    elif isinstance(widget, QtWidgets.QLineEdit):
+        widget.setText(str(value))
 
 
 def _read_widget(field: OperationField, widget: QtWidgets.QWidget) -> Any:

@@ -30,6 +30,16 @@ from .provider import (
     NarrativeProvider,
     build_orientation_prompt,
 )
+from .recommend import (
+    STRENGTH_MODERATE,
+    STRENGTH_STRONG,
+    STRENGTH_TENTATIVE,
+    Recommendation,
+    RecommendationEvidence,
+    WorkflowSuggestions,
+    recommend_workflow,
+    strength_label,
+)
 from .report import (
     FACT,
     INTERPRETATION,
@@ -43,12 +53,20 @@ __all__ = [
     "FACT",
     "INTERPRETATION",
     "ORIENTATION_SYSTEM",
+    "STRENGTH_MODERATE",
+    "STRENGTH_STRONG",
+    "STRENGTH_TENTATIVE",
     "Briefing",
     "BriefingContext",
     "BriefingSection",
     "BriefingStatement",
     "MockNarrativeProvider",
     "NarrativeProvider",
+    "Recommendation",
+    "RecommendationEvidence",
+    "WorkflowSuggestions",
     "build_briefing",
     "build_orientation_prompt",
+    "recommend_workflow",
+    "strength_label",
 ]

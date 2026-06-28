@@ -1,13 +1,21 @@
-# The AI Scientist, v1: Measurement Orientation (`snomniman.ai`)
+# The AI Scientist: Measurement Orientation + Suggested Next Steps (`snomniman.ai`)
 
-> Status: **implemented** (ADR-0020). Qt-free backend; consumed by the Explorer's
-> read-only **Briefing** panel. **No model dependency** is bundled in this version.
+> Status: **implemented**. v1 = the **Scientific Briefing** (orientation; ADR-0020).
+> v2 = **Suggested Next Steps** (deterministic, grounded workflow recommendations;
+> ADR-0022). Qt-free backend; consumed by the Explorer's read-only **AI Scientist**
+> (Briefing) panel, which hands a chosen step off to the Processing Workspace. **No
+> model dependency** is bundled; the recommendations are deterministic (no provider
+> needed). The "Suggested Next Steps" section below documents v2.
 
 ## Philosophy
 
 The first AI capability is **orientation**, not action: *"tell me about this
-measurement."* It does not recommend processing, execute anything, or modify the
-Dataset. It transforms structured scientific facts into an expert explanation.
+measurement."* It does not execute anything or modify the Dataset; it transforms
+structured scientific facts into an expert explanation. The second capability,
+**Suggested Next Steps** (below), proposes *what to do next* - still without executing
+anything: it ranks registered operations the deterministic facts support, and hands
+the chosen one to the Processing Workspace to preview. The AI proposes; the
+researcher disposes; the deterministic engine performs the science.
 
 Two principles govern it (now permanent in `CLAUDE.md`):
 
@@ -68,6 +76,49 @@ Measurement -> Dataset -> Description API + Diagnostics Engine -> AI Scientist
 - **`context`** - the exact `BriefingContext` (the `describe` + `diagnostics` JSON
   projections) the briefing was built from: the grounding and the audit trail.
 
+## Suggested Next Steps (v2 - deterministic workflow recommendations)
+
+`recommend_workflow(dataset, *, title=None) -> WorkflowSuggestions`. After orienting
+the researcher, the AI Scientist proposes a **ranked list of next processing steps**.
+The recommendations are produced **deterministically** from `describe` + `diagnostics`
+(operation applicability, topography tilt, channel states, provenance) - never by an
+LLM. This is a deliberate, load-bearing choice, not a stopgap:
+
+- **It is what the two permanent rules require.** Whether a step is *worth* doing -
+  "is there a tilt to remove?", "are references present and unnormalized?" - is a
+  fact a deterministic algorithm establishes (the Diagnostics Engine already computes
+  the tilt). Rule 1 says compute such facts; do not ask an LLM to infer them.
+- **It is the deterministic fallback (Rule 2), so there is nothing to fall back
+  *from*.** The suggestions are always available, with or without any provider.
+- **It makes the safety rules structural, not hopeful.** Because each recommendation
+  is *generated from* applicability + provenance, the engine **cannot** suggest an
+  unavailable operation, an already-applied one, or anything that contradicts the
+  diagnostics. An LLM constrained by a prompt could; a generator cannot.
+
+Each `Recommendation` (frozen, JSON-serializable) carries: the `step_id` + human
+`title`, pre-filled `params` (ready for the Workspace), a heuristic `confidence` in
+[0, 1] (a deterministic *priority* from the strength of the evidence - **not** a
+probability; surfaced as a `strength` tier: strong/moderate/tentative), a one-line
+`rationale`, the `evidence` (deterministic facts, each source-tagged
+`diagnostics`/`description`), and the `expected_outcome`. `WorkflowSuggestions` holds
+the ranked tuple (by confidence), a `note` explaining an empty result (e.g.
+everything applicable is already applied), and the same `BriefingContext` grounding.
+
+The v2 rules (one deterministic function each, self-guarding on applicability +
+`already_applied`):
+
+- **Plane Level** - when a measured global tilt dominates the *signal* topography
+  (confidence = the fraction of the height's RMS variation attributable to the tilt);
+  pre-fills `{channel: <Z>, order: 1}`.
+- **Reference Normalize** - when reference channels exist and optical signals are
+  still raw (not normalized).
+
+New rules (phase-unwrap when a wrapping signal exists, comparison/exploration
+suggestions, ...) are added the same way; like the Briefing's Enables section, the
+catalogue of *what could be suggested* grows with the deterministic vocabulary, not
+with AI code. A future narrative provider may *phrase* the suggestions, but never
+choose or rank them.
+
 ## Provider abstraction (the seam, no SDK yet)
 
 `NarrativeProvider` is a `Protocol` with `name: str` and `narrate(context) -> str`.
@@ -103,12 +154,21 @@ candidate for a later milestone.
 
 ## Explorer integration
 
-A read-only **Briefing** tab (`gui/briefing.py`): collapsible fact sections, an
-"Interpretation (AI)" area (which shows a clear "no provider configured - the facts
-above are complete and authoritative" note in this build), and a "Copy briefing"
-action. No input box, no chat history, no agent behaviour - a scientific briefing,
-not a chatbot. The model builds the briefing with no provider, so the app is fully
-useful offline today.
+A read-only **Briefing** tab (`gui/briefing.py`): collapsible fact sections, a
+**Suggested next steps** area (one card per recommendation - title, strength badge,
+rationale, the deterministic *Why* evidence, the expected outcome, and a **Preview**
+button), an "Interpretation (AI)" area (which shows a clear "no provider configured -
+the facts above are complete and authoritative" note in this build), and a "Copy
+briefing" action. No input box, no chat history, no agent behaviour.
+
+The **Preview** button is the payoff of building the Processing Workspace first: a
+recommendation needs *no* AI-specific execution path. It opens the Process tab,
+selects the recommended operation, fills its parameters from the recommendation, and
+runs the **same** generic preview every operation uses (`window._on_recommendation_
+preview` -> `highlight_operation` + `show_operation` + `apply_params` ->
+`preview_operation`). The researcher then Accepts or Cancels like any other
+derivation. The model builds both briefing and suggestions with no provider, so the
+app is fully useful offline today.
 
 ## Testing
 
@@ -119,12 +179,29 @@ useful offline today.
 - The briefing round-trips through JSON; the non-mutation invariant is asserted.
 - No external API is contacted in any test (none is bundled).
 
+## Testing (Suggested Next Steps)
+
+- Grounding + safety are pinned: only applicable operations are recommended, never
+  already-applied ones, and no recommendation contradicts the provenance (asserted on
+  raw, partially-processed, and fully-processed datasets). Evidence sources are
+  checked to be `diagnostics`/`description` only.
+- Ranking, the empty-result `note`, JSON round-trip (with grounding context), the
+  signal-topography target, and the non-mutation invariant are all tested.
+- GUI: the panel renders one Preview button per recommendation and its click emits
+  `(step_id, params)`; the window handler opens the Workspace, pre-fills the form, and
+  starts the preview. No network is contacted in any test.
+
 ## Limitations and future evolution
 
-- No real model provider yet (seam only).
-- Orientation only - **no recommendations, no execution** (a later milestone, once
-  the operation vocabulary is richer, will add *reviewable* recommendations that the
-  deterministic processing engine alone executes).
+- No real model provider yet (seam only) - the suggestions are deterministic, so this
+  is a *feature* (offline, can't hallucinate an unsafe step), not a gap. A provider
+  would later *phrase* the briefing/suggestions, never choose or rank them.
+- **Recommendations, but never execution** - the AI proposes registered operations;
+  the deterministic engine alone performs them, through an explicit, provenance-
+  recorded Accept in the Workspace. There is no auto-apply and no chat.
+- v2 ships two recommendation rules (plane level, reference normalize); more (phase
+  unwrap on a wrapping signal, comparison/exploration suggestions) extend the same
+  pattern.
 - No per-sentence narrative verification (see Grounding strategy).
 - Deferred panel sections from the original sketch (Recommended Reading, Relevant
   Literature) are intentionally out of scope here.

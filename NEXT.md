@@ -3,7 +3,7 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-27 (generic, registry-driven Processing Workspace)
+**Last updated:** 2026-06-27 (AI Suggested Next Steps - deterministic recommendations)
 
 ---
 
@@ -54,12 +54,19 @@ the Explorer's Process tab lists every registered step (grouped, with availabili
 what stays / provenance) -> Accept/Cancel derivation - adding a new operation needs no
 GUI code. Plus provenance-preserving figure export, the Scientific Description API,
 the Scientific Diagnostics Engine (+ Explorer Diagnostics tab), and the AI Scientist
-v1 - a deterministic **Scientific Briefing** (+ Explorer Briefing tab; provider seam,
-no model SDK).
-**Still NOT implemented (out of scope so far):** a concrete AI narrative provider
-(only the seam exists); AI recommendations/execution; batch; further operations
-(`image.line_flatten`, masking, background subtraction); a multi-input operation form
-(no multi-input op exists yet); and Zarr-export of derived datasets from the GUI.
+- a deterministic **Scientific Briefing** **plus deterministic Suggested Next Steps**
+(ADR-0022): the Explorer's AI Scientist (Briefing) tab now shows ranked, grounded
+recommendations (only applicable, not-already-applied operations, each with evidence +
+pre-filled params), and a recommendation's **Preview** hands off straight into the
+Processing Workspace - no AI-specific execution path. AI recommends; the deterministic
+engine performs every operation via an explicit Accept.
+**Still NOT implemented (out of scope so far):** a concrete AI narrative *provider*
+(only the seam exists; the suggestions themselves are deterministic and need none); AI
+*execution* (by design - AI never executes); batch; further operations
+(`image.line_flatten`, masking, background subtraction); more recommendation rules
+(phase-unwrap on a wrapping signal, comparison/exploration suggestions); a multi-input
+operation form (no multi-input op exists yet); and Zarr-export of derived datasets from
+the GUI.
 
 ---
 
@@ -205,11 +212,26 @@ in impact order:
     level now runs *through* the generic interface). 31 new tests (Qt-free model +
     window wiring); 318 total green. ADR-0021; `docs/processing-engine.md`
     ("Processing Workspace"). *Done 2026-06-27.*
-25. **Concrete AI narrative provider** - add ONE real provider behind the existing
+25. [x] **AI Suggested Next Steps (deterministic workflow recommendations)** - the AI
+    Scientist now proposes *what to do next*: `snomniman.ai.recommend_workflow` ->
+    `WorkflowSuggestions`, ranked `Recommendation`s produced **deterministically** from
+    `describe` + `diagnostics` (applicability, topography tilt, channel states,
+    provenance). Each carries a pre-filled `params`, a heuristic `confidence`/strength,
+    a `rationale`, source-tagged `evidence`, and an `expected_outcome`; by construction
+    only applicable, not-already-applied operations appear (cannot contradict
+    diagnostics/provenance). The Explorer's AI Scientist panel renders them as cards
+    with a **Preview** that hands off into the Processing Workspace (no AI-specific
+    execution path). Rode-along fix: `diagnostics.topography_diagnostics` now reports the
+    *signal* topography (prefers `Z`), never a reference height. 19 new tests (backend
+    grounding/safety + GUI); 337 total green. ADR-0022; `docs/ai-scientist-v1.md`
+    ("Suggested Next Steps"). *Done 2026-06-27.*
+26. **Concrete AI narrative provider** - add ONE real provider behind the existing
     `NarrativeProvider` seam as an *optional* extra (`uv sync --extra ai`),
     lazy-imported, never required for backend/CI; wire provider selection so the
-    Briefing's interpretation renders when configured. Tests mock the provider; CI
-    never calls a network. (A major dependency - needs its own ADR.)
+    Briefing's interpretation (and optionally suggestion prose) renders when configured.
+    Tests mock the provider; CI never calls a network. (A major dependency - needs its
+    own ADR.) Note: the suggestions themselves stay deterministic (ADR-0022); a provider
+    only *phrases* them.
 
 **Deferred refinements (read-only, lower priority):** mirror a measurement overlay
 into every comparison pane (results are already multi-channel); a measurement

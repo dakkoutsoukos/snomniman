@@ -9,9 +9,9 @@ rather than repeating them.
 2. `NEXT.md` - what to work on right now, blockers, open questions.
 3. `LOG.md` - recent history (newest entries at the bottom).
 
-> **Project status (2026-06-27): Phase 1 COMPLETE; read-only Explorer + first
-> processing derivation + Description API + Diagnostics Engine + AI Scientist v1
-> (Scientific Briefing) shipped.**
+> **Project status (2026-06-27): Phase 1 COMPLETE; read-only Explorer + generic
+> Processing Workspace + Description API + Diagnostics Engine + AI Scientist
+> (Scientific Briefing + deterministic Suggested Next Steps) shipped.**
 > Backend validated end-to-end against the real neaSNOM GSF measurement directory:
 > `snomniman.core`; `snomniman.io` (GSF parser, neaSNOM reader, registry, canonical
 > **Zarr** store - `Dataset -> Zarr -> Dataset` round-trips loss-lessly, OHD-3);
@@ -23,24 +23,29 @@ rather than repeating them.
 > Description API**: structured descriptors *projecting* a measurement);
 > `snomniman.diagnostics` (the **Scientific Diagnostics Engine**: deterministic
 > *computed* facts - tilt, roughness, statistics, amplitude decay, operation
-> applicability - a sibling of `describe`); and `snomniman.ai` (the **AI Scientist
-> v1**: a Scientific Briefing that composes `describe` + `diagnostics` into a
-> deterministic measurement orientation, with an optional narrative provider seam -
-> **no model SDK bundled**).
+> applicability - a sibling of `describe`); and `snomniman.ai` (the **AI Scientist**:
+> a Scientific Briefing that composes `describe` + `diagnostics` into a deterministic
+> measurement orientation, plus **Suggested Next Steps** - deterministic, grounded
+> workflow recommendations that point at applicable, not-already-applied operations
+> with pre-filled parameters (ADR-0022); optional narrative provider seam, **no model
+> SDK bundled**).
 > The user-facing experience is the **Measurement Explorer** (`snomniman.gui`,
 > PySide6 + PyQtGraph; `python -m snomniman.gui <dir>`): open a measurement,
 > browse/compare channels, inspect metadata/provenance/diagnostics, read a Scientific
-> Briefing, measure profiles/ROI stats, export publication figures, and apply **any**
-> registered operation through one generic, registry-driven **Processing Workspace**
-> (ADR-0021): it lists every step (grouped, with availability + a plain reason when an
-> operation does not apply), builds each parameter form automatically from the step's
-> `ParameterSpec`, and runs one identical Preview -> (what changes / what stays / the
-> provenance to be recorded) -> Accept/Cancel derivation - never mutating the raw
-> measurement. Adding a new operation needs **no GUI code** (implement, register,
-> declare params + capabilities). 318 tests pass; `ruff`, `mypy --strict`, and the
-> Qt-free invariant (subprocess-checked) are green. All OHD-1..9 settled. The AI is
-> orientation-only (no recommendations, no execution) and grounded entirely in the
-> deterministic layers (`docs/ai-scientist-v1.md`; GUI Rule 9 gates every GUI feature).
+> Briefing **with grounded Suggested Next Steps**, measure profiles/ROI stats, export
+> publication figures, and apply **any** registered operation through one generic,
+> registry-driven **Processing Workspace** (ADR-0021): it lists every step (grouped,
+> with availability + a plain reason when an operation does not apply), builds each
+> parameter form automatically from the step's `ParameterSpec`, and runs one identical
+> Preview -> (what changes / what stays / the provenance to be recorded) ->
+> Accept/Cancel derivation - never mutating the raw measurement. A suggested next step
+> Previews straight into the Workspace (no AI-specific execution path). Adding a new
+> operation needs **no GUI code** (implement, register, declare params + capabilities).
+> 337 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
+> executes (the deterministic engine performs every operation via an explicit Accept),
+> and is grounded entirely in the deterministic layers (`docs/ai-scientist-v1.md`; GUI
+> Rule 9 gates every GUI feature).
 
 This is documentation-driven development: keep `/docs` authoritative and in sync
 with code.
@@ -148,9 +153,11 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
   amplitude decay, operation applicability). Sibling of `describe` (computation vs
   projection); consumed by `gui`/`batch`/`ai`.
 - `snomniman.ai` - the AI Scientist: composes `describe` + `diagnostics` into a
-  deterministic measurement-orientation Briefing (facts always; optional narrative via
-  a `NarrativeProvider` seam, no model SDK bundled). Read-only; never mutates data or
-  the provenance DAG.
+  deterministic measurement-orientation Briefing **and deterministic Suggested Next
+  Steps** (grounded, ranked recommendations of applicable, not-already-applied
+  operations with pre-filled params; facts/suggestions always, optional narrative via
+  a `NarrativeProvider` seam, no model SDK bundled). Read-only; recommends but never
+  executes; never mutates data or the provenance DAG.
 - `snomniman.viz` - display-ready render data + matplotlib static export.
 - `snomniman.batch` - headless application of a DAG across many sources.
 - `snomniman.gui` - the desktop app; presentation/interaction only.
@@ -313,7 +320,7 @@ the design changed, and (for scientific code) a validation test.
 | `docs/processing-engine.md` | Processing engine: philosophy, operation lifecycle, preview model, provenance integration, extension model (template for new steps). |
 | `docs/description-api.md` | **Scientific Description API** (`snomniman.describe`): purpose, position, descriptors, relationships (Dataset/Explorer/Processing/future AI), honest limitations, extension model. |
 | `docs/diagnostics-engine.md` | **Scientific Diagnostics Engine** (`snomniman.diagnostics`): philosophy (observations vs operations), the descriptors, sibling relationship to `describe`, scientific choices + deferred metrics, extension model, relationship to the future AI Scientist. |
-| `docs/ai-scientist-v1.md` | **AI Scientist v1** (`snomniman.ai`): the Scientific Briefing - philosophy (orientation, not action; grounding + deterministic fallback), architecture, the provider seam (no SDK yet), prompt/grounding strategy, Explorer integration, honest limitations, future evolution. |
+| `docs/ai-scientist-v1.md` | **AI Scientist** (`snomniman.ai`): the Scientific Briefing (orientation; ADR-0020) **and Suggested Next Steps** (deterministic, grounded workflow recommendations that Preview into the Workspace; ADR-0022) - philosophy (grounding + deterministic fallback; recommend-not-execute), architecture, the provider seam (no SDK yet), Explorer integration, honest limitations, future evolution. |
 
 ---
 

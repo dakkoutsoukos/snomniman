@@ -1760,3 +1760,89 @@ GUI code. No new architectural layer; the engine and Explorer were not redesigne
   params/capabilities and it appears in the Workspace automatically). Then a concrete
   AI `NarrativeProvider` (optional extra, its own ADR) - at which point the AI can
   recommend a registered operation and the Workspace already knows how to present it.
+
+---
+
+## 2026-06-27 - AI Suggested Next Steps (deterministic workflow recommendations, ADR-0022)
+
+Committed the generic Processing Workspace (`feat(gui): generic registry-driven
+Processing Workspace`), then built the capability the user identified as the moment the
+project becomes unique: the AI Scientist now proposes *what to do next*. Opening a
+measurement gives a grounded Briefing **and** a ranked list of Suggested Next Steps, each
+of which Previews straight into the Workspace. This is the payoff of building the
+Workspace first: an AI recommendation needs **no** special execution path.
+
+The defining decision (ADR-0022): the recommendations are **deterministic**, not
+LLM-generated. They are produced from `describe` + `diagnostics` (applicability,
+topography tilt, channel states, provenance). This is what the two permanent AI rules
+require - "is there a tilt worth removing?" is a fact the Diagnostics Engine computes
+(rule 1), and deterministic suggestions are the always-available fallback (rule 2) - and
+it makes the hard safety rules *structural*: a generator built from applicability cannot
+suggest an unavailable or already-applied operation, where a prompt-constrained LLM
+could.
+
+### Completed
+- **`snomniman.ai.recommend` (new):** `recommend_workflow(dataset) -> WorkflowSuggestions`
+  + `Recommendation` / `RecommendationEvidence` (frozen, JSON-serializable, `to_dict`).
+  One self-guarding deterministic rule per operation: **plane level** when a measured
+  global tilt dominates the *signal* topography (confidence = fraction of the height's RMS
+  variation from the tilt; pre-fills `{channel: Z, order: 1}`), and **reference normalize**
+  when references exist and optical signals are still raw. Each recommendation carries
+  pre-filled `params`, a heuristic `confidence` in [0,1] (documented as a priority, **not**
+  a probability; surfaced as strong/moderate/tentative via `strength_label`), a `rationale`,
+  source-tagged `evidence`, and an `expected_outcome`. `WorkflowSuggestions` ranks by
+  confidence, sets a `note` when empty (e.g. everything applicable is applied), and carries
+  the `BriefingContext` grounding for audit. The module imports `processing.image` so it is
+  self-sufficient (its job is to recommend *registered* ops).
+- **Diagnostics correctness fix:** `topography_diagnostics` now reports the **signal**
+  topography (prefers canonical `Z`), never a reference height channel (`R_Z*`). Surfaced by
+  the recommender picking `R_Z` on the real 32-channel measurement; also corrects the
+  Briefing's topography facts. (Synthetic diagnostics tests unaffected - `Z` is signal-role.)
+- **Model + GUI:** `ExplorerModel.workflow_suggestions()`; the **AI Scientist panel**
+  (`gui/briefing.py`) renders the briefing facts **and** a "Suggested next steps" section -
+  one card per recommendation (title, strength badge, rationale, the deterministic *Why*
+  evidence, expected outcome, **Preview** button). The window's `_on_recommendation_preview`
+  opens the Process tab, `highlight_operation` + `show_operation` + `apply_params` (new
+  `ProcessingWorkspace` methods), then runs the *same* generic `preview_operation` - the AI
+  has no bespoke execution path. Suggestions refresh as the dataset is processed (applied
+  steps drop out of the list).
+- **Verified** on the real CdO measurement (offscreen + screenshots): the panel shows
+  Reference Normalize (strong, "6 optical signals still raw: O0-O5") and Plane Level
+  (moderate, "tilt 10.2 nm/um, ~51% of height variation") on `Z`; clicking a card's Preview
+  lands on the Workspace with the before/after and the change/provenance summary. The raw
+  measurement is never mutated.
+
+### Decisions
+- **ADR-0022** (AI Suggested Next Steps are deterministic, not LLM-generated). Records the
+  rule-1/rule-2 grounding, the structural-vs-hopeful safety argument, confidence-as-priority
+  (honesty about kind), recommend-not-execute, and the rejected LLM-generates-then-filter
+  alternative. The `NarrativeProvider` seam may later *phrase* suggestions, never choose them.
+
+### Issues Found
+- The recommender initially targeted `R_Z` (a reference height) on real data - a diagnostics
+  bug (topography picked the first topography channel regardless of role). Fixed by preferring
+  the signal topography. Also confirmed the engine depends on the operation registry being
+  populated (empty applicability -> no recommendations); made `recommend.py` import the image
+  ops so it works standalone and in tests, consistent with how the GUI model registers them.
+
+### Tests / gates
+- +19 tests (337 total, up from 318): `tests/test_ai_recommend.py` (14 - content, ranking,
+  grounding sources, only-applicable, not-already-applied, no-provenance-contradiction,
+  empty+note, signal-topography target, JSON round-trip, immutability, strength tiers, a
+  degenerate no-suggestion dataset) and +5 GUI in `tests/test_gui_briefing.py` (model
+  suggestions, one Preview button per card, the Preview signal payload, empty-note rendering,
+  and the window hand-off opening the Workspace pre-filled). `ruff` clean; `mypy --strict`
+  clean (80 files incl. tests); Qt-free invariant green; no network in any test.
+
+### Documentation
+- `docs/ai-scientist-v1.md` - new "Suggested Next Steps (v2)" section + the deterministic-vs-
+  LLM rationale; Explorer-integration + limitations + testing updated; title/status now cover
+  both capabilities. `docs/decisions.md` - ADR-0022. `CLAUDE.md` - status block, module
+  responsibility, doc table (AI now Briefing + Suggested Next Steps; recommend-not-execute;
+  337). `NEXT.md` (task 25 done) and this entry.
+
+### Next recommended
+- `image.line_flatten` (GUI-free via the Workspace) and/or more recommendation rules (phase
+  unwrap on a wrapping signal, comparison/exploration suggestions) - each extends the
+  deterministic pattern. Then a concrete `NarrativeProvider` (optional extra, own ADR) to
+  *phrase* the briefing/suggestions; the suggestions stay deterministic. Real-user validation.

@@ -79,7 +79,14 @@ def topography_diagnostics(dataset: Dataset) -> TopographyDiagnostics | None:
     topo = [c for c in dataset.channels(kind="topography") if not dataset.is_complex(c)]
     if not topo or Capability.SPATIAL_2D not in dataset.capabilities:
         return None
-    name = topo[0]
+    # Report the *signal* topography (the measured height), never a reference height
+    # channel (R_Z*); prefer the canonical "Z" when present.
+    signal_topo = [
+        c for c in dataset.channels(role="signal", kind="topography")
+        if not dataset.is_complex(c)
+    ]
+    candidates = signal_topo or topo
+    name = "Z" if "Z" in candidates else candidates[0]
     info = {c.canonical: c for c in dataset.metadata.channels}.get(name)
     unit = info.value_unit if info else None
 

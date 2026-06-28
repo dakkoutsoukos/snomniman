@@ -324,6 +324,52 @@ Workspace") and `docs/measurement-explorer.md` (Section 7).
 
 ---
 
+## ADR-0022 - AI Suggested Next Steps are deterministic, not LLM-generated  [ACCEPTED]
+**Context.** With the Briefing (orientation) and the generic Processing Workspace shipped,
+the AI Scientist's next capability is *workflow guidance*: a ranked "Suggested Next Steps"
+that proposes which registered operation to apply, why, and hands it to the Workspace to
+preview. The open question was who *generates* the recommendations: a deterministic engine
+over the existing facts, or an LLM (constrained to applicable operations). The product
+requirements are strict - every recommendation must cite deterministic evidence and must
+never suggest an unavailable or already-applied operation, contradict the diagnostics or
+provenance, or invent data.
+**Decision.** The recommendations are produced **deterministically** by `snomniman.ai`
+(`recommend_workflow -> WorkflowSuggestions`), composing the Description API + Diagnostics
+Engine (applicability, topography tilt, channel states, provenance). One self-guarding rule
+per operation emits a `Recommendation` only when the operation is applicable, not already
+applied, and supported by a concrete deterministic observation; v2 ships two rules (plane
+level when a measured tilt dominates the *signal* topography; reference normalize when
+references exist and signals are raw). Each recommendation carries `step_id` + pre-filled
+`params`, a heuristic `confidence` in [0,1] (a deterministic *priority* from evidence
+strength - **not** a probability; shown as a strength tier), a `rationale`, source-tagged
+`evidence`, and an `expected_outcome`. The Explorer's AI Scientist panel renders them as
+cards with a Preview button that hands off to the generic Workspace (no AI-specific
+execution path). The engine never executes; the deterministic processing engine alone
+performs operations, via an explicit, provenance-recorded Accept. The `NarrativeProvider`
+seam remains for optional prose, but a provider may only *phrase* suggestions, never choose
+or rank them.
+**Alternatives.** (a) LLM-generated recommendations filtered against applicability - rejected:
+it violates permanent rule 1 (don't ask an LLM to infer what diagnostics can establish - the
+tilt is already computed) and makes the safety rules *hopeful* (a prompt-constrained model can
+still hallucinate an unavailable step) rather than *structural* (a generator built from
+applicability cannot). It would also have no offline fallback (permanent rule 2). (b) A new
+recommendation layer/engine outside `ai` - rejected (Rule 7): the AI Scientist is exactly the
+"help me understand and decide" layer, and it already composes describe + diagnostics. (c)
+Confidence as a probability - rejected as overclaiming (honesty about kind): it is a documented
+heuristic priority, surfaced as strong/moderate/tentative. (d) Auto-apply or a chat agent -
+rejected: the AI proposes; the researcher disposes through the Workspace; nothing is silent.
+A small **correctness fix** rode along: `diagnostics.topography_diagnostics` now reports the
+*signal* topography (prefers canonical `Z`), never a reference height channel (`R_Z*`), which
+also corrects the Briefing's topography facts.
+**Consequences.** The "open measurement -> briefing -> suggested steps -> preview -> accept"
+experience the workspace was built for now exists, and it is safe by construction: the AI
+cannot recommend something the engine would refuse. The suggestions are fully available
+offline, structured/inspectable (JSON), and carry their grounding for audit. They evolve as
+the deterministic vocabulary grows (new rules, not AI code). Full detail:
+`docs/ai-scientist-v1.md` ("Suggested Next Steps").
+
+---
+
 ## Decision Closure (OHD-1..9 resolved)
 
 | OHD | Topic | Resolution | ADR |
