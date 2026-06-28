@@ -63,9 +63,17 @@ Literature -> Candidate Diagnostics -> Analytical -> Synthetic -> Real-data -> D
 and ends in one of three outcomes - validate-and-implement / defer / stop. **Honest
 deferral is success.**
 
+> **Triage (2026-06-28):** [`docs/next-scientific-priorities.md`](docs/next-scientific-priorities.md)
+> classified three candidates - **Line Flatten** = Category A (settled science; implement
+> via the product track, C4), **Harmonic ranking** = Category B (**validate next**),
+> **Reference normalization criteria** = Category B (**validate after** harmonic ranking,
+> reusing its noise-floor fact). The two B items reduce to one primitive - a deterministic
+> single-scan noise-floor estimate - which fixes their order.
+
 - **Harmonic ranking** - which optical harmonics carry signal vs noise, deterministically?
   Subsumes Beta Readiness M4 ("signal-vs-noise channel triage"); a real workflow need, so
-  a strong next candidate.
+  a strong next candidate. **The strongest next study** (triage above); open
+  `docs/harmonic-ranking-analysis.md` and ship the diagnostic *fact* before any rule.
 - **Phase-wrapping recommendation** - **Outcome 2 already reached**
   ([`docs/phase-wrapping-analysis.md`](docs/phase-wrapping-analysis.md)): criterion
   defensible, rule deferred. Building the *diagnostic fact* (residues + unwrap-range +
@@ -73,7 +81,9 @@ deferral is success.**
   *recommendation rule* is **blocked on a genuinely-wrapping real golden measurement**
   (nano-FTIR phase / interferometric / dispersive sample). `(user)`
 - **Reference-normalization criteria** - when is normalizing an order by its reference
-  appropriate vs misleading?
+  appropriate vs misleading? The operation *and* a flat-prior recommendation already ship;
+  the study refines *when to decline*. **Sequence after harmonic ranking** (reuses its
+  noise-floor fact rather than duplicating it; triage above).
 - **Poor-scan / drift / tip-artifact detection** - revisit the metrics `diagnostics`
   currently defers (SNR / clipping / drift, ADR-0019) through the validation process;
   investigate honestly rather than guess (likely Outcome-2/3 candidates).

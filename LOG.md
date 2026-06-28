@@ -2140,3 +2140,61 @@ adopts it as the authoritative product roadmap and pairs it with a formal scient
   (harmonic ranking is the strongest candidate and a real workflow need). **Strongly recommended
   first:** run the user-testing protocol (Beta Readiness Section 5) with two or three neaPLOT
   users and let their forced exits order the backlog.
+
+---
+
+## 2026-06-28 - Next-priorities triage (Line Flatten / Harmonic Ranking / Reference Normalization)
+
+A Scientific Validation Phase **triage milestone**: classify three candidate capabilities
+by the kind of work each requires next (engineering vs. scientific validation vs.
+sequencing). Analysis only - no code, no architecture change.
+
+### Completed
+- Read the governing docs (`scientific-validation.md`, `beta-readiness-v1.md`,
+  `phase-wrapping-analysis.md`, `scientific-reasoning.md`, `diagnostics-engine.md`) and the
+  relevant code (`processing/image/reference_normalize.py`, `plane_level.py`,
+  `diagnostics/diagnose.py` + `descriptors.py`, `ai/reasoning.py`) to ground the triage.
+- Authored `docs/next-scientific-priorities.md`: per-candidate classification, rationale,
+  recommended milestone, engineering + scientific effort, risks, dependencies, and a
+  prioritized roadmap.
+
+### Decisions (classifications)
+- **Line Flatten -> Category A (implement now).** Settled SPM science (per-line
+  median/mean/poly row alignment) and a Critical beta blocker (C4/G4). It is a *manual
+  operation*, not an automated judgment, so it does **not** pass through the Validation
+  Phase - the standard analytical known-answer DoD is the whole scientific requirement
+  (as for `plane_level`/`crop`). Any *auto-recommendation* rule for it is a separate,
+  future Category-B question (line-artifact detection), deliberately excluded.
+- **Harmonic Ranking -> Category B (validate next).** Needed (subsumes Beta Readiness M4;
+  named browsing friction) but resting on the exact signal-vs-noise judgment `diagnostics`
+  declined to assert (no SNR, ADR-0019). Strongest science-track milestone; plausibly
+  validatable on *both* branches with the existing CdO scan (informative O1-O3 vs.
+  near-noise O4/O5) - an advantage phase-wrapping lacked.
+- **Reference Normalization Criteria -> Category B (validate after harmonic ranking).** The
+  operation *and* a recommendation already ship - but `ReferenceNormalizeRule` fires on a
+  flat 0.85 prior and never gates on whether the reference is strong enough to trust.
+  Validating *when to decline* is justified honesty work, but lower-urgency and
+  dependency-coupled: it should reuse the noise-floor / amplitude-significance fact the
+  harmonic-ranking study must establish (Rule 7, avoid a parallel noise estimator).
+- **None is Category C.** "Wait" is expressed as sequencing within B (Candidate 3 behind
+  Candidate 2), not by forcing a justified capability into C.
+- **Key cross-cutting finding:** Candidates 2 and 3 reduce to one unsolved primitive - a
+  deterministic single-scan noise-floor estimate - which fixes their order.
+
+### Issues Found
+- None. The triage confirms the dual-track governance: one item is build-ready settled
+  science (product track), two are validation studies (science track) in dependency order.
+
+### Tests / gates
+- No code touched; 373 tests still green, gates unaffected. Doc is ASCII/UTF-8.
+
+### Documentation Updated
+- Added `docs/next-scientific-priorities.md`; pointer added to `NEXT.md` (science track);
+  this entry. (Memory index refreshed.) Not yet wired into the `CLAUDE.md` hierarchy table
+  or `decisions.md` - left for explicit sign-off.
+
+### Next Recommended Actions
+- **Product:** implement `image.line_flatten` (Candidate 1) - the build-ready item.
+- **Science:** open `docs/harmonic-ranking-analysis.md` (Candidate 2) from the validation
+  template; ship the diagnostic *fact* before any rule/marking. Reference-normalization
+  criteria follows it.
