@@ -42,6 +42,7 @@ def test_catalog_discovers_all_registered_image_operations(synthetic_dataset: Da
     catalog = _catalog(ExplorerModel(synthetic_dataset))
     expected = {
         "image.crop",
+        "image.line_flatten",
         "image.phase_unwrap",
         "image.plane_level",
         "image.reference_normalize",
@@ -108,7 +109,12 @@ def test_reference_normalize_has_no_fields(synthetic_dataset: Dataset) -> None:
 
 def test_all_image_ops_available_on_full_dataset(synthetic_dataset: Dataset) -> None:
     catalog = _catalog(ExplorerModel(synthetic_dataset))
-    for step_id in ("image.crop", "image.phase_unwrap", "image.plane_level"):
+    for step_id in (
+        "image.crop",
+        "image.line_flatten",
+        "image.phase_unwrap",
+        "image.plane_level",
+    ):
         assert catalog[step_id].available, step_id
     assert catalog["image.reference_normalize"].available
 

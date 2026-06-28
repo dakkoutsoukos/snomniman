@@ -2198,3 +2198,74 @@ sequencing). Analysis only - no code, no architecture change.
 - **Science:** open `docs/harmonic-ranking-analysis.md` (Candidate 2) from the validation
   template; ship the diagnostic *fact* before any rule/marking. Reference-normalization
   criteria follows it.
+
+---
+
+## 2026-06-28 - `image.line_flatten` (Beta Readiness C4 / the Candidate-1 engineering milestone)
+
+Implemented the line-by-line flattening operation classified Category A (ready for
+implementation) by `docs/next-scientific-priorities.md`. The milestone's purpose was to
+prove the architecture absorbs another mature scientific operation with **zero
+architectural change** - confirmed: implement + register, and it appeared everywhere.
+
+### Completed
+- **`snomniman.processing.image.line_flatten`** - a `flatten_lines()` algorithm helper +
+  the `LineFlatten` `ProcessingStep` (`step_id="image.line_flatten"`, `SPATIAL_2D`,
+  params `channel` / `method` (median|mean|polynomial) / `order`; median is the robust
+  default). Registered in `processing/image/__init__.py`. Mirrors `plane_level.py`.
+- **Algorithm (established SPM methodology, not invented):** subtract a per-scan-line
+  baseline - median (robust, the Gwyddion "Align Rows" default), mean, or a per-line
+  least-squares polynomial (offset+slope/bow). NaN-robust (finite-only baseline; all-NaN
+  line passes through). Cited Necas & Klapetek (Gwyddion) and Horcas et al. (WSxM).
+- **Knowledge Center article** `operation.image.line_flatten` (purpose / intuition / math
+  / when-to / when-not / comparison-with-Plane-Level / mistakes / refs), with bidirectional
+  cross-links to `image.plane_level` and `concept.topography`. No-drift invariant green.
+- **Tests** (`tests/test_processing_image_line_flatten.py`, ~33 cases): analytical
+  known-answers (pure offsets -> 0 all methods; offset+slope -> 0 poly1; quadratic -> 0
+  poly2; feature recovered with known per-line baseline; NaN handling), a combined
+  tilt+offset+feature synthetic (striping collapses, feature survives), immutability +
+  frozen-arrays + channel isolation, provenance (id/version/params/input), defaults,
+  validation (bad method/order, missing/complex channel, unknown param), registry, and a
+  real-CdO comparison of raw / plane-leveled / line-flattened. Extended the
+  vocabulary-growth assertions in `test_diagnostics`, `test_gui_workspace_model`,
+  `test_ai_briefing` to include the new op.
+
+### Decisions
+- **Distinct verb, not a `plane_level` parameter (Rule 2).** Plane leveling fits one
+  global surface; line flattening removes independent per-line baselines - complementary,
+  not duplicative. Did **not** add `polynomial_flatten` (would duplicate plane_level).
+- **No reasoning rule (deliberate, on-discipline).** An *auto-recommendation* for line
+  flattening needs a validated line-artifact diagnostic (a separate Category-B study, the
+  cousin of phase-wrapping/poor-scan detection). Per the maxim, the operation ships as a
+  manual verb; Suggested Next Steps does **not** recommend it - exactly as crop/phase_unwrap.
+- **Fast axis = x (horizontal scan lines)**, matching the neaSNOM raster; documented as an
+  assumption. No `direction` param yet (Rule 7 - add when a real need appears).
+
+### Integration (auto-propagated, no subsystem code)
+Registering the step alone made it appear in: the processing registry (`get_step`), the
+Description API operation catalogue, Diagnostics applicability, the generic Processing
+Workspace (discovery + auto-built median/poly form + preview/provenance/accept/cancel +
+history), the AI Briefing "Enables" section, and (via the no-drift article) the Knowledge
+Center. **No GUI code, no new infrastructure** - the success criterion of this milestone.
+
+### Real-data validation (CdO Z, 150x150, nm)
+Per-line baseline spread (std of per-row medians) / overall std: raw 29.5 / 41.0; plane
+level o1 20.7 / 28.5 (leaves ~70% of striping - a global surface cannot remove per-line
+offsets); line_flatten median 0.0 / 28.5 (zeroes each line's median); line_flatten poly1
+5.2 / 21.4 (removes per-line offset+slope, lowest std). Confirms the two operations are
+complementary and where each is appropriate. Raw never mutated.
+
+### Tests / gates
+- 406 tests pass (was 373; +33), `ruff` clean, `mypy --strict` clean (91 files), Qt-free
+  invariant green. Docs ASCII/UTF-8.
+
+### Documentation Updated
+- `docs/processing-engine.md` (ops table + the two-flattening-verbs note, now implemented;
+  date). LOG (this entry), NEXT (C4 done), project-state memory.
+
+### Next Recommended Actions
+- **Product (Beta Readiness Critical):** C1 export the processed dataset (wire
+  `io.write_zarr`/`write_gsf` into the GUI), C2 export measurement numbers (CSV/clipboard),
+  C3 open multiple measurements. C4 is now done.
+- **Science:** open the **harmonic-ranking** validation study (`docs/next-scientific-priorities.md`
+  Candidate 2) - the next science-track milestone; ship the diagnostic fact before any rule.

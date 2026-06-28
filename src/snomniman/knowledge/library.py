@@ -19,6 +19,8 @@ _KEILMANN = "Keilmann & Hillenbrand, Phil. Trans. R. Soc. A 362, 787 (2004) - s-
 _OCELIC = "Ocelic, Huber & Hillenbrand, Appl. Phys. Lett. 89, 101124 (2006) - PsHet detection."
 _HUTH = "Huth et al., Nano Lett. 12, 3973 (2012) - nano-FTIR."
 _GHIGLIA = "Ghiglia & Pritt, Two-Dimensional Phase Unwrapping, Wiley (1998)."
+_GWYDDION = "Necas & Klapetek, Cent. Eur. J. Phys. 10, 181 (2012) - Gwyddion SPM analysis."
+_WSXM = "Horcas et al., Rev. Sci. Instrum. 78, 013705 (2007) - WSxM SPM software."
 
 
 # --------------------------------------------------------------------------- #
@@ -172,7 +174,7 @@ _CONCEPTS = (
             "for diagnosing the tapping/feedback rather than optical material properties."
         ),
         related_concepts=("concept.near_field_microscopy",),
-        related_operations=("image.plane_level",),
+        related_operations=("image.plane_level", "image.line_flatten"),
         related_diagnostics=("topography_slope", "rms_roughness"),
     ),
     Article(
@@ -243,9 +245,58 @@ _OPERATIONS = (
         common_mistakes=(
             "High polynomial orders can subtract genuine sample curvature, not just tilt.",
             "Leveling a channel that has no meaningful tilt, hiding real large-scale structure.",
+            "Expecting it to remove per-scan-line striping - that is line flattening's job.",
         ),
         related_concepts=("concept.topography",),
+        related_operations=("image.line_flatten",),
         related_diagnostics=("topography_slope", "rms_roughness"),
+    ),
+    Article(
+        article_id="operation.image.line_flatten",
+        category=OPERATION,
+        title="Line Flatten",
+        summary=(
+            "Removes per-scan-line baseline offsets (horizontal striping) by subtracting a "
+            "median, mean, or low-order polynomial from each scan line independently."
+        ),
+        explanation=(
+            "Raster topography is acquired one line at a time, so drift, feedback settling, "
+            "and tip changes give successive lines slightly different baselines - seen as "
+            "horizontal stripes. Line flattening estimates and subtracts a baseline for each "
+            "scan line separately (a row of constant y along the fast scan axis x), removing "
+            "line-to-line offsets that a single global surface fit cannot. It acts on a real "
+            "channel (usually Z) and leaves all other channels unchanged."
+        ),
+        scientific_background=(
+            "Median / mean / low-order-polynomial row leveling is the standard, deterministic "
+            "baseline-removal family in SPM analysis tools (Gwyddion 'Align Rows'; WSxM). The "
+            "median is the robust default: it ignores a few bright or dark feature pixels, so "
+            "genuine features in a line do not bias that line's correction."
+        ),
+        mathematical_background=(
+            "For each scan line L_i: median subtracts median(L_i); mean subtracts the line "
+            "mean; polynomial fits p(x) of degree d along the line by least squares and "
+            "subtracts it (removing per-line offset and slope/bow). Non-finite pixels are "
+            "ignored when estimating the baseline; an all-invalid line is left unchanged."
+        ),
+        practical_guidance=(
+            "Use it when topography shows horizontal striping that plane leveling leaves "
+            "behind. Start with the median method (robust); use polynomial order 1 when each "
+            "line also carries a slope. A common workflow is to line-flatten to remove "
+            "striping, then plane-level to remove global tilt."
+        ),
+        common_mistakes=(
+            "Using the mean method when strong features are present - they bias each line's "
+            "correction; prefer the robust median.",
+            "Over-flattening: a real feature spanning many lines can be partly removed, "
+            "leaving faint vertical banding (the classic row-leveling trade-off).",
+            "Expecting it to remove global tilt or bow - that is plane leveling; the two are "
+            "complementary, not interchangeable.",
+        ),
+        related_concepts=("concept.topography",),
+        related_operations=("image.plane_level",),
+        related_diagnostics=("rms_roughness",),
+        references=(_GWYDDION, _WSXM),
     ),
     Article(
         article_id="operation.image.reference_normalize",

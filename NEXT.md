@@ -3,8 +3,9 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-28 (governance milestone: the Scientific Validation Phase
-formalized and the Beta Readiness Review adopted as the authoritative product roadmap)
+**Last updated:** 2026-06-28 (shipped beta blocker C4 `image.line_flatten`, the Candidate-1
+engineering milestone; governance: the Scientific Validation Phase + Beta Readiness Review
+remain the planning systems)
 
 ---
 
@@ -38,12 +39,12 @@ no new subsystem, and (for operations) no GUI code. Ordered. `(user)` = needs a 
    their work; also closes most of the Phase 4 reproducibility gap. (G1)
 2. **C2 - Export measurement numbers.** Profile samples + region statistics to CSV +
    copy-to-clipboard on the stats table; reuses `viz` `ProfileSet` / `RegionReport`. (G2)
-3. **C4 - `image.line_flatten`.** A registered `ProcessingStep` for per-scan-line
-   offset/bow removal - the most-missed topography operation and the genuinely-new
-   flattening verb (distinct from `image.plane_level`'s surface flatten; do **not** add a
-   `polynomial_flatten`, Rule 2). Implement + register + declare `required_capabilities`
-   (`spatial_2d`) + validate analytically + add its Knowledge article (the no-drift test
-   requires it). Appears in the Processing Workspace with no GUI code. (G4)
+3. **C4 - `image.line_flatten`. DONE (2026-06-28).** Registered `ProcessingStep` for
+   per-scan-line median/mean/polynomial baseline removal (the genuinely-new flattening
+   verb, distinct from `image.plane_level`; no `polynomial_flatten`, Rule 2). Validated
+   analytically + on real CdO data, Knowledge article added, auto-surfaced in the
+   Workspace/Diagnostics/Briefing with no GUI code. No auto-recommendation rule (needs a
+   validated line-artifact diagnostic - a future science-track study). See `LOG.md`. (G4)
 4. **C3 - Open more than one measurement.** A File menu / Open / Recent so a multi-scan
    session is possible without relaunching. GUI-only. (G3)
 

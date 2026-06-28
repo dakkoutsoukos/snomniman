@@ -1,6 +1,6 @@
 # Processing Engine
 
-**Status:** Implemented. **Last updated:** 2026-06-27
+**Status:** Implemented. **Last updated:** 2026-06-28
 
 The processing engine is the generic framework that every future scientific
 derivation in SNOMNIMAN will use. It establishes the pattern once, so that
@@ -183,16 +183,23 @@ report, and in the AI Scientist's briefing, with **no changes to those layers**
 | step_id | required capabilities | what it does |
 |---|---|---|
 | `image.plane_level` | `spatial_2d` | Subtract a fitted polynomial **surface** (order 1-3: plane / paraboloid / cubic) from a real channel. |
+| `image.line_flatten` | `spatial_2d` | Subtract an independent **per-scan-line** baseline (median / mean / polynomial order 1-3) from a real channel - removes line-to-line offset/slope striping that a single global surface fit cannot. Complementary to `image.plane_level`. |
 | `image.reference_normalize` | `complex_optical`, `reference` | Divide each complex optical signal channel by its matching reference (`O{n} / R_O{n}`); amplitude becomes a ratio, phase a difference (explicit, recorded re-reference - OHD-6D). Single-input (signal + reference share one measurement). |
 | `image.phase_unwrap` | `spatial_2d` | Add an unwrapped-phase channel `{channel}_phase_unwrapped` for a complex channel; raw phase untouched (OHD-6D), unwrapped phase is its own channel (OHD-4). 2-D unwrap = sequential `numpy.unwrap` (x then y): exact for smooth fields, can mis-handle true 2-D residues (documented limitation; no extra dependency). |
 | `image.crop` | `spatial_2d` | Restrict every channel to a rectangular nm region; coordinates sliced (absolute positions preserved), scan geometry updated. |
 
-**On `image.polynomial_flatten` (Rule 2):** not added as a separate step, because
-`image.plane_level` *is* polynomial surface flattening (orders 1-3) - a parallel
-"polynomial_flatten" would duplicate it. The genuinely distinct, not-yet-implemented
-operation is **`image.line_flatten`** (per-scan-line polynomial subtraction, which
-removes line-to-line offsets/drift rather than a global surface); it is the next
-flattening verb to add, not a rename of an existing one.
+**On the two flattening verbs (Rule 2):** `image.plane_level` and
+`image.line_flatten` are deliberately *distinct* operations, not a duplicated pair.
+`image.plane_level` fits **one global polynomial surface** (orders 1-3: plane /
+paraboloid / cubic), removing sample tilt and broad bow. `image.line_flatten`
+removes an **independent per-scan-line** baseline (median / mean / polynomial),
+removing the line-to-line offset/slope striping a single surface cannot represent
+(median is the robust default; the methodology is standard SPM row-leveling -
+Gwyddion "Align Rows", WSxM). A separate `image.polynomial_flatten` is *not* added:
+it would merely duplicate `image.plane_level`. The two real verbs are complementary
+- line-flatten to remove striping, plane-level to remove global tilt. (Validated on
+the real CdO scan: plane leveling leaves ~70% of the per-line baseline spread, which
+line flattening removes; see the operation's tests.)
 
 **Explorer exposure.** Every operation is usable through the engine (`apply`), is
 first-class in Description/Diagnostics/AI, **and is exposed in the Explorer's

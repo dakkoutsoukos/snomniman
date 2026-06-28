@@ -200,6 +200,7 @@ def test_applicability_grows_with_the_vocabulary(synthetic_dataset: Dataset) -> 
     apps = {a.step_id: a for a in operation_applicability(synthetic_dataset)}
     for step_id in (
         "image.plane_level",
+        "image.line_flatten",
         "image.reference_normalize",
         "image.phase_unwrap",
         "image.crop",

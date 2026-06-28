@@ -68,7 +68,12 @@ def test_ai_vocabulary_grows_with_new_operations(synthetic_dataset: Dataset) -> 
     briefing = build_briefing(synthetic_dataset)
     enables = next(s for s in briefing.sections if s.title == "What This Measurement Enables")
     text = " ".join(st.text for st in enables.statements)
-    for step_id in ("image.reference_normalize", "image.phase_unwrap", "image.crop"):
+    for step_id in (
+        "image.line_flatten",
+        "image.reference_normalize",
+        "image.phase_unwrap",
+        "image.crop",
+    ):
         assert step_id in text, f"AI briefing did not gain vocabulary for {step_id}"
 
 
