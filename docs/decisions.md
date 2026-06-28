@@ -416,6 +416,44 @@ future LLM is its interpreter. Full detail: `docs/scientific-reasoning.md`.
 
 ---
 
+## ADR-0024 - The Knowledge Center: an integrated scientific knowledge base  [ACCEPTED]
+**Context.** SNOMNIMAN now contains substantial scientific knowledge (concepts, operations,
+diagnostics, provenance, AI reasoning), but a researcher must know the science already to
+use it. The opportunity: teach the science *inside* the product - and, in doing so, give the
+(future) AI a curated base to ground explanations in rather than improvising. This must not
+become a generic doc browser or duplicate the README, and - per the project maxim - its
+content must be accurate and defensible, never padded to hit a count.
+**Decision.** Add a Qt-free leaf package `snomniman.knowledge`: structured, queryable
+**articles** (frozen `Article` value objects) rather than static markdown. Each has a
+dot-namespaced id (`concept.*` / `operation.*` / `diagnostic.*` / `ai.*`), required
+title/summary/explanation, and optional fields (scientific/mathematical background, when-to-use,
+common mistakes, references, and cross-references to related concepts/operations/diagnostics).
+A `query.py` provides lookup/search/by-category and id-convention resolvers
+(`article_for_operation(step_id)` etc.). The Explorer gains a **Knowledge** panel (browse tree
++ search + a `QTextBrowser` article view with clickable internal links), and other panels gain
+**"Learn more"** deep-links: the Processing Workspace (operation -> its article) and AI Scientist
+recommendation cards (operation -> its article), routed through the window via
+`article_for_operation`. AI integration today is the deep-link (curated content, not model
+prose); a future provider grounds its explanations in the base. Two integrity guarantees keep
+the base honest: `integrity_problems()` (no dangling cross-references) and a test that **every
+registered ProcessingStep has an operation article** (no drift from the code).
+**Alternatives.** (a) Ship `/docs` markdown in a viewer - rejected: not structured/queryable,
+not contextually linkable to objects, would duplicate README/docs. (b) Let the AI generate
+explanations on demand - rejected by the AI rules: explanations would be improvised and
+unverifiable; the curated base is the canonical teaching, the model only phrases it. (c) Exhaustively
+document every concept now - rejected (the maxim): the library is an *initial, curated* set,
+grown only as articles can be made accurate; a no-drift test enforces operation coverage without
+forcing breadth elsewhere. (d) Fold articles into `describe`/`ai` - rejected: teaching content is
+a distinct responsibility (curated prose, not a projection of a dataset or a reasoning rule);
+it earns its own leaf package, consumed by `gui` (and a future narrator).
+**Consequences.** A researcher can click "Learn more" on an operation or a recommendation and
+read accurate, interconnected teaching without leaving the app; the same base will ground the
+future AI narrator. Adding an operation now also calls for an article (enforced). The package is
+a clean leaf (no internal deps), so it does not entangle the architecture. Full detail:
+`docs/knowledge-center.md`.
+
+---
+
 ## Decision Closure (OHD-1..9 resolved)
 
 | OHD | Topic | Resolution | ADR |

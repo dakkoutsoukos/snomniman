@@ -39,6 +39,8 @@ class BriefingPanel(QtWidgets.QWidget):
 
     #: Emitted when a recommendation's Preview is clicked. Args: step_id, params dict.
     recommendationPreviewRequested: QtCore.Signal = QtCore.Signal(str, object)
+    #: Emitted by a recommendation's "Learn more". Arg: step_id.
+    learnMoreRequested: QtCore.Signal = QtCore.Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -188,6 +190,10 @@ class BriefingPanel(QtWidgets.QWidget):
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
+        learn = QtWidgets.QPushButton("Learn more")
+        learn.setToolTip("Open the Knowledge Center article for this operation")
+        learn.clicked.connect(lambda _=False, sid=rec.step_id: self.learnMoreRequested.emit(sid))
+        btn_row.addWidget(learn)
         preview = QtWidgets.QPushButton("Preview")
         preview.setToolTip("Open this operation in the Processing Workspace, pre-configured")
         preview.clicked.connect(

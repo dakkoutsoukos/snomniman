@@ -43,7 +43,12 @@ rather than repeating them.
 > Accept/Cancel derivation - never mutating the raw measurement. A suggested next step
 > Previews straight into the Workspace (no AI-specific execution path). Adding a new
 > operation needs **no GUI code** (implement, register, declare params + capabilities).
-> 352 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> A **Knowledge Center** (`snomniman.knowledge`, ADR-0024) teaches the science in-app:
+> a browsable/searchable base of curated, interconnected articles (concepts, every
+> operation, diagnostics, the AI's philosophy), with "Learn more" deep-links from
+> operations and recommendations - the same curated content a future AI narrator grounds
+> its explanations in.
+> 373 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
@@ -139,7 +144,8 @@ Layered, with a **strict, acyclic dependency graph**. Full diagram and detail:
 ```
 gui            -> consumes all backend layers (PySide6 + PyQtGraph)
 batch          -> pipeline, io, core
-ai             -> describe, diagnostics, core  (AI Scientist: Scientific Briefing; deterministic facts + optional narrative renderer)
+ai             -> describe, diagnostics, core  (AI Scientist: Briefing + Suggested Next Steps via a deterministic Reasoning Rule Engine)
+knowledge      -> (nothing internal)        (Knowledge Center: curated, queryable scientific articles; a leaf consumed by gui/future-ai)
 pipeline       -> processing, core         (provenance DAG, replay, serialization, version capture)
 describe       -> processing, core         (Scientific Description API: structured descriptors; projection, no computation)
 diagnostics    -> processing, core         (Scientific Diagnostics Engine: deterministic computed facts; sibling of describe)
@@ -171,6 +177,11 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
   narrative via a `NarrativeProvider` seam, no model SDK bundled. Read-only; the rules
   are the scientific authority (they choose), the LLM only explains; recommends but
   never executes; never mutates data or the provenance DAG.
+- `snomniman.knowledge` - the Knowledge Center: curated, structured, queryable scientific
+  **articles** (concepts, one per operation, diagnostics, AI philosophy) the Explorer surfaces
+  in context ("Learn more") and a future AI narrator grounds explanations in. A Qt-free leaf
+  (no internal deps); content held to the project maxim; a no-drift test requires an article
+  per registered operation. See `docs/knowledge-center.md` (ADR-0024).
 - `snomniman.viz` - display-ready render data + matplotlib static export.
 - `snomniman.batch` - headless application of a DAG across many sources.
 - `snomniman.gui` - the desktop app; presentation/interaction only.
@@ -178,7 +189,7 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
 **Dependency rules:**
 - No cycles. `core` imports nothing else in the project.
 - **Rule 4 (load-bearing): backend code must NEVER depend on Qt.** Nothing in
-  `core/io/processing/describe/diagnostics/ai/pipeline/viz/batch` may import PySide6, PyQt, or pyqtgraph.
+  `core/io/processing/describe/diagnostics/ai/knowledge/pipeline/viz/batch` may import PySide6, PyQt, or pyqtgraph.
   Enforced by `tests/test_smoke.py::test_backend_is_qt_free`. Do not weaken it.
 - Nothing in the backend imports `gui`.
 
@@ -348,6 +359,7 @@ the design changed, and (for scientific code) a validation test.
 | `docs/ai-scientist-v1.md` | **AI Scientist** (`snomniman.ai`): the Scientific Briefing (orientation; ADR-0020) **and Suggested Next Steps** (deterministic, grounded workflow recommendations that Preview into the Workspace; ADR-0022) - philosophy (grounding + deterministic fallback; recommend-not-execute), architecture, the provider seam (no SDK yet), Explorer integration, honest limitations, future evolution. |
 | `docs/scientific-reasoning.md` | **Scientific Reasoning Rule Engine** (`snomniman.ai.reasoning`; ADR-0023): the deterministic rules that turn diagnostics into recommendations - philosophy (deterministic judgment, AI explains), what a `ReasoningRule` is, the rule lifecycle (applicability/prereq/exclusion/ordering guards), the shipped rules + what is deliberately deferred (phase-unwrap/crop) and why, the Rule-7 scope note, and the extension model. |
 | `docs/phase-wrapping-analysis.md` | **Scientific Knowledge milestone** (analysis only, no code): can phase wrapping be detected deterministically well enough to justify an auto-recommendation? Background, candidate diagnostics (residues - Goldstein/Ghiglia-Pritt - + unwrap-range ratio + amplitude mask; literature-grounded), analytical + real-data validation, and the honest conclusion: the criterion is defensible/validatable, but the *rule* is **deferred** until a genuinely-wrapping real measurement can validate its positive branch (the real CdO optical phase does not wrap). The template for the Scientific Knowledge Phase. |
+| `docs/knowledge-center.md` | **Knowledge Center** (`snomniman.knowledge`; ADR-0024): a living, in-app scientific knowledge base - philosophy (teach the science while performing it; ground the AI), architecture (a Qt-free leaf), the structured `Article` model, the Explorer panel + "Learn more" deep-links, AI integration, the integrity/no-drift guarantees, and future expansion. |
 
 ---
 

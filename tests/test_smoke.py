@@ -20,6 +20,7 @@ BACKEND_PACKAGES = [
     "snomniman.describe",
     "snomniman.diagnostics",
     "snomniman.ai",
+    "snomniman.knowledge",
     "snomniman.pipeline",
     "snomniman.viz",
     "snomniman.batch",

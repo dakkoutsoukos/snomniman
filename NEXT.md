@@ -3,7 +3,7 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-27 (Scientific Knowledge Phase begins: phase-wrapping analysis)
+**Last updated:** 2026-06-28 (Knowledge Center - in-app scientific knowledge base)
 
 ---
 
@@ -251,7 +251,16 @@ in impact order:
     built now; `image.phase_unwrap` stays available manually. *Done 2026-06-27.*
     - **Blocked-on-data:** registering the phase-unwrap rule needs a genuinely-wrapping real
       golden measurement (nano-FTIR phase / interferometric / dispersive sample). `(user)`
-28. **Concrete AI narrative provider** - add ONE real provider behind the existing
+28. [x] **Knowledge Center** - a living, in-app scientific knowledge base
+    (`snomniman.knowledge`, a Qt-free leaf): structured, queryable `Article`s (concepts, one
+    per operation, diagnostics, AI philosophy) + a query API (`article_for_operation`,
+    `search_articles`, `integrity_problems`). Explorer **Knowledge** tab (browse tree +
+    search + cross-linked article view) and **"Learn more"** deep-links from the Processing
+    Workspace and AI recommendation cards. Integrity guards: no dangling links + a no-drift
+    test (an article per registered operation). The same base will ground the future AI
+    narrator. 21 new tests; 373 total green. ADR-0024; `docs/knowledge-center.md`.
+    *Done 2026-06-28.*
+29. **Concrete AI narrative provider** - add ONE real provider behind the existing
     `NarrativeProvider` seam as an *optional* extra (`uv sync --extra ai`),
     lazy-imported, never required for backend/CI; wire provider selection so the
     Briefing's interpretation (and optionally suggestion prose) renders when configured.

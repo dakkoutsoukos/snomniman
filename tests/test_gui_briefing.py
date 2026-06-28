@@ -95,8 +95,10 @@ def test_panel_renders_one_preview_button_per_recommendation(
     panel = BriefingPanel()
     ws = ExplorerModel(synthetic_dataset).workflow_suggestions()
     panel.set_suggestions(ws)
-    buttons = panel._suggest_box.findChildren(QtWidgets.QPushButton)
-    assert len(buttons) == len(ws.recommendations) >= 2
+    previews = [
+        b for b in panel._suggest_box.findChildren(QtWidgets.QPushButton) if b.text() == "Preview"
+    ]
+    assert len(previews) == len(ws.recommendations) >= 2
 
 
 def test_panel_card_shows_considerations(qapp: Any, synthetic_dataset: Dataset) -> None:
@@ -119,7 +121,10 @@ def test_panel_preview_button_emits_step_and_params(
     panel.set_suggestions(ws)
     captured: list[tuple[str, object]] = []
     panel.recommendationPreviewRequested.connect(lambda sid, p: captured.append((sid, p)))
-    panel._suggest_box.findChildren(QtWidgets.QPushButton)[0].click()
+    preview = next(
+        b for b in panel._suggest_box.findChildren(QtWidgets.QPushButton) if b.text() == "Preview"
+    )
+    preview.click()
     assert captured
     step_id, params = captured[0]
     assert step_id in {r.step_id for r in ws.recommendations}

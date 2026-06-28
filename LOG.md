@@ -1989,3 +1989,72 @@ feature count; a missing capability beats an unjustified one.
   Knowledge milestone is another expert judgment that *is* groundable on present data
   (e.g. poor-scan / drift detection, harmonic-ranking), or `image.line_flatten`. Every
   future milestone: "teach one expert judgment, deterministically - or conclude we can't."
+
+---
+
+## 2026-06-28 - The Knowledge Center (ADR-0024)
+
+Committed the phase-wrapping analysis (`docs: phase-wrapping detectability analysis`),
+then built the Knowledge Center: a *living scientific knowledge base integrated into the
+product*. The idea (user): SNOMNIMAN should teach the science while the researcher performs
+it - click any operation/diagnostic/recommendation/concept and understand it without
+leaving the app - and the same curated base grounds the future AI narrator (so AI explains
+from a canonical source rather than improvising).
+
+### Completed
+- **`snomniman.knowledge` (new Qt-free leaf package, no internal deps):** structured,
+  queryable **articles** rather than markdown. `article.py` - the frozen `Article` value
+  object (id namespaced by category; required title/summary/explanation; optional
+  scientific/mathematical background, when-to-use, common mistakes, references, and
+  cross-references to related concepts/operations/diagnostics) + `KnowledgeError`.
+  `library.py` - the curated initial content (20 articles: 8 concepts, one per operation
+  (4), 4 diagnostics, 4 AI). `query.py` - `get_article`/`find_article`/`articles_in`/
+  `article_for_operation`/`article_for_diagnostic`/`search_articles` + `integrity_problems`
+  (the no-broken-links check). Articles are held to the project maxim (accurate, concise,
+  not padded); the phase-unwrap article ties to the wrapping analysis, the AI articles to
+  the permanent rules.
+- **Explorer Knowledge panel (`gui/knowledge.py`):** a category tree + search box + a
+  `QTextBrowser` article view whose `related` links are clickable and navigate within the
+  base. New "Knowledge" tab.
+- **"Learn more" deep-links:** the Processing Workspace ("Learn more about this operation")
+  and AI Scientist recommendation cards ("Learn more") emit the operation's `step_id`; the
+  window resolves it via `article_for_operation` and opens the article in the Knowledge tab.
+  The mechanism is generic (a diagnostic row / harmonic / provenance link is the same
+  one-liner with `article_for_diagnostic`).
+- **AI integration (today):** the deep-link itself - a recommendation points the researcher
+  at curated teaching, not model prose. A future provider will ground its explanations in
+  these articles (it phrases; the base teaches).
+- **Verified** on the real CdO measurement (screenshot): "Learn more" on Reference Normalize
+  opens its article (summary, math `O{n}/R_O{n}`, when-to-use, the noise/phase caveats),
+  with the browsable Concepts/Operations/Diagnostics/AI tree and working cross-links.
+
+### Decisions
+- **ADR-0024** (the Knowledge Center). Structured/queryable articles over a markdown viewer;
+  a Qt-free leaf package (teaching content is a distinct responsibility, not a `describe`/`ai`
+  projection); AI grounds in the base, never improvises (the deterministic-authority /
+  AI-interpreter split). The library is an *initial, curated* set - grown only as accurate
+  (the maxim) - with a **no-drift** test requiring an operation article per registered step.
+
+### Issues Found
+- Adding a "Learn more" button per recommendation card changed the card's button count;
+  updated two `test_gui_briefing` assertions to target the Preview buttons specifically. No
+  behaviour regressions. Added `snomniman.knowledge` to the Qt-free invariant's backend list.
+
+### Tests / gates
+- +21 tests (373 total, up from 352): `tests/test_knowledge.py` (12 - integrity/no dangling
+  links, the **no-drift invariant** that every registered ProcessingStep has an article,
+  query API, search, JSON round-trip) and `tests/test_gui_knowledge.py` (9 - panel populate/
+  render/search/internal-navigation, the Knowledge tab, and "Learn more" from the Workspace
+  and from a recommendation opening the right article). `ruff` clean; `mypy --strict` clean
+  (89 files); Qt-free invariant green (now covers `knowledge`); no network in any test.
+
+### Documentation
+- Created `docs/knowledge-center.md`. `docs/decisions.md` ADR-0024. `CLAUDE.md`: layer graph
+  + module responsibility + the Qt-free rule list + status block (Knowledge Center; 373) +
+  doc table. This entry; `NEXT.md`.
+
+### Next recommended
+- More "Learn more" sources (diagnostics rows, harmonics, provenance, metadata) - the
+  mechanism is generic. More articles as accuracy allows (nano-FTIR, polariton imaging). Then
+  the next Scientific Knowledge judgment (poor-scan/drift detection, harmonic ranking), or a
+  concrete `NarrativeProvider` that grounds its prose in the knowledge base.

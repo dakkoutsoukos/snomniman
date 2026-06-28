@@ -58,6 +58,8 @@ class ProcessingWorkspace(QtWidgets.QWidget):
     previewAccepted: QtCore.Signal = QtCore.Signal()
     #: Emitted when the user cancels the current preview.
     previewCancelled: QtCore.Signal = QtCore.Signal()
+    #: Emitted by "Learn more" for the shown operation. Arg: step_id.
+    learnMoreRequested: QtCore.Signal = QtCore.Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -107,6 +109,12 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._detail.setWordWrap(True)
         self._detail.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
         self._body.addWidget(self._detail)
+
+        self._learn_btn = QtWidgets.QPushButton("Learn more about this operation")
+        self._learn_btn.setToolTip("Open the Knowledge Center article for this operation")
+        self._learn_btn.setVisible(False)
+        self._learn_btn.clicked.connect(self._on_learn_clicked)
+        self._body.addWidget(self._learn_btn, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
 
         self._form_box = QtWidgets.QGroupBox("Parameters")
         self._form = QtWidgets.QFormLayout(self._form_box)
@@ -188,6 +196,7 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._title.setText(option.title)
         self._detail.setText(_detail_text(option))
         self._build_form(option)
+        self._learn_btn.setVisible(True)
         self._preview_box.setVisible(False)
         self._preview_info.clear()
         self._set_buttons_preview(active=False)
@@ -255,6 +264,7 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._clear_form()
         self._title.setText("No operation selected")
         self._detail.setText("Select an operation above to see what it does and configure it.")
+        self._learn_btn.setVisible(False)
         self._form_box.setVisible(False)
         self._preview_box.setVisible(False)
         self._set_buttons_preview(active=False)
@@ -300,6 +310,10 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         if self._step_id is None:
             return
         self.previewRequested.emit(self._step_id, self.current_params())
+
+    def _on_learn_clicked(self) -> None:
+        if self._step_id is not None:
+            self.learnMoreRequested.emit(self._step_id)
 
 
 # --------------------------------------------------------------------------- #

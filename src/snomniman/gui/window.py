@@ -21,12 +21,14 @@ from PySide6 import QtCore, QtWidgets
 
 from snomniman import viz
 from snomniman.core.exceptions import ProcessingError
+from snomniman.knowledge import article_for_operation
 from snomniman.viz import RenderData
 
 from .briefing import BriefingPanel
 from .comparison import ComparisonView, ContactSheet
 from .diagnostics import DiagnosticsPanel
 from .imageview import ChannelImageView
+from .knowledge import KnowledgePanel
 from .measurement import MeasurementController, MeasurementPanel
 from .model import (
     PRESET_LABELS,
@@ -63,6 +65,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._diagnostics = DiagnosticsPanel()
         self._briefing = BriefingPanel()
         self._process = ProcessingWorkspace()
+        self._knowledge = KnowledgePanel()
         # Measurements are read-only observations placed on the single image; they
         # report across the single view's channels (current + phase + topography).
         self._measure = MeasurementController(model, self._image, model.single_view_specs)
@@ -109,6 +112,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         tabs.addTab(self._briefing, "Briefing")
         tabs.addTab(self._measure_panel, "Measure")
         tabs.addTab(self._process, "Process")
+        tabs.addTab(self._knowledge, "Knowledge")
         inspect = QtWidgets.QDockWidget("Inspect")
         inspect.setWidget(tabs)
         inspect.setFeatures(QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable)
@@ -163,6 +167,9 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._process.previewCancelled.connect(self._on_preview_cancelled)
         # AI Scientist: a suggested next step hands off to the Processing Workspace.
         self._briefing.recommendationPreviewRequested.connect(self._on_recommendation_preview)
+        # Knowledge Center: "Learn more" from the Workspace or a recommendation opens the article.
+        self._process.learnMoreRequested.connect(self._on_operation_learn_more)
+        self._briefing.learnMoreRequested.connect(self._on_operation_learn_more)
 
     # -- loading / refreshing -------------------------------------------------
 
@@ -253,6 +260,14 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._process.show_operation(self._model.operation_option(step_id))
         self._process.apply_params(params)
         self._on_preview_requested(step_id, params)
+
+    def _on_operation_learn_more(self, step_id: str) -> None:
+        """Open the Knowledge Center article for an operation (from Workspace or AI)."""
+        article = article_for_operation(step_id)
+        if article is None:
+            return
+        self._inspect_tabs.setCurrentWidget(self._knowledge)
+        self._knowledge.show_article(article.article_id)
 
     def _on_preview_requested(self, step_id: str, params: dict[str, Any]) -> None:
         """Run the operation on a copy and show a before/after preview.
