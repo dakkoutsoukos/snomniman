@@ -3,7 +3,7 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-27 (Scientific Reasoning Rule Engine - recommendations as rules)
+**Last updated:** 2026-06-27 (Scientific Knowledge Phase begins: phase-wrapping analysis)
 
 ---
 
@@ -241,11 +241,16 @@ in impact order:
     none (no real relationships among 4 ops); no dependency solver; phase-unwrap/crop rules
     deferred as ungrounded. 15 new tests; 352 total green. ADR-0023;
     `docs/scientific-reasoning.md`. *Done 2026-06-27.*
-27. **Validated phase-wrapping diagnostic + phase-unwrap rule** - add a deterministic,
-    known-answer-validated "is this phase worth unwrapping" metric to `diagnostics`
-    (distinguish coherent wrapping from noise; Rule 6), then register one `ReasoningRule`
-    for `image.phase_unwrap`. This is the next grounded rule (and the template for "richer
-    reasoning"); crop stays unrecommended (user-intent-driven).
+27. [x] **Phase-wrapping detectability analysis** (Scientific Knowledge milestone, analysis
+    only - no code) - answered "when should an expert recommend phase unwrapping, and can it
+    be deterministic?" `docs/phase-wrapping-analysis.md`: residues (Goldstein/Ghiglia-Pritt)
+    + unwrap-range ratio + amplitude mask are defensible and analytically validatable, BUT
+    the real CdO optical phase **does not wrap** (validated empirically), so the *recommend*
+    branch can't be validated on real data yet. **Conclusion: defer the auto-recommendation
+    rule** (maxim: a missing rule beats an unjustified one); the diagnostic *fact* could be
+    built now; `image.phase_unwrap` stays available manually. *Done 2026-06-27.*
+    - **Blocked-on-data:** registering the phase-unwrap rule needs a genuinely-wrapping real
+      golden measurement (nano-FTIR phase / interferometric / dispersive sample). `(user)`
 28. **Concrete AI narrative provider** - add ONE real provider behind the existing
     `NarrativeProvider` seam as an *optional* extra (`uv sync --extra ai`),
     lazy-imported, never required for backend/CI; wire provider selection so the

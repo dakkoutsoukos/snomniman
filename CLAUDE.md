@@ -80,6 +80,14 @@ Full detail: `docs/vision.md`.
 
 ## Core Principles
 
+> **Scientific honesty over feature count (the project maxim).** *"I'd rather the
+> engine recommend two things it can defend than four it can't."* A missing capability
+> is preferable to an unjustified one. When deterministic evidence is insufficient to
+> support a feature (a recommendation rule, a diagnostic, an automated judgment), the
+> correct deliverable is to **say so and not ship it** - never to lower the scientific
+> bar to automate a workflow. Success is measured by how many expert judgments
+> SNOMNIMAN can make deterministically *and defend*, not by how many features it has.
+
 1. **Scientific correctness first.** Units, coordinate conventions, normalization,
    and complex-valued semantics are explicit (stored in metadata) and validated,
    never assumed.
@@ -339,6 +347,7 @@ the design changed, and (for scientific code) a validation test.
 | `docs/diagnostics-engine.md` | **Scientific Diagnostics Engine** (`snomniman.diagnostics`): philosophy (observations vs operations), the descriptors, sibling relationship to `describe`, scientific choices + deferred metrics, extension model, relationship to the future AI Scientist. |
 | `docs/ai-scientist-v1.md` | **AI Scientist** (`snomniman.ai`): the Scientific Briefing (orientation; ADR-0020) **and Suggested Next Steps** (deterministic, grounded workflow recommendations that Preview into the Workspace; ADR-0022) - philosophy (grounding + deterministic fallback; recommend-not-execute), architecture, the provider seam (no SDK yet), Explorer integration, honest limitations, future evolution. |
 | `docs/scientific-reasoning.md` | **Scientific Reasoning Rule Engine** (`snomniman.ai.reasoning`; ADR-0023): the deterministic rules that turn diagnostics into recommendations - philosophy (deterministic judgment, AI explains), what a `ReasoningRule` is, the rule lifecycle (applicability/prereq/exclusion/ordering guards), the shipped rules + what is deliberately deferred (phase-unwrap/crop) and why, the Rule-7 scope note, and the extension model. |
+| `docs/phase-wrapping-analysis.md` | **Scientific Knowledge milestone** (analysis only, no code): can phase wrapping be detected deterministically well enough to justify an auto-recommendation? Background, candidate diagnostics (residues - Goldstein/Ghiglia-Pritt - + unwrap-range ratio + amplitude mask; literature-grounded), analytical + real-data validation, and the honest conclusion: the criterion is defensible/validatable, but the *rule* is **deferred** until a genuinely-wrapping real measurement can validate its positive branch (the real CdO optical phase does not wrap). The template for the Scientific Knowledge Phase. |
 
 ---
 

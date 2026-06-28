@@ -1923,3 +1923,69 @@ demonstrating the engine's own discipline: never recommend without deterministic
 - A validated **phase-wrapping diagnostic** (then a phase-unwrap rule "for free"); more rules
   as the vocabulary grows. `image.line_flatten` (GUI-free). A concrete `NarrativeProvider`
   (optional extra, own ADR) to *phrase* the deterministic suggestions. Real-user validation.
+
+---
+
+## 2026-06-27 - Scientific Knowledge Phase begins: phase-wrapping detectability (analysis only)
+
+Committed the Reasoning Rule Engine (`feat(ai): Scientific Reasoning Rule Engine`), then -
+on the user's framing that foundational development is done and every future milestone
+should "teach SNOMNIMAN one expert judgment, deterministically" - took the first
+**Scientific Knowledge** milestone. The deliverable is an *answer*, not a feature: can
+phase wrapping be detected deterministically with enough confidence to justify an
+automatic phase-unwrap recommendation? **No product code was written** (per the brief and
+the project maxim).
+
+The user also asked to enshrine the sentence that drove the previous milestone's pushback;
+it is now the **project maxim** at the top of `CLAUDE.md` Core Principles: *"I'd rather the
+engine recommend two things it can defend than four it can't"* - scientific honesty over
+feature count; a missing capability beats an unjustified one.
+
+### Completed
+- Created `docs/phase-wrapping-analysis.md`: the scientific background (wrapped/unwrapped
+  phase; why single-harmonic s-SNOM optical phase is often bounded while nano-FTIR /
+  interferometric / dispersive phase wraps; the noise/vortex/amplitude pitfalls); the
+  candidate diagnostics, grounded in the literature (Goldstein-Zebker-Werner 1988;
+  Ghiglia & Pritt 1998) - **residues** (the rigorous path-independence test: zero residues
+  <=> uniquely unwrappable) + **unwrap-range ratio** + **amplitude mask**; the rejection of
+  wrap-edge count alone (noise-indistinguishable); a validation; specified recommendation
+  criteria; and a conclusion.
+- **Empirical validation** (throwaway scratch script, not committed, not in `src/`): the
+  residue diagnostic behaves exactly as theory predicts on analytical known-answers - a
+  coherent 6-wrap ramp is residue-free (density 0, unwrap-range 5.96), a vortex has exactly
+  1 residue, uniform noise has residue density 0.33, ramp+heavy-noise 0.25, bounded phase 0.
+  On the **real CdO measurement**, every informative optical phase harmonic (O1-O3) is
+  **bounded and does not wrap** (unwrap-range ~0.4 x 2pi; residue density 0); O4's apparent
+  wrapping has 100% of its residues in low-amplitude noise. So an auto-recommendation would
+  correctly decline on all six channels - matching the physics.
+
+### Decisions
+- **Conclusion = conditional Outcome 1, honest deferral.** The criterion (residue density +
+  unwrap-range ratio + amplitude mask) is scientifically defensible and *analytically*
+  validatable. BUT its **positive ("recommend") branch cannot be validated on real data** -
+  no available real measurement genuinely wraps. Project Rule 6 needs synthetic AND
+  reference validation; only synthetic is achievable today for the positive case.
+  Therefore, by the maxim, **defer the auto-recommendation rule**. The *diagnostic fact*
+  (does the phase wrap?) is separately defensible and could be built now; the *rule* waits
+  for a genuinely-wrapping golden measurement (nano-FTIR / interferometric). `image.phase_unwrap`
+  remains available manually in the Workspace regardless. No ADR (no architecture change; a
+  research conclusion).
+
+### Issues Found
+- None. The investigation strengthened, rather than weakened, the decision to defer: the
+  real s-SNOM optical phase here simply does not wrap, so even a perfect rule would have no
+  positive examples to fire on. Confirms the earlier (last-milestone) instinct to defer
+  phase-unwrap was correct, now with evidence.
+
+### Documentation
+- Created `docs/phase-wrapping-analysis.md`. `CLAUDE.md`: the project maxim (Core
+  Principles) + doc-table row. This entry; `NEXT.md` (the phase-wrapping task now points at
+  the analysis + its deferral). No code, no tests changed (352 still green; gates untouched).
+
+### Next recommended
+- If/when a genuinely-wrapping real measurement is available: build the `phase_wrapping`
+  diagnostic (residues + unwrap-range + amplitude mask, with the synthetic known-answers as
+  tests), then register the phase-unwrap `ReasoningRule`. Otherwise, the next Scientific
+  Knowledge milestone is another expert judgment that *is* groundable on present data
+  (e.g. poor-scan / drift detection, harmonic-ranking), or `image.line_flatten`. Every
+  future milestone: "teach one expert judgment, deterministically - or conclude we can't."
