@@ -170,6 +170,42 @@ def topography_dataset() -> Dataset:
 
 
 @pytest.fixture
+def optical_only_dataset() -> Dataset:
+    """A 2-D scan with a single complex optical signal channel - no topography, no references.
+
+    Exercises reasoning-rule decline paths: plane leveling has no topography to act on,
+    and reference normalization has no references (and the rule has no optical signal to
+    normalize when used elsewhere). A degenerate but valid image dataset.
+    """
+    ny, nx = 3, 4
+    y = (np.arange(ny, dtype=np.float64) + 0.5) * 50.0
+    x = (np.arange(nx, dtype=np.float64) + 0.5) * 50.0
+    o2 = (np.ones((ny, nx)) * np.exp(1j * 0.3)).astype(np.complex64)
+    data = xr.Dataset(
+        {"O2": (("y", "x"), o2)},
+        coords={
+            "x": ("x", x, {"unit": "nm", "axis": "X"}),
+            "y": ("y", y, {"unit": "nm", "axis": "Y"}),
+        },
+    )
+    metadata = Metadata(
+        data_kind=DataKind.IMAGE,
+        conventions=Conventions(),
+        instrument=Instrument(),
+        excitation=Excitation(),
+        demodulation=Demodulation(),
+        scan=ScanInfo(
+            pixels=(nx, ny), size_nm=(nx * 50.0, ny * 50.0), pixel_size_nm=(50.0, 50.0)
+        ),
+        channels=(ChannelInfo("O2", "optical", "signal", "complex64", harmonic=2),),
+    )
+    node = ProvenanceNode(
+        node_id="n0", record=StepRecord(step_id="io.read", step_version=1, deterministic=True)
+    )
+    return Dataset(data, kind=DataKind.IMAGE, metadata=metadata, provenance=node)
+
+
+@pytest.fixture
 def make_gsf(tmp_path: Path) -> Callable[..., Path]:
     """Factory writing a synthetic GSF file and returning its path."""
 

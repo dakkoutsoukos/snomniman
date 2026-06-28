@@ -370,6 +370,52 @@ the deterministic vocabulary grows (new rules, not AI code). Full detail:
 
 ---
 
+## ADR-0023 - Scientific Reasoning Rule Engine: recommendations as registered rules  [ACCEPTED]
+**Context.** ADR-0022 shipped deterministic Suggested Next Steps as two ad-hoc functions
+(`_recommend_plane_level`, `_recommend_reference_normalize`). To grow this into "how an
+experienced SNOM researcher thinks" - and to keep the deterministic layer the scientific
+authority as the vocabulary grows - the recommendation logic should be first-class,
+individually testable, explainable, and extensible: a registry of rules where "every new
+operation simply contributes another rule." This also crystallised a third permanent AI
+principle (added to `CLAUDE.md` with a motto): *deterministic systems choose whenever a
+deterministic rule exists; AI adds explanation/prioritization/communication, not scientific
+authority.*
+**Decision.** Add a **Scientific Reasoning Rule Engine** inside `snomniman.ai` (not a new
+subsystem): `reasoning.py` defines `ReasoningRule` (declarative: `rule_id`, `step_id`,
+`summary`, `prerequisite_steps`, `excluded_steps`, and a deterministic
+`evaluate(ctx) -> RuleOutcome | None`), a `ReasoningContext` (the describe + diagnostics
+projections a rule may use), and a rule registry mirroring the processing-step registry.
+`recommend.py` becomes the engine: it evaluates every registered rule, enforces the
+universal guards (applicable + not-already-applied) so rules contain only the *scientific*
+trigger, honours prerequisites (suppress-until-applied -> natural cross-iteration sequencing)
+and exclusions (drop the weaker of a mutually-excluded pair), and ranks by confidence. The
+recommendation data types move to `report.py`; `Recommendation` gains `rule_id` (full
+traceability) and `considerations` (deterministic caveats / "possible downside"). Evidence is
+source-tagged across `diagnostics`/`description`/`provenance`/`metadata`, and rules emit
+interaction-aware, provenance-sourced evidence (e.g. reference-normalize notes completed
+leveling).
+**Alternatives.** (a) Keep the two functions - rejected: not individually testable as units,
+no explicit triggers/relationships, no clean extension point for the explainability the
+project needs. (b) Build a full dependency/ordering **solver** with rich
+prerequisite/exclusion graphs now - rejected (Rule 7 + the project's own "abstractions need a
+present consumer"): today's four operations have no hard prerequisites or exclusions, so a
+solver would be machinery without a consumer. The cheap, tested *mechanism* is included
+(foreseeable consumer; matches the schema), but the shipped rules declare no relationships,
+and suppress-until-applied already yields sequencing. (c) Ship phase-unwrap / crop rules to
+"complete" the set - rejected as ungrounded: phase-unwrap needs a *validated* wrapping
+diagnostic (Rule 6) and crop is user-intent-driven; recommending either without deterministic
+evidence violates the engine's own contract. Both are documented as deferred. (d) Let an LLM
+generate/order rules - rejected by AI rule 3 (this is the authority layer; the LLM phrases,
+never chooses).
+**Consequences.** Recommendations are now explainable to the trigger ("why was this
+recommended?" answers from deterministic facts incl. provenance), individually testable, and
+extended by registering one rule (no engine/GUI change). The public API
+(`recommend_workflow`, `Recommendation`, `WorkflowSuggestions`, ...) is unchanged - the
+refactor is internal. The deterministic layer is unambiguously the scientific authority; the
+future LLM is its interpreter. Full detail: `docs/scientific-reasoning.md`.
+
+---
+
 ## Decision Closure (OHD-1..9 resolved)
 
 | OHD | Topic | Resolution | ADR |

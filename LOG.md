@@ -1846,3 +1846,80 @@ could.
   unwrap on a wrapping signal, comparison/exploration suggestions) - each extends the
   deterministic pattern. Then a concrete `NarrativeProvider` (optional extra, own ADR) to
   *phrase* the briefing/suggestions; the suggestions stay deterministic. Real-user validation.
+
+---
+
+## 2026-06-27 - Scientific Reasoning Rule Engine (ADR-0023)
+
+Committed the deterministic Suggested Next Steps (`feat(ai): deterministic Suggested Next
+Steps`), then - on the user's insight that this is "no longer building software, it's
+building scientific reasoning" - refactored the two ad-hoc recommendation functions into a
+first-class **Scientific Reasoning Rule Engine**: registered, individually-testable rules
+that encode scientific best practice, with explicit triggers, caveats, and full
+traceability. A third permanent AI principle + a motto were added to `CLAUDE.md`
+(deterministic systems *choose*; AI *explains*).
+
+The user's prompt asked for a fairly elaborate engine (prerequisite chains, mutual
+exclusion, dependency reasoning, ordered workflows). I built the parts that are *earned*
+now and pushed back (Rule 7 + [[abstractions-need-present-consumer]]) on the rest, in the
+open: the prerequisite/exclusion **mechanism** exists and is tested with synthetic rules,
+but today's four operations have **no hard prerequisites or exclusions**, so the shipped
+rules declare none - and no dependency/ordering *solver* was built (suppress-until-applied
+already yields sequencing). I also deferred the phase-unwrap and crop rules as *ungrounded*
+(phase-unwrap needs a validated wrapping diagnostic - Rule 6; crop is user-intent-driven) -
+demonstrating the engine's own discipline: never recommend without deterministic evidence.
+
+### Completed
+- **`snomniman.ai.reasoning` (new):** `ReasoningRule` (declarative ABC: `rule_id`, `step_id`,
+  `summary`, `prerequisite_steps`, `excluded_steps`, deterministic `evaluate(ctx) ->
+  RuleOutcome | None`), `ReasoningContext` (describe + diagnostics projections + accessors:
+  `applicability`, `applied_steps`, `channels`, `field_um`), `RuleOutcome`, and a rule
+  registry (`register_rule`/`iter_rules`/`list_rules`) mirroring the processing-step
+  registry. Two shipped rules: `reasoning.level_dominant_tilt` (plane level on a dominant
+  measured tilt of the *signal* topography) and `reasoning.normalize_with_reference`
+  (reference normalize when refs present + signals raw), each enriched with `considerations`
+  (deterministic downsides) and interaction-aware, provenance-sourced evidence.
+- **`recommend.py` -> pure engine:** evaluates the registered rules, enforces the universal
+  guards (applicable + not-already-applied) so rules hold only the scientific trigger,
+  honours prerequisites (suppress-until-applied) and exclusions (drop weaker of a
+  mutually-excluded pair), ranks by confidence. The recommendation data types moved to
+  `report.py`; `Recommendation` gained `rule_id` (traceability) + `considerations`; evidence
+  sources widened to diagnostics/description/provenance/metadata. Public API unchanged.
+- **GUI:** the AI Scientist card now shows a "Consider:" block (the caveats).
+- **Verified** on the real CdO measurement: Reference Normalize (strong, with the
+  noise-amplification + phase-re-reference caveats) and Plane Level (moderate, tilt evidence
+  + "not in the derivation history" provenance trigger + the order-1 caveat); after applying
+  leveling, it drops out and reference-normalize gains "plane leveling has already been
+  applied; normalization is a natural next step" (provenance-aware sequencing).
+
+### Decisions
+- **ADR-0023** (recommendations as registered reasoning rules). Records the registry design,
+  the engine guards, the data-type move + `rule_id`/`considerations`, and the rejected
+  alternatives - chiefly the dependency/ordering *solver* (Rule 7) and the ungrounded
+  phase-unwrap/crop rules (Rule 6). Third permanent AI rule + motto added to `CLAUDE.md`.
+
+### Issues Found
+- The `test_every_recommendation_is_grounded` source set had to widen to include
+  `provenance`/`metadata` (rules now emit provenance-sourced triggers). No behaviour
+  regressions: the public `recommend_workflow` API is unchanged, so all 14 prior
+  recommendation tests passed against the refactor untouched (bar the evidence-source set).
+
+### Tests / gates
+- +15 tests (352 total, up from 337): `tests/test_ai_reasoning.py` (per-rule fire/decline,
+  the registry, context accessors, and the interaction mechanism - already-applied guard,
+  mutual exclusion, prerequisite suppress-until-applied, ordering, duplicate-id rejection -
+  using synthetic rules in a monkeypatched registry) plus a GUI considerations check;
+  factored a shared `optical_only_dataset` conftest fixture. `ruff` clean; `mypy --strict`
+  clean (82 files); Qt-free invariant green; no network in any test.
+
+### Documentation
+- Created `docs/scientific-reasoning.md` (philosophy, what a rule is, the lifecycle, the
+  shipped rules + the deliberately-deferred ones, the Rule-7 scope note, the extension
+  model). `docs/decisions.md` ADR-0023. `CLAUDE.md`: the motto + third permanent AI rule,
+  status block, AI module responsibility, doc table (352). `docs/ai-scientist-v1.md` points
+  its Suggested-Next-Steps section at the rule engine. This entry; `NEXT.md`.
+
+### Next recommended
+- A validated **phase-wrapping diagnostic** (then a phase-unwrap rule "for free"); more rules
+  as the vocabulary grows. `image.line_flatten` (GUI-free). A concrete `NarrativeProvider`
+  (optional extra, own ADR) to *phrase* the deterministic suggestions. Real-user validation.

@@ -30,23 +30,29 @@ from .provider import (
     NarrativeProvider,
     build_orientation_prompt,
 )
-from .recommend import (
-    STRENGTH_MODERATE,
-    STRENGTH_STRONG,
-    STRENGTH_TENTATIVE,
-    Recommendation,
-    RecommendationEvidence,
-    WorkflowSuggestions,
-    recommend_workflow,
-    strength_label,
+from .reasoning import (
+    ReasoningContext,
+    ReasoningRule,
+    RuleOutcome,
+    iter_rules,
+    list_rules,
+    register_rule,
 )
+from .recommend import recommend_workflow
 from .report import (
     FACT,
     INTERPRETATION,
+    STRENGTH_MODERATE,
+    STRENGTH_STRONG,
+    STRENGTH_TENTATIVE,
     Briefing,
     BriefingContext,
     BriefingSection,
     BriefingStatement,
+    Recommendation,
+    RecommendationEvidence,
+    WorkflowSuggestions,
+    strength_label,
 )
 
 __all__ = [
@@ -62,11 +68,17 @@ __all__ = [
     "BriefingStatement",
     "MockNarrativeProvider",
     "NarrativeProvider",
+    "ReasoningContext",
+    "ReasoningRule",
     "Recommendation",
     "RecommendationEvidence",
+    "RuleOutcome",
     "WorkflowSuggestions",
     "build_briefing",
     "build_orientation_prompt",
+    "iter_rules",
+    "list_rules",
     "recommend_workflow",
+    "register_rule",
     "strength_label",
 ]

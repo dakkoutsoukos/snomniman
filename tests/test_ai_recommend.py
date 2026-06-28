@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 
 import numpy as np
-import pytest
 
 from snomniman.ai import (
     STRENGTH_MODERATE,
@@ -69,8 +68,9 @@ def test_every_recommendation_is_grounded(synthetic_dataset: Dataset) -> None:
     for rec in recommend_workflow(synthetic_dataset).recommendations:
         assert rec.rationale
         assert rec.evidence
+        assert rec.rule_id  # traceable to the reasoning rule that produced it
         for ev in rec.evidence:
-            assert ev.source in {"diagnostics", "description"}
+            assert ev.source in {"diagnostics", "description", "provenance", "metadata"}
             assert ev.text
 
 
@@ -151,46 +151,11 @@ def test_recommend_does_not_mutate_dataset(synthetic_dataset: Dataset) -> None:
         assert synthetic_dataset.channel(name).data.flags.writeable is False
 
 
-def test_unknown_dataset_without_topography_or_refs_is_quiet() -> None:
-    pytest.importorskip("xarray")
-    # A degenerate optical-only dataset (no topography, no references): nothing grounded
+def test_unknown_dataset_without_topography_or_refs_is_quiet(
+    optical_only_dataset: Dataset,
+) -> None:
+    # No topography to level and no references to normalize against: nothing grounded
     # to suggest -> empty with a note (never invents a step).
-    import xarray as xr
-
-    from snomniman.core import (
-        ChannelInfo,
-        Conventions,
-        DataKind,
-        Demodulation,
-        Excitation,
-        Instrument,
-        Metadata,
-        ProvenanceNode,
-        ScanInfo,
-        StepRecord,
-    )
-
-    ny, nx = 3, 4
-    y = (np.arange(ny, dtype=np.float64) + 0.5) * 50.0
-    x = (np.arange(nx, dtype=np.float64) + 0.5) * 50.0
-    o2 = (np.ones((ny, nx)) * np.exp(1j * 0.3)).astype(np.complex64)
-    data = xr.Dataset(
-        {"O2": (("y", "x"), o2)},
-        coords={"x": ("x", x, {"unit": "nm"}), "y": ("y", y, {"unit": "nm"})},
-    )
-    metadata = Metadata(
-        data_kind=DataKind.IMAGE,
-        conventions=Conventions(),
-        instrument=Instrument(),
-        excitation=Excitation(),
-        demodulation=Demodulation(),
-        scan=ScanInfo(pixels=(nx, ny), size_nm=(nx * 50.0, ny * 50.0), pixel_size_nm=(50.0, 50.0)),
-        channels=(ChannelInfo("O2", "optical", "signal", "complex64", harmonic=2),),
-    )
-    node = ProvenanceNode(
-        node_id="n0", record=StepRecord(step_id="io.read", step_version=1, deterministic=True)
-    )
-    ds = Dataset(data, kind=DataKind.IMAGE, metadata=metadata, provenance=node)
-    ws = recommend_workflow(ds)
+    ws = recommend_workflow(optical_only_dataset)
     assert ws.recommendations == ()
     assert ws.note is not None

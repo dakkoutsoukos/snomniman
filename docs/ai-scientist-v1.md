@@ -104,20 +104,25 @@ probability; surfaced as a `strength` tier: strong/moderate/tentative), a one-li
 the ranked tuple (by confidence), a `note` explaining an empty result (e.g.
 everything applicable is already applied), and the same `BriefingContext` grounding.
 
-The v2 rules (one deterministic function each, self-guarding on applicability +
-`already_applied`):
+The recommendations are produced by the **Scientific Reasoning Rule Engine** -
+registered, individually-testable `ReasoningRule`s, not ad-hoc code. The engine
+(`recommend.py`) evaluates every rule, enforcing the applicability + not-already-applied
+guards uniformly (so each rule holds only its *scientific* trigger), honouring rule
+prerequisites and exclusions, and ranking by confidence. Each recommendation also carries
+`rule_id` (traceability) and `considerations` (deterministic caveats). The shipped rules:
 
-- **Plane Level** - when a measured global tilt dominates the *signal* topography
-  (confidence = the fraction of the height's RMS variation attributable to the tilt);
-  pre-fills `{channel: <Z>, order: 1}`.
-- **Reference Normalize** - when reference channels exist and optical signals are
-  still raw (not normalized).
+- **Plane Level** (`reasoning.level_dominant_tilt`) - when a measured global tilt
+  dominates the *signal* topography (confidence = the fraction of the height's RMS
+  variation attributable to the tilt); pre-fills `{channel: <Z>, order: 1}`.
+- **Reference Normalize** (`reasoning.normalize_with_reference`) - when reference
+  channels exist and optical signals are still raw.
 
-New rules (phase-unwrap when a wrapping signal exists, comparison/exploration
-suggestions, ...) are added the same way; like the Briefing's Enables section, the
-catalogue of *what could be suggested* grows with the deterministic vocabulary, not
-with AI code. A future narrative provider may *phrase* the suggestions, but never
-choose or rank them.
+New rules are added by registering one `ReasoningRule` (no engine/GUI change); like the
+Briefing's Enables section, the catalogue grows with the deterministic vocabulary, not
+with AI code. A future narrative provider may *phrase* the suggestions, but never choose
+or rank them. **Full detail, the lifecycle, and what is deliberately deferred
+(phase-unwrap until a validated wrapping diagnostic; crop as user-intent-driven):
+`docs/scientific-reasoning.md` (ADR-0023).**
 
 ## Provider abstraction (the seam, no SDK yet)
 

@@ -3,7 +3,7 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-27 (AI Suggested Next Steps - deterministic recommendations)
+**Last updated:** 2026-06-27 (Scientific Reasoning Rule Engine - recommendations as rules)
 
 ---
 
@@ -55,11 +55,14 @@ what stays / provenance) -> Accept/Cancel derivation - adding a new operation ne
 GUI code. Plus provenance-preserving figure export, the Scientific Description API,
 the Scientific Diagnostics Engine (+ Explorer Diagnostics tab), and the AI Scientist
 - a deterministic **Scientific Briefing** **plus deterministic Suggested Next Steps**
-(ADR-0022): the Explorer's AI Scientist (Briefing) tab now shows ranked, grounded
-recommendations (only applicable, not-already-applied operations, each with evidence +
-pre-filled params), and a recommendation's **Preview** hands off straight into the
-Processing Workspace - no AI-specific execution path. AI recommends; the deterministic
-engine performs every operation via an explicit Accept.
+(ADR-0022) produced by a **Scientific Reasoning Rule Engine** (ADR-0023): registered,
+individually-testable `ReasoningRule`s turn diagnostics into ranked, *explainable*
+recommendations (only applicable, not-already-applied operations; each with source-tagged
+evidence incl. provenance, deterministic caveats, pre-filled params, and `rule_id`
+traceability). A recommendation's **Preview** hands off straight into the Processing
+Workspace - no AI-specific execution path. AI recommends; the deterministic engine performs
+every operation via an explicit Accept. Scientific judgment is deterministic (the rules
+*choose*; a future LLM only *explains*).
 **Still NOT implemented (out of scope so far):** a concrete AI narrative *provider*
 (only the seam exists; the suggestions themselves are deterministic and need none); AI
 *execution* (by design - AI never executes); batch; further operations
@@ -225,13 +228,31 @@ in impact order:
     *signal* topography (prefers `Z`), never a reference height. 19 new tests (backend
     grounding/safety + GUI); 337 total green. ADR-0022; `docs/ai-scientist-v1.md`
     ("Suggested Next Steps"). *Done 2026-06-27.*
-26. **Concrete AI narrative provider** - add ONE real provider behind the existing
+26. [x] **Scientific Reasoning Rule Engine** - refactored the ad-hoc recommendation
+    functions into registered, individually-testable `ReasoningRule`s
+    (`snomniman.ai.reasoning`): each declares `rule_id`/`step_id`/`summary`/
+    `prerequisite_steps`/`excluded_steps` and a deterministic `evaluate(ctx) -> RuleOutcome
+    | None`; `recommend.py` is now the engine (applicability + not-already-applied guards,
+    prerequisite suppress-until-applied, mutual exclusion, confidence ordering).
+    `Recommendation` gained `rule_id` (traceability) + `considerations` (deterministic
+    caveats); evidence is source-tagged incl. provenance. Third permanent AI rule + motto
+    added to `CLAUDE.md` (deterministic systems *choose*; AI *explains*). Rule-7 discipline:
+    the prereq/exclusion *mechanism* is tested (synthetic rules) but shipped rules declare
+    none (no real relationships among 4 ops); no dependency solver; phase-unwrap/crop rules
+    deferred as ungrounded. 15 new tests; 352 total green. ADR-0023;
+    `docs/scientific-reasoning.md`. *Done 2026-06-27.*
+27. **Validated phase-wrapping diagnostic + phase-unwrap rule** - add a deterministic,
+    known-answer-validated "is this phase worth unwrapping" metric to `diagnostics`
+    (distinguish coherent wrapping from noise; Rule 6), then register one `ReasoningRule`
+    for `image.phase_unwrap`. This is the next grounded rule (and the template for "richer
+    reasoning"); crop stays unrecommended (user-intent-driven).
+28. **Concrete AI narrative provider** - add ONE real provider behind the existing
     `NarrativeProvider` seam as an *optional* extra (`uv sync --extra ai`),
     lazy-imported, never required for backend/CI; wire provider selection so the
     Briefing's interpretation (and optionally suggestion prose) renders when configured.
     Tests mock the provider; CI never calls a network. (A major dependency - needs its
-    own ADR.) Note: the suggestions themselves stay deterministic (ADR-0022); a provider
-    only *phrases* them.
+    own ADR.) Note: the suggestions/rules stay deterministic (ADR-0023); a provider only
+    *phrases* them.
 
 **Deferred refinements (read-only, lower priority):** mirror a measurement overlay
 into every comparison pane (results are already multi-channel); a measurement

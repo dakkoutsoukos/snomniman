@@ -178,6 +178,14 @@ class BriefingPanel(QtWidgets.QWidget):
         outcome.setStyleSheet(_MUTED)
         layout.addWidget(outcome)
 
+        if rec.considerations:
+            caveats = QtWidgets.QLabel(
+                "Consider:\n" + "\n".join(f"  • {c}" for c in rec.considerations)
+            )
+            caveats.setWordWrap(True)
+            caveats.setStyleSheet(_MUTED)
+            layout.addWidget(caveats)
+
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
         preview = QtWidgets.QPushButton("Preview")

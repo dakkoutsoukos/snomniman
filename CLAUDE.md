@@ -25,10 +25,12 @@ rather than repeating them.
 > *computed* facts - tilt, roughness, statistics, amplitude decay, operation
 > applicability - a sibling of `describe`); and `snomniman.ai` (the **AI Scientist**:
 > a Scientific Briefing that composes `describe` + `diagnostics` into a deterministic
-> measurement orientation, plus **Suggested Next Steps** - deterministic, grounded
-> workflow recommendations that point at applicable, not-already-applied operations
-> with pre-filled parameters (ADR-0022); optional narrative provider seam, **no model
-> SDK bundled**).
+> measurement orientation, plus **Suggested Next Steps** produced by a deterministic
+> **Scientific Reasoning Rule Engine** - registered `ReasoningRule`s that turn
+> diagnostics into grounded, ranked, *explainable* recommendations of applicable,
+> not-already-applied operations with pre-filled params, evidence (incl. provenance),
+> and caveats (ADR-0022/ADR-0023); optional narrative provider seam, **no model SDK
+> bundled**).
 > The user-facing experience is the **Measurement Explorer** (`snomniman.gui`,
 > PySide6 + PyQtGraph; `python -m snomniman.gui <dir>`): open a measurement,
 > browse/compare channels, inspect metadata/provenance/diagnostics, read a Scientific
@@ -41,11 +43,12 @@ rather than repeating them.
 > Accept/Cancel derivation - never mutating the raw measurement. A suggested next step
 > Previews straight into the Workspace (no AI-specific execution path). Adding a new
 > operation needs **no GUI code** (implement, register, declare params + capabilities).
-> 337 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> 352 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
-> executes (the deterministic engine performs every operation via an explicit Accept),
-> and is grounded entirely in the deterministic layers (`docs/ai-scientist-v1.md`; GUI
-> Rule 9 gates every GUI feature).
+> executes (the deterministic engine performs every operation via an explicit Accept);
+> scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
+> LLM only *explains*), grounded entirely in the deterministic layers
+> (`docs/scientific-reasoning.md`, `docs/ai-scientist-v1.md`; GUI Rule 9 gates every GUI feature).
 
 This is documentation-driven development: keep `/docs` authoritative and in sync
 with code.
@@ -154,10 +157,12 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
   projection); consumed by `gui`/`batch`/`ai`.
 - `snomniman.ai` - the AI Scientist: composes `describe` + `diagnostics` into a
   deterministic measurement-orientation Briefing **and deterministic Suggested Next
-  Steps** (grounded, ranked recommendations of applicable, not-already-applied
-  operations with pre-filled params; facts/suggestions always, optional narrative via
-  a `NarrativeProvider` seam, no model SDK bundled). Read-only; recommends but never
-  executes; never mutates data or the provenance DAG.
+  Steps** via a **Scientific Reasoning Rule Engine** (`reasoning.py`: registered
+  `ReasoningRule`s -> grounded, ranked, explainable recommendations; `recommend.py`
+  orchestrates; data types in `report.py`). Facts/suggestions always; optional
+  narrative via a `NarrativeProvider` seam, no model SDK bundled. Read-only; the rules
+  are the scientific authority (they choose), the LLM only explains; recommends but
+  never executes; never mutates data or the provenance DAG.
 - `snomniman.viz` - display-ready render data + matplotlib static export.
 - `snomniman.batch` - headless application of a DAG across many sources.
 - `snomniman.gui` - the desktop app; presentation/interaction only.
@@ -176,11 +181,16 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
 AI is a **first-class analysis subsystem** in the long-term vision of SNOMNIMAN -
 not a cosmetic chatbot, not a UI add-on, and not a replacement for provenance or
 scientific metadata. Full detail: `docs/ai-principles.md` (to be written when AI
-design begins; the summary below is authoritative until then). The first capability
-is shipped: the **Scientific Briefing** (`snomniman.ai`, ADR-0020,
-`docs/ai-scientist-v1.md`).
+design begins; the summary below is authoritative until then). Shipped: the
+**Scientific Briefing** (ADR-0020) and deterministic **Suggested Next Steps** /
+Scientific Reasoning Rule Engine (ADR-0022/ADR-0023, `docs/ai-scientist-v1.md`,
+`docs/scientific-reasoning.md`).
 
-### Two load-bearing AI rules (permanent)
+> **The SNOMNIMAN AI motto (the lens for every AI decision):** *Scientific judgment
+> is deterministic whenever possible. AI exists to communicate, contextualize, and
+> teach - not to replace scientific reasoning.*
+
+### Three load-bearing AI rules (permanent)
 
 1. **The AI may only reason over deterministic facts produced by SNOMNIMAN. It must
    never become the primary interpreter of raw scientific data when deterministic
@@ -190,6 +200,13 @@ is shipped: the **Scientific Briefing** (`snomniman.ai`, ADR-0020,
 2. **Every AI-powered feature must have a useful deterministic fallback. AI enhances
    understanding; it never gates access to understanding.** (A panel must remain useful
    with no provider/API key configured - cloud-AI-free labs lose nothing essential.)
+3. **Deterministic systems *choose* whenever a deterministic rule exists; AI adds
+   explanation, prioritization, and communication - never scientific authority.** (When
+   a decision - which operation to recommend, in what order, why - can be made by a
+   deterministic rule over deterministic facts, make it that way: see the Scientific
+   Reasoning Rule Engine, ADR-0023. A future LLM may *phrase* a recommendation; it must
+   never *choose* it. This strengthens rule 1 from "reasons over facts" to "decides by
+   rule": the deterministic layer is the scientific authority, the AI is its interpreter.)
 
 ### Position in the layer stack
 
@@ -321,6 +338,7 @@ the design changed, and (for scientific code) a validation test.
 | `docs/description-api.md` | **Scientific Description API** (`snomniman.describe`): purpose, position, descriptors, relationships (Dataset/Explorer/Processing/future AI), honest limitations, extension model. |
 | `docs/diagnostics-engine.md` | **Scientific Diagnostics Engine** (`snomniman.diagnostics`): philosophy (observations vs operations), the descriptors, sibling relationship to `describe`, scientific choices + deferred metrics, extension model, relationship to the future AI Scientist. |
 | `docs/ai-scientist-v1.md` | **AI Scientist** (`snomniman.ai`): the Scientific Briefing (orientation; ADR-0020) **and Suggested Next Steps** (deterministic, grounded workflow recommendations that Preview into the Workspace; ADR-0022) - philosophy (grounding + deterministic fallback; recommend-not-execute), architecture, the provider seam (no SDK yet), Explorer integration, honest limitations, future evolution. |
+| `docs/scientific-reasoning.md` | **Scientific Reasoning Rule Engine** (`snomniman.ai.reasoning`; ADR-0023): the deterministic rules that turn diagnostics into recommendations - philosophy (deterministic judgment, AI explains), what a `ReasoningRule` is, the rule lifecycle (applicability/prereq/exclusion/ordering guards), the shipped rules + what is deliberately deferred (phase-unwrap/crop) and why, the Rule-7 scope note, and the extension model. |
 
 ---
 

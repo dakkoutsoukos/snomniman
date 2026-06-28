@@ -99,6 +99,16 @@ def test_panel_renders_one_preview_button_per_recommendation(
     assert len(buttons) == len(ws.recommendations) >= 2
 
 
+def test_panel_card_shows_considerations(qapp: Any, synthetic_dataset: Dataset) -> None:
+    from snomniman.gui.briefing import BriefingPanel
+
+    panel = BriefingPanel()
+    panel.set_suggestions(ExplorerModel(synthetic_dataset).workflow_suggestions())
+    texts = [w.text() for w in panel._suggest_box.findChildren(QtWidgets.QLabel)]
+    # Reference Normalize carries deterministic caveats, rendered under "Consider:".
+    assert any(t.startswith("Consider:") for t in texts)
+
+
 def test_panel_preview_button_emits_step_and_params(
     qapp: Any, synthetic_dataset: Dataset
 ) -> None:
