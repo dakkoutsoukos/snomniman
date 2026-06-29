@@ -98,7 +98,7 @@ def test_panel_renders_one_preview_button_per_recommendation(
     previews = [
         b for b in panel._suggest_box.findChildren(QtWidgets.QPushButton) if b.text() == "Preview"
     ]
-    assert len(previews) == len(ws.recommendations) >= 2
+    assert len(previews) == len(ws.recommendations) >= 1
 
 
 def test_panel_card_shows_considerations(qapp: Any, synthetic_dataset: Dataset) -> None:
@@ -107,7 +107,8 @@ def test_panel_card_shows_considerations(qapp: Any, synthetic_dataset: Dataset) 
     panel = BriefingPanel()
     panel.set_suggestions(ExplorerModel(synthetic_dataset).workflow_suggestions())
     texts = [w.text() for w in panel._suggest_box.findChildren(QtWidgets.QLabel)]
-    # Reference Normalize carries deterministic caveats, rendered under "Consider:".
+    # Recommendation cards carry deterministic caveats, rendered under "Consider:"
+    # (e.g. Plane Level warns that high polynomial orders can remove real curvature).
     assert any(t.startswith("Consider:") for t in texts)
 
 

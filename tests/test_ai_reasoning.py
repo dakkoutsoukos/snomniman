@@ -53,28 +53,16 @@ def test_plane_level_rule_declines_without_topography(optical_only_dataset: Data
     assert PlaneLevelRule().evaluate(ReasoningContext.build(optical_only_dataset)) is None
 
 
-def test_reference_normalize_rule_fires_on_raw_signals(synthetic_dataset: Dataset) -> None:
-    outcome = ReferenceNormalizeRule().evaluate(ReasoningContext.build(synthetic_dataset))
-    assert outcome is not None
-    assert outcome.params == {}
-    # The deterministic downside (noise amplification near a weak reference) is surfaced.
-    assert any("noise" in c.lower() for c in outcome.considerations)
-
-
-def test_reference_normalize_rule_declines_without_optical_signal(
-    topography_dataset: Dataset,
-) -> None:
-    ctx = ReasoningContext.build(topography_dataset)
-    assert ReferenceNormalizeRule().evaluate(ctx) is None
-
-
-def test_reference_normalize_rule_notes_completed_leveling(synthetic_dataset: Dataset) -> None:
+def test_reference_normalize_rule_makes_no_recommendation(synthetic_dataset: Dataset) -> None:
+    # The automatic positive recommendation was WITHDRAWN (validation Outcome 2: no
+    # defensible appropriateness criterion - docs/reference-normalization-analysis.md). The
+    # rule stays registered but evaluates to None on every input - including the case that
+    # previously fired at a flat 0.85 (references present, optical signals still raw) and
+    # after plane leveling (which previously added interaction-aware evidence).
+    rule = ReferenceNormalizeRule()
+    assert rule.evaluate(ReasoningContext.build(synthetic_dataset)) is None
     leveled = PlaneLevel(channel="Z", order=1).apply({"primary": synthetic_dataset})
-    outcome = ReferenceNormalizeRule().evaluate(ReasoningContext.build(leveled))
-    assert outcome is not None
-    # Interaction-aware, provenance-sourced evidence: it knows leveling is done.
-    assert any("leveling has already been applied" in e.text.lower() for e in outcome.evidence)
-    assert any(e.source == "provenance" for e in outcome.evidence)
+    assert rule.evaluate(ReasoningContext.build(leveled)) is None
 
 
 # --------------------------------------------------------------------------- #

@@ -36,11 +36,14 @@ def _by_step(ws: WorkflowSuggestions) -> dict[str, Recommendation]:
 # --------------------------------------------------------------------------- #
 
 
-def test_raw_measurement_recommends_level_and_normalize(synthetic_dataset: Dataset) -> None:
+def test_raw_measurement_recommends_level_only(synthetic_dataset: Dataset) -> None:
+    # Plane leveling is recommended (a measured tilt). Reference normalization is NOT:
+    # its positive recommendation was withdrawn (validation Outcome 2), even though the
+    # operation is applicable. Non-empty list, no normalize step, no "nothing to do" note.
     ws = recommend_workflow(synthetic_dataset, title="synthetic")
     steps = _by_step(ws)
     assert "image.plane_level" in steps
-    assert "image.reference_normalize" in steps
+    assert "image.reference_normalize" not in steps
     assert ws.note is None
 
 
@@ -52,10 +55,15 @@ def test_plane_level_targets_signal_topography_with_params(synthetic_dataset: Da
     assert 0.0 <= rec.confidence <= 1.0
 
 
-def test_reference_normalize_has_no_params(synthetic_dataset: Dataset) -> None:
-    rec = _by_step(recommend_workflow(synthetic_dataset))["image.reference_normalize"]
-    assert rec.params == {}
-    assert 0.0 <= rec.confidence <= 1.0
+def test_reference_normalize_is_never_recommended(synthetic_dataset: Dataset) -> None:
+    # Regression: the unjustified positive recommendation was withdrawn (validation
+    # Outcome 2). reference_normalize must never be auto-recommended - even though it is
+    # applicable here (references present + raw optical signals) - while the operation
+    # itself stays available in the Workspace.
+    ws = recommend_workflow(synthetic_dataset)
+    assert "image.reference_normalize" not in _by_step(ws)
+    applicable = {a.step_id for a in diagnose(synthetic_dataset).applicability if a.applicable}
+    assert "image.reference_normalize" in applicable  # available, just not recommended
 
 
 def test_recommendations_ranked_by_confidence(synthetic_dataset: Dataset) -> None:
@@ -96,9 +104,13 @@ def test_unavailable_operation_is_never_recommended(topography_dataset: Dataset)
 
 def test_already_applied_operation_drops_out(synthetic_dataset: Dataset) -> None:
     leveled = PlaneLevel(channel="Z", order=1).apply({"primary": synthetic_dataset})
-    steps = _by_step(recommend_workflow(leveled))
-    assert "image.plane_level" not in steps  # already in provenance
-    assert "image.reference_normalize" in steps  # still pending
+    ws = recommend_workflow(leveled)
+    steps = _by_step(ws)
+    assert "image.plane_level" not in steps  # already in provenance -> dropped
+    # reference_normalize is not recommended either (its positive rule was withdrawn), so
+    # with leveling done there is nothing left to suggest.
+    assert "image.reference_normalize" not in steps
+    assert ws.recommendations == () and ws.note is not None
 
 
 def test_empty_when_everything_applicable_is_applied(synthetic_dataset: Dataset) -> None:
@@ -133,10 +145,7 @@ def test_suggestions_json_serializable(synthetic_dataset: Dataset) -> None:
     text = json.dumps(ws.to_dict())
     back = json.loads(text)
     assert back["title"] == "synthetic"
-    assert {r["step_id"] for r in back["recommendations"]} == {
-        "image.plane_level",
-        "image.reference_normalize",
-    }
+    assert {r["step_id"] for r in back["recommendations"]} == {"image.plane_level"}
     # The grounding context travels with the suggestions for audit.
     assert "description" in back["context"] and "diagnostics" in back["context"]
 

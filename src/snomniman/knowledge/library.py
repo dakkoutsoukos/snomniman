@@ -320,12 +320,19 @@ _OPERATIONS = (
             "Per harmonic: O{n}_norm = O{n} / R_O{n}. Amplitude |O|/|R|; phase arg(O) - arg(R)."
         ),
         practical_guidance=(
-            "Apply when reference channels are present and the signals are still raw. It is "
-            "usually an early step in a quantitative workflow."
+            "Apply it deliberately when you have a genuine, independent reference (e.g. "
+            "measured on a known substrate) that shares the instrument/illumination response. "
+            "SNOMNIMAN does NOT auto-recommend it: whether a reference is meaningful is an "
+            "experimental-design fact the measurement does not encode (Scientific Validation "
+            "Outcome 2). Avoid it when the reference is weak, noisy, or a near-copy of the "
+            "signal."
         ),
         common_mistakes=(
             "Where the reference amplitude is near zero, division amplifies noise.",
             "Forgetting that phase is now reference-relative, not absolute.",
+            "Normalizing by a reference that is a near-copy of the signal (e.g. a retrace, or "
+            "a 'Self-Reference Off' acquisition) yields O/R ~ 1 and erases contrast rather "
+            "than revealing it.",
         ),
         related_concepts=("concept.complex_signals", "concept.phase"),
     ),

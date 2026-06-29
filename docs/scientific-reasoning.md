@@ -85,27 +85,33 @@ precision. Ordering is by confidence; prerequisites add cross-iteration sequenci
 
 ## The shipped rules
 
+One rule makes an active recommendation:
+
 | rule_id | recommends | fires when | confidence |
 |---|---|---|---|
 | `reasoning.level_dominant_tilt` | `image.plane_level` | the signal topography has a measurable global tilt accounting for a meaningful share of its height variation | fraction of the height's RMS variation attributable to the tilt |
-| `reasoning.normalize_with_reference` | `image.reference_normalize` | reference channels are present and complex optical signals are still raw | a fixed "standard practice" prior (0.85) - **unvalidated; under review** (see below) |
 
-Both carry **considerations** - deterministic caveats the researcher should weigh
-(e.g. normalization amplifies noise where the reference is weak; high leveling orders
-can remove real curvature) - and **interaction-aware evidence** where deterministic
-(reference normalization notes when leveling is already done).
+It carries **considerations** (deterministic caveats the researcher should weigh, e.g. high
+leveling orders can remove real curvature) and **interaction-aware evidence** where
+deterministic (it notes whether leveling already appears in the derivation history).
 
-> **Validation note (2026-06-29):** the `normalize_with_reference` confidence was
-> investigated as a Scientific Validation milestone
-> ([`reference-normalization-analysis.md`](reference-normalization-analysis.md), Outcome 2
-> = DEFERRED). The study found that an evidence-based *positive* recommendation criterion
-> cannot be validated on present data, and that the **flat 0.85 prior is not supported by
-> the available evidence**: on every real measurement (all "Self-Reference Off") the `R-`
-> channels are near-copies of the signal (`O/R ~ 1`), so normalizing would erase contrast.
-> The rule is **left unchanged in that milestone** (a DEFER outcome ships no code), but its
-> confidence should be revisited - the defensible near-term fix is a conservative *gate*
-> (decline on a redundant / weak / noisy / empty reference - all deterministically
-> detectable and validated) rather than a flat prior. See the analysis for the evidence.
+A second rule, `reasoning.normalize_with_reference` (`image.reference_normalize`), is
+**registered but makes no recommendation** - its positive recommendation was *withdrawn*
+(below). The operation itself remains fully available in the Processing Workspace.
+
+> **Withdrawn (2026-06-29): `normalize_with_reference`.** A Scientific Validation milestone
+> ([`reference-normalization-analysis.md`](reference-normalization-analysis.md), Outcome 2)
+> found the rule's flat 0.85 "standard-practice" prior **unsupported by the evidence**: on
+> every available real measurement (all "Self-Reference Off") the `R-` channels are
+> near-copies of the signal (`O/R ~ 1`), so normalizing would erase contrast; and whether a
+> reference is a *meaningful, independent* common-mode response is an experimental-design
+> fact the array does not encode. The software was brought into line with the science - the
+> rule now **`evaluate()`s to `None` for every measurement**: when the evidence is
+> insufficient to recommend, the engine recommends nothing rather than assert an unjustified
+> positive (the maxim; AI rule 3). The deterministic *decline* conditions (redundant / weak /
+> noisy / empty reference) remain the documented basis, and the rule stays the registered,
+> tested home for a future positive criterion (the deferred item below). A regression test
+> pins that reference normalization is never auto-recommended.
 
 ### Deliberately *not* shipped yet (the discipline)
 
@@ -117,15 +123,16 @@ can remove real curvature) - and **interaction-aware evidence** where determinis
 - **Crop** - cropping is driven by *user intent* (a chosen region), not by a
   deterministic property of the measurement. There is no honest trigger, so there is no
   rule. (Crop remains fully available in the Processing Workspace.)
-- **Evidence-based reference-normalization confidence** - replacing the flat 0.85 prior
-  with a graded, evidence-based confidence was investigated and **deferred** (Outcome 2,
+- **A *positive* reference-normalization recommendation** - **deferred** (Outcome 2,
   [`reference-normalization-analysis.md`](reference-normalization-analysis.md)). The
-  *decline* conditions (redundant / weak / noisy / empty reference) are deterministically
-  defensible and validated; the *positive* "this reference is meaningful, so normalizing
-  helps" branch cannot be validated on present data (no genuinely-referenced measurement -
-  appropriateness is an experimental-design fact the array does not encode). Adding it later
-  is: obtain a referenced golden measurement, ship the reference-quality + redundancy facts,
-  then a confidence-graded rule validated on both branches.
+  unjustified flat-0.85 rule has been *withdrawn* (above); what remains deferred is any
+  rule that *recommends* normalization. The *decline* conditions (redundant / weak / noisy /
+  empty reference) are deterministically defensible and validated, but the *positive* "this
+  reference is meaningful, so normalizing helps" branch cannot be validated on present data
+  (no genuinely-referenced measurement - appropriateness is an experimental-design fact the
+  array does not encode). Adding it later is: obtain a referenced golden measurement, ship
+  the reference-quality + redundancy facts, then a confidence-graded rule validated on both
+  branches.
 
 ### Scope note on rule interaction (Rule 7)
 

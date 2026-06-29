@@ -87,13 +87,14 @@ deferral is success.**
   PsHet "Self-Reference Off" with `R-` channels that are near-copies of the signal
   (`O/R ~ 1`, normalization erases contrast); appropriateness is experimental-design
   metadata the array lacks. No code.
-- **Reference-normalization rule: gate or withdraw (the new next science item, an honesty
-  fix).** The study found the existing flat-0.85 `ReferenceNormalizeRule` is unvalidated and
-  **over-recommends** on the available data. A small follow-up should make it conservative -
-  decline (or down-weight to tentative) on a redundant (`corr(|O|,|R|)` high / `CV(|O/R|)` ~
-  0), weak/noise/empty, or high-near-zero reference (all deterministically detectable and
-  validated) - rather than fire a flat prior. The *positive* branch stays deferred until a
-  genuinely-referenced golden measurement exists `(user)`.
+- **Reference-normalization rule: WITHDRAWN (2026-06-29, honesty fix done).** The unvalidated
+  flat-0.85 `ReferenceNormalizeRule` over-recommended on the available data, so its positive
+  recommendation was **withdrawn** (`evaluate` returns `None`; the operation stays available;
+  a regression test pins it). See the LOG entry. A *positive* rule remains deferred until a
+  genuinely-referenced golden measurement validates the appropriateness branch `(user)`; if
+  that arrives, restore it as a confidence-graded rule (recommend on a non-redundant,
+  high-quality reference; decline on redundant/weak/noisy/empty) reusing the ADR-0026
+  primitive + a redundancy metric.
 - **Phase-wrapping recommendation** - **Outcome 2 already reached**
   ([`docs/phase-wrapping-analysis.md`](docs/phase-wrapping-analysis.md)): criterion
   defensible, rule deferred. Building the *diagnostic fact* (residues + unwrap-range +

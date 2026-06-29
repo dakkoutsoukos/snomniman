@@ -2418,3 +2418,52 @@ unaffected (no source touched).
   the positive branch.
 - **Product (Beta Readiness Critical):** C1 export the processed dataset, C2 export
   measurement numbers (CSV/clipboard), C3 open multiple measurements.
+
+---
+
+## 2026-06-29 - Withdraw the unjustified reference-normalization recommendation (align with validation)
+
+Brought the Scientific Reasoning Engine into line with the Reference-Normalization validation
+(Outcome 2, same day): the unvalidated flat-0.85 positive recommendation is withdrawn. No
+architecture change, no operation removed, no new heuristic or confidence score - the goal is
+scientific honesty.
+
+### Change
+- `ai/reasoning.py`: `ReferenceNormalizeRule.evaluate` now returns `None` for every
+  measurement (the positive path - the flat 0.85 "standard-practice" prior - is removed). The
+  rule stays registered as the documented, tested home for a future positive criterion; its
+  docstring records the deterministic decline conditions (redundant / weak / noisy / empty
+  reference) that remain the basis, and why no positive criterion is yet defensible.
+- Behavior: reference normalization is no longer in Suggested Next Steps; the operation
+  remains fully available in the Processing Workspace and still reports as applicable. When
+  evidence is insufficient to recommend, the engine recommends nothing rather than assert an
+  unjustified positive (the maxim; AI rule 3 - deterministic systems choose, AI never invents
+  authority).
+
+### Propagation (no per-surface code)
+- Suggested Next Steps: no reference-normalize card (real CdO now suggests only plane level).
+- AI Briefing: unchanged facts; the operation still appears in "Enables" as applicable.
+- Knowledge Center: the `operation.image.reference_normalize` article's guidance updated -
+  apply deliberately with a genuine reference; not auto-recommended; avoid on weak/redundant
+  references (a 'Self-Reference Off' / retrace yields O/R ~ 1).
+
+### Tests
+- Updated the rule/recommendation tests to the new behavior and added regression tests that
+  pin reference normalization is **never** auto-recommended (unit: the rule evaluates to None
+  even when references are present + signals raw; engine: recommend_workflow never includes
+  it) while it stays applicable/available. Operation-level tests unchanged (operation intact).
+- 413 tests pass (was 415; -2 net: 3 positive-path rule tests collapsed into 1 withdrawal
+  test, 1 recommend test swapped for the regression test). `ruff` clean, `mypy --strict` clean
+  (91 files), Qt-free invariant green. Real-data check: CdO suggests only plane level;
+  reference_normalize not recommended but still applicable.
+
+### Documentation
+- `scientific-reasoning.md` (shipped-rules section + deferred item -> withdrawn),
+  `ai-scientist-v1.md` (rule list + limitations), `knowledge/library.py` (article guidance).
+  LOG (this entry), NEXT. The validation record (`reference-normalization-analysis.md`) is
+  unchanged - it is the historical Outcome-2 analysis; this entry records the alignment its
+  Future Work item #1 called for.
+
+### Next
+- A *positive* reference-normalization rule remains deferred until a genuinely-referenced
+  golden measurement validates the appropriateness branch `(user)`.

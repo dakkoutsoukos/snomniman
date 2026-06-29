@@ -114,8 +114,12 @@ prerequisites and exclusions, and ranking by confidence. Each recommendation als
 - **Plane Level** (`reasoning.level_dominant_tilt`) - when a measured global tilt
   dominates the *signal* topography (confidence = the fraction of the height's RMS
   variation attributable to the tilt); pre-fills `{channel: <Z>, order: 1}`.
-- **Reference Normalize** (`reasoning.normalize_with_reference`) - when reference
-  channels exist and optical signals are still raw.
+
+Reference Normalize (`reasoning.normalize_with_reference`) is registered but **makes no
+recommendation**: its positive recommendation was *withdrawn* (Scientific Validation
+Outcome 2, [`reference-normalization-analysis.md`](reference-normalization-analysis.md)) -
+no deterministic criterion defensibly establishes when normalizing is appropriate. The
+operation stays available in the Workspace; the AI simply does not auto-recommend it.
 
 New rules are added by registering one `ReasoningRule` (no engine/GUI change); like the
 Briefing's Enables section, the catalogue grows with the deterministic vocabulary, not
@@ -204,15 +208,15 @@ app is fully useful offline today.
 - **Recommendations, but never execution** - the AI proposes registered operations;
   the deterministic engine alone performs them, through an explicit, provenance-
   recorded Accept in the Workspace. There is no auto-apply and no chat.
-- v2 ships two recommendation rules (plane level, reference normalize); more (phase
-  unwrap on a wrapping signal, comparison/exploration suggestions) extend the same
-  pattern. **Caveat (2026-06-29):** the *reference-normalize* rule's flat-0.85 confidence
-  was put through Scientific Validation and found unsupported by present evidence
-  ([`reference-normalization-analysis.md`](reference-normalization-analysis.md), Outcome 2 =
-  DEFERRED) - on all available "Self-Reference Off" data the `R-` channels are near-copies
-  of the signal, so normalizing erases contrast. The evidence-based refinement is deferred
-  (no genuinely-referenced measurement to validate the positive branch); the rule should be
-  gated conservatively or withdrawn in a follow-up.
+- v2 ships **one** active recommendation rule (plane level); more (phase unwrap on a
+  wrapping signal, comparison/exploration suggestions) extend the same pattern. The
+  reference-normalize rule's flat-0.85 confidence was put through Scientific Validation and
+  found unsupported by present evidence
+  ([`reference-normalization-analysis.md`](reference-normalization-analysis.md), Outcome 2) -
+  on all available "Self-Reference Off" data the `R-` channels are near-copies of the signal,
+  so normalizing erases contrast. The unjustified recommendation has now been **withdrawn**
+  (the rule evaluates to `None`; the operation stays available); a positive rule awaits a
+  genuinely-referenced measurement to validate its appropriateness branch.
 - No per-sentence narrative verification (see Grounding strategy).
 - Deferred panel sections from the original sketch (Recommended Reading, Relevant
   Literature) are intentionally out of scope here.

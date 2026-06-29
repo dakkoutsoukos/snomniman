@@ -242,62 +242,53 @@ class PlaneLevelRule(ReasoningRule):
 
 @register_rule
 class ReferenceNormalizeRule(ReasoningRule):
-    """Normalize optical channels when references exist and the signals are still raw."""
+    """Reference normalization: the automatic positive recommendation is **withdrawn**.
+
+    Reference normalization remains a fully available operation
+    (``image.reference_normalize`` in the Processing Workspace); what is *not*
+    deterministically defensible - and so is no longer asserted - is an automatic
+    recommendation to apply it. The Scientific Validation study
+    (``docs/reference-normalization-analysis.md``, Outcome 2 = DEFERRED) found:
+
+    - **No positive criterion.** Whether a reference is a *meaningful, independent
+      common-mode response* (so dividing improves interpretation) is an experimental-design
+      fact the measurement does not encode. Reference *quality* (being above the noise
+      floor) is necessary but not sufficient: a strong reference that is merely a near-copy
+      of the signal yields ``O/R ~ 1`` and erases contrast - the case on all available real
+      data (every run is "Self-Reference Off").
+    - **Only decline conditions are deterministic.** A *redundant* (``O/R`` ~ constant),
+      *weak / noisy / empty* reference is detectably a poor divisor - each a reason NOT to
+      recommend; none is a reason TO recommend.
+
+    The previous flat 0.85 confidence was a pre-validation "standard-practice prior" the
+    study showed to be unsupported. Per the project maxim and AI rule 3 (deterministic
+    systems choose; a missing rule beats an unjustified one), :meth:`evaluate` returns
+    ``None`` for every measurement: when the evidence is insufficient to recommend, the
+    engine recommends nothing rather than assert an unjustified positive.
+
+    Restoring a positive recommendation requires *new validated evidence* - a deterministic
+    appropriateness fact (e.g. a reference-quality + redundancy diagnostic reusing the
+    ADR-0026 primitive) validated on **both** branches against a genuinely-referenced golden
+    measurement. It would then recommend on a non-redundant, high-quality reference and
+    decline on the conditions above. This rule is the registered, tested home for that
+    future criterion; until it exists, no recommendation is made.
+    """
 
     rule_id = "reasoning.normalize_with_reference"
     step_id = "image.reference_normalize"
     summary = (
-        "Recommend reference normalization when reference channels are present and the "
-        "complex optical signals have not yet been normalized."
+        "Reference normalization is available but NOT auto-recommended: no deterministic "
+        "criterion defensibly establishes when normalizing is appropriate (Scientific "
+        "Validation Outcome 2; see reference-normalization-analysis.md)."
     )
 
     def evaluate(self, ctx: ReasoningContext) -> RuleOutcome | None:
-        raw_signals = [
-            c.canonical
-            for c in ctx.channels(kind="optical", role="signal")
-            if c.is_complex and c.state != "normalized"
-        ]
-        if not raw_signals:
-            return None
-
-        joined = ", ".join(raw_signals)
-        evidence = [
-            Evidence("Reference channels (R_O*) are present in this measurement.", DESCRIPTION),
-            Evidence(
-                f"{len(raw_signals)} optical signal channel(s) are still raw "
-                f"(not yet normalized): {joined}.",
-                DESCRIPTION,
-            ),
-        ]
-        # Interaction-aware (deterministic, from provenance): note a completed prerequisite.
-        if "image.plane_level" in ctx.applied_steps:
-            evidence.append(
-                Evidence(
-                    "Plane leveling has already been applied; normalization is a natural "
-                    "next step toward quantitative analysis.",
-                    PROVENANCE,
-                )
-            )
-        return RuleOutcome(
-            confidence=0.85,
-            rationale=(
-                "Reference channels are available; normalizing divides each optical channel "
-                "by its matching reference to remove the common system response, enabling "
-                "quantitative comparison across harmonics."
-            ),
-            evidence=tuple(evidence),
-            considerations=(
-                "Normalization divides by the reference; where the reference amplitude is "
-                "near zero, division amplifies noise.",
-                "Phase becomes referenced to the reference channel (an explicit, recorded "
-                "re-reference), not absolute phase.",
-            ),
-            params={},
-            expected_outcome=(
-                "Each complex optical channel is divided by its reference: amplitude becomes "
-                "a dimensionless ratio and phase is referenced to the reference."
-            ),
-        )
+        # Positive recommendation withdrawn (validation Outcome 2). There is no deterministic
+        # evidence that normalization is *appropriate* for a given measurement - only that it
+        # would be *inappropriate* (a redundant / weak / noisy / empty reference). With no
+        # defensible positive criterion, recommend nothing rather than an unjustified step; a
+        # future rule restores the positive path only on a validated appropriateness fact.
+        return None
 
 
 __all__ = [
