@@ -2347,3 +2347,74 @@ runs.
   reference channel above the noise floor?" rather than re-derive it.
 - **Product (Beta Readiness Critical):** C1 export the processed dataset, C2 export
   measurement numbers (CSV/clipboard), C3 open multiple measurements.
+
+---
+
+## 2026-06-29 - Reference-normalization recommendation criteria (Candidate 3 / Outcome 2: DEFERRED, no code)
+
+The third Scientific Validation study (`docs/scientific-validation.md`), Candidate 3 of the
+triage, building on the Candidate-2 harmonic signal/noise primitive (ADR-0026). Worked the
+full 9-section lifecycle to a recorded Outcome. **Outcome 2 (DEFERRED) - no code shipped.**
+
+### The question (docs/reference-normalization-analysis.md)
+`image.reference_normalize` already exists and is validated; the open question was *when to
+recommend it*. Decomposed (as the brief required) into possible / appropriate / strongly
+recommended, and asked whether a deterministic, two-sided-validatable recommendation
+criterion exists - reusing the harmonic primitive (no new noise estimator).
+
+### Decision: DEFERRED
+- **Possible** - already true & shipped (structural trigger).
+- **Appropriate** - **not deterministically decidable.** Appropriateness requires the
+  reference to be a *meaningful, independent common-mode response* (an experimental-design
+  fact not in the array). The data can *exclude* appropriateness (redundant/weak/noisy/empty
+  reference) but cannot *establish* it.
+- **Strongly recommended** - not justified; needs the appropriate branch + real benefit,
+  neither validatable on present data.
+- Per the methodology's two-sided rule (decline AND fire must validate on real data), only
+  the decline side validates -> defer the rule. Mirrors phase-wrapping (Outcome 2), on the
+  positive branch.
+
+### Decisive evidence (the real `R-` channels are not usable references)
+- **All three imaging runs are PsHet, "Measurement Mode: Self-Reference Off"**, and the
+  `.txt` defines **no reference material/position**. The discovery doc's early "`R-` =
+  reference" was an unvalidated inference.
+- For every signal-bearing harmonic, `R_O{n}` is a **near-copy of `O{n}`**:
+  `corr(|O|,|R|)` 0.94-0.97, **`|O/R| ~ 1.00`**, referenced-phase spread 0.02-0.12 rad ->
+  normalization would **erase contrast**, not improve it (synthetic "case C").
+- The *decline* branch IS real-data-validated: `R_O4` in the two longer runs is
+  `noise`/`weak` class, SNR 0.56-0.67, ~10% near-zero -> `O/R` blow-up + destroyed phase.
+- Synthetic known-answers confirmed the crux: a strong **independent** reference (case A)
+  and a strong **copy** reference (case C) are **identical on every quality metric**
+  (signal-class, high SNR, 0% near-zero); only redundancy (`corr` / `CV(|O/R|)`) separates
+  them. So reference *quality alone cannot justify a positive recommendation*, and case A
+  does not occur in any available real measurement.
+
+### Secondary finding (flagged, not fixed - DEFER ships no code)
+The existing `ReferenceNormalizeRule` fires at a flat **0.85** whenever references exist and
+signals are raw - which on **every** available real measurement recommends an operation that
+erases contrast (and injects noise on weak harmonics). It was shipped (ADR-0023) as a
+"standard-practice prior" before this validation; the prior is **not supported by the
+evidence**. Top Future Work: gate it conservatively (decline on redundant/weak/noisy/empty
+references - all deterministically detectable and validated here) or withdraw the positive
+recommendation until a genuinely-referenced golden measurement exists. Not changed this
+milestone (DEFER discipline + the brief forbids reasoning-engine redesign).
+
+### No code, by design
+No rule, no diagnostic, no operation change. A *reference-quality fact* in isolation would
+be misleading (high quality != appropriate), so unlike harmonic ranking, nothing is shipped
+- only the recorded analysis. 415 tests remain green (unchanged); `ruff`/`mypy`/Qt-free
+unaffected (no source touched).
+
+### Documentation Updated
+- New `docs/reference-normalization-analysis.md` (Outcome 2). `scientific-reasoning.md`
+  (validation note on the rule + deferred-items bullet), `ai-scientist-v1.md` (caveat),
+  `scientific-validation.md` (queue -> Outcome 2), `next-scientific-priorities.md`
+  (Candidate 3 done), `CLAUDE.md` (doc hierarchy). LOG (this entry), NEXT, project memory.
+
+### Next Recommended Actions
+- **Science (honesty fix):** a small follow-up to **gate or withdraw** the flat-0.85
+  `ReferenceNormalizeRule` (decline on redundant/weak/noisy/empty references - the validated
+  decline conditions). `(user)` to obtain a genuinely-referenced measurement to ever validate
+  the positive branch.
+- **Product (Beta Readiness Critical):** C1 export the processed dataset, C2 export
+  measurement numbers (CSV/clipboard), C3 open multiple measurements.

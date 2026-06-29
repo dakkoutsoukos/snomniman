@@ -65,12 +65,13 @@ Literature -> Candidate Diagnostics -> Analytical -> Synthetic -> Real-data -> D
 and ends in one of three outcomes - validate-and-implement / defer / stop. **Honest
 deferral is success.**
 
-> **Triage (2026-06-28):** [`docs/next-scientific-priorities.md`](docs/next-scientific-priorities.md)
-> classified three candidates - **Line Flatten** = Category A (settled science; **shipped**
-> via the product track, C4), **Harmonic ranking** = Category B (**shipped** - Outcome 1,
-> ADR-0026), **Reference normalization criteria** = Category B (**validate next**, reusing
-> harmonic ranking's noise-floor fact). The two B items reduce to one primitive - a
-> deterministic single-scan noise-floor estimate - now shipped by harmonic ranking.
+> **Triage (2026-06-28), all three resolved:** **Line Flatten** = Category A (settled
+> science; **shipped** via the product track, C4); **Harmonic ranking** = Category B
+> (**shipped** - Outcome 1, ADR-0026); **Reference normalization criteria** = Category B
+> (**DEFERRED** - Outcome 2, 2026-06-29: decline conditions defensible, positive branch
+> unvalidatable on present data). The shared single-scan noise-floor primitive is shipped by
+> harmonic ranking; reference normalization reused it but found quality necessary-not-
+> sufficient (the deeper obstacle was reference *identity*, not strength).
 
 - **Harmonic ranking** - **DONE (2026-06-28, Outcome 1).**
   [`docs/harmonic-ranking-analysis.md`](docs/harmonic-ranking-analysis.md) (ADR-0026): the
@@ -79,12 +80,20 @@ deferral is success.**
   best-harmonic recommendation* was **rejected** (the metrics conflate near-field with
   far-field background), so no reasoning rule. Produced the single-image noise-floor
   primitive the next study reuses.
-- **Reference-normalization criteria - the next science study.** When is normalizing an
-  order by its reference appropriate vs misleading? Open
-  `docs/reference-normalization-analysis.md`; **reuse** the harmonic-ranking
-  `snr_estimate`/`spatial_coherence` to judge whether a reference channel is above the
-  noise floor, refining `ReferenceNormalizeRule`'s flat-prior confidence (do not duplicate
-  the noise estimator - Rule 7).
+- **Reference-normalization criteria - DONE (2026-06-29, Outcome 2: DEFERRED).**
+  [`docs/reference-normalization-analysis.md`](docs/reference-normalization-analysis.md): the
+  *decline* conditions (redundant / weak / noisy / empty reference) are defensible and
+  validated, but the *positive* "appropriate" branch cannot be validated - all real data is
+  PsHet "Self-Reference Off" with `R-` channels that are near-copies of the signal
+  (`O/R ~ 1`, normalization erases contrast); appropriateness is experimental-design
+  metadata the array lacks. No code.
+- **Reference-normalization rule: gate or withdraw (the new next science item, an honesty
+  fix).** The study found the existing flat-0.85 `ReferenceNormalizeRule` is unvalidated and
+  **over-recommends** on the available data. A small follow-up should make it conservative -
+  decline (or down-weight to tentative) on a redundant (`corr(|O|,|R|)` high / `CV(|O/R|)` ~
+  0), weak/noise/empty, or high-near-zero reference (all deterministically detectable and
+  validated) - rather than fire a flat prior. The *positive* branch stays deferred until a
+  genuinely-referenced golden measurement exists `(user)`.
 - **Phase-wrapping recommendation** - **Outcome 2 already reached**
   ([`docs/phase-wrapping-analysis.md`](docs/phase-wrapping-analysis.md)): criterion
   defensible, rule deferred. Building the *diagnostic fact* (residues + unwrap-range +

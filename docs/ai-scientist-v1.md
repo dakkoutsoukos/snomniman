@@ -206,7 +206,13 @@ app is fully useful offline today.
   recorded Accept in the Workspace. There is no auto-apply and no chat.
 - v2 ships two recommendation rules (plane level, reference normalize); more (phase
   unwrap on a wrapping signal, comparison/exploration suggestions) extend the same
-  pattern.
+  pattern. **Caveat (2026-06-29):** the *reference-normalize* rule's flat-0.85 confidence
+  was put through Scientific Validation and found unsupported by present evidence
+  ([`reference-normalization-analysis.md`](reference-normalization-analysis.md), Outcome 2 =
+  DEFERRED) - on all available "Self-Reference Off" data the `R-` channels are near-copies
+  of the signal, so normalizing erases contrast. The evidence-based refinement is deferred
+  (no genuinely-referenced measurement to validate the positive branch); the rule should be
+  gated conservatively or withdrawn in a follow-up.
 - No per-sentence narrative verification (see Grounding strategy).
 - Deferred panel sections from the original sketch (Recommended Reading, Relevant
   Literature) are intentionally out of scope here.

@@ -248,6 +248,20 @@ signal/noise classification or quality rank with known-answer tests); a marking 
 **Classification: B - Ready for Scientific Validation** (lower urgency; sequence after
 Candidate 2).
 
+> **Status (2026-06-29): study complete - Outcome 2 (DEFERRED), no code.**
+> [`reference-normalization-analysis.md`](reference-normalization-analysis.md): the
+> *decline* conditions (redundant / weak / noisy / empty reference) are deterministically
+> defensible and validated (reusing the Candidate-2 primitive + a redundancy metric), but
+> the *positive* "this reference is meaningful, so normalizing helps" branch cannot be
+> validated - every available real measurement is "Self-Reference Off" with `R-` channels
+> that are near-copies of the signal (`O/R ~ 1`, so normalization erases contrast), and
+> appropriateness is an experimental-design fact the array does not encode. Secondary
+> finding: the existing flat-0.85 `ReferenceNormalizeRule` is itself unvalidated and
+> over-recommends on the available data - flagged for a follow-up gate/withdrawal. The
+> pre-study triage below correctly anticipated the dependency on Candidate 2 but assumed the
+> open question was only "decline on a *weak* reference"; the real obstacle turned out to be
+> deeper (reference *identity* / redundancy, not just strength).
+
 ### Evaluation
 
 | Criterion | Assessment |
