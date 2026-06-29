@@ -686,8 +686,12 @@ class ExplorerModel:
             rows = []
             for amp in harm.amplitudes:
                 decay = "" if amp.decay_ratio is None else f"  (x{amp.decay_ratio:.2f} vs lower)"
+                cls = amp.classification
+                if amp.spatial_coherence is not None:
+                    cls = f"{cls} (coherence {amp.spatial_coherence:+.2f})"
                 rows.append(DiagnosticRow(
-                    f"O{amp.order} mean amplitude", f"{amp.mean_amplitude:.3g} a.u.{decay}"
+                    f"O{amp.order} mean amplitude",
+                    f"{amp.mean_amplitude:.3g} a.u.{decay} - {cls}",
                 ))
             sections.append(DiagnosticSection("Optical harmonics", tuple(rows)))
 

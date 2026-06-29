@@ -23,6 +23,11 @@ from snomniman.core import Capability, Dataset
 from snomniman.processing import get_step, list_steps
 
 from .descriptors import (
+    HARMONIC_EMPTY,
+    HARMONIC_NOISE,
+    HARMONIC_SIGNAL,
+    HARMONIC_UNKNOWN,
+    HARMONIC_WEAK,
     ChannelStatistics,
     HarmonicAmplitude,
     HarmonicDiagnostics,
@@ -33,6 +38,16 @@ from .descriptors import (
 
 #: nanometres per micrometre (slopes are reported per micrometre).
 _NM_PER_UM = 1000.0
+
+#: Minimum per-axis pixel count for a meaningful coherence / noise estimate; below
+#: this the classification is reported as "unknown" rather than guessed.
+_MIN_DIM_FOR_COHERENCE = 8
+#: Spatial-coherence classification thresholds, calibrated to the SNR=1 (~0.50) and
+#: SNR=0.5 (~0.20) crossovers of the validation study (harmonic-ranking-analysis.md §5).
+_COHERENCE_SIGNAL = 0.5
+_COHERENCE_NOISE = 0.2
+#: A channel whose amplitude std is below this (a.u.) is treated as empty (not recorded).
+_EMPTY_STD_EPS = 1e-20
 
 
 def channel_statistics(dataset: Dataset, name: str) -> ChannelStatistics:
@@ -120,9 +135,12 @@ def topography_diagnostics(dataset: Dataset) -> TopographyDiagnostics | None:
 
 
 def harmonic_diagnostics(dataset: Dataset) -> HarmonicDiagnostics | None:
-    """Mean amplitude and decay ratio per optical signal harmonic (ascending order).
+    """Per optical signal harmonic: mean amplitude, decay ratio, and signal/noise class.
 
-    Returns ``None`` when no optical signal channel carries a harmonic order.
+    Beyond magnitude this computes a deterministic signal-vs-noise classification from
+    the amplitude image's spatial coherence and a single-image SNR estimate, validated
+    on both branches (docs/harmonic-ranking-analysis.md). Returns ``None`` when no
+    optical signal channel carries a harmonic order.
     """
     by_name = {c.canonical: c for c in dataset.metadata.channels}
     pairs: list[tuple[int, str]] = []
@@ -146,12 +164,111 @@ def harmonic_diagnostics(dataset: Dataset) -> HarmonicDiagnostics | None:
             vals = np.abs(np.asarray(dataset.channel(name).values, dtype=np.float64))
         mean = float(np.nanmean(vals))
         ratio = (mean / prev_mean) if (prev_mean is not None and prev_mean != 0.0) else None
-        amplitudes.append(HarmonicAmplitude(order=order, mean_amplitude=mean, decay_ratio=ratio))
+        coherence, snr, classification = _classify_harmonic(vals)
+        amplitudes.append(
+            HarmonicAmplitude(
+                order=order,
+                mean_amplitude=mean,
+                decay_ratio=ratio,
+                spatial_coherence=coherence,
+                snr_estimate=snr,
+                classification=classification,
+            )
+        )
         prev_mean = mean
     return HarmonicDiagnostics(
         harmonics=tuple(order for order, _ in pairs),
         amplitudes=tuple(amplitudes),
     )
+
+
+def _classify_harmonic(
+    amplitude: npt.NDArray[np.float64],
+) -> tuple[float | None, float | None, str]:
+    """Spatial coherence, single-image SNR, and the signal/noise class of an image.
+
+    See docs/harmonic-ranking-analysis.md (Outcome 1). "empty" = ~zero variance;
+    "unknown" = no 2-D image or too few pixels; otherwise the spatial coherence is
+    thresholded at the SNR-calibrated bands. The classification is driven by coherence
+    (the cleanest null); the SNR estimate is reported as corroborating evidence.
+    """
+    finite = np.isfinite(amplitude)
+    if not finite.any():
+        return None, None, HARMONIC_EMPTY
+    if float(np.nanstd(amplitude)) < _EMPTY_STD_EPS:
+        return None, None, HARMONIC_EMPTY
+    if amplitude.ndim != 2 or min(amplitude.shape) < _MIN_DIM_FOR_COHERENCE:
+        return None, None, HARMONIC_UNKNOWN
+
+    coherence = _spatial_coherence(amplitude)
+    snr = _spatial_snr(amplitude, _immerkaer_noise_sigma(amplitude))
+    if coherence is None:
+        return coherence, snr, HARMONIC_UNKNOWN
+    if coherence >= _COHERENCE_SIGNAL:
+        cls = HARMONIC_SIGNAL
+    elif coherence >= _COHERENCE_NOISE:
+        cls = HARMONIC_WEAK
+    else:
+        cls = HARMONIC_NOISE
+    return coherence, snr, cls
+
+
+def _spatial_coherence(amplitude: npt.NDArray[np.float64]) -> float | None:
+    """Mean lag-1 (x and y) Pearson autocorrelation of the mean-removed image.
+
+    A structure-vs-noise measure: ``~1`` for smooth signal, ``~0`` for spatial white
+    noise (null ``~N(0, 1/N)``). Robust to a few non-finite pixels (masked pairwise).
+    """
+    a = amplitude - np.nanmean(amplitude)
+
+    def _corr(u: npt.NDArray[np.float64], v: npt.NDArray[np.float64]) -> float:
+        uu, vv = u.ravel(), v.ravel()
+        m = np.isfinite(uu) & np.isfinite(vv)
+        if int(m.sum()) < 8:
+            return float("nan")
+        uu, vv = uu[m], vv[m]
+        su, sv = float(uu.std()), float(vv.std())
+        if su == 0.0 or sv == 0.0:
+            return float("nan")
+        return float(np.mean((uu - uu.mean()) * (vv - vv.mean())) / (su * sv))
+
+    vals = [c for c in (_corr(a[:, :-1], a[:, 1:]), _corr(a[:-1, :], a[1:, :])) if math.isfinite(c)]
+    return float(np.mean(vals)) if vals else None
+
+
+def _immerkaer_noise_sigma(amplitude: npt.NDArray[np.float64]) -> float | None:
+    """Single-image white-noise std (Immerkaer 1996) via a Laplacian-type 3x3 kernel.
+
+    The kernel has zero response to constant/linear/most-quadratic surfaces, so its
+    response is dominated by white noise. Returns ``None`` if not computable.
+    """
+    a = amplitude
+    if not np.all(np.isfinite(a)):
+        fill = float(np.nanmean(a))
+        if not math.isfinite(fill):
+            return None
+        a = np.where(np.isfinite(a), a, fill)
+    h, w = a.shape
+    if h < 3 or w < 3:
+        return None
+    inner = (
+        a[0:-2, 0:-2] - 2 * a[0:-2, 1:-1] + a[0:-2, 2:]
+        - 2 * a[1:-1, 0:-2] + 4 * a[1:-1, 1:-1] - 2 * a[1:-1, 2:]
+        + a[2:, 0:-2] - 2 * a[2:, 1:-1] + a[2:, 2:]
+    )
+    return float(np.sqrt(np.pi / 2.0) * np.sum(np.abs(inner)) / (6.0 * (w - 2) * (h - 2)))
+
+
+def _spatial_snr(
+    amplitude: npt.NDArray[np.float64], noise_sigma: float | None
+) -> float | None:
+    """signal_std / noise_std with the noise from Immerkaer; ``None`` if not computable."""
+    if noise_sigma is None or noise_sigma <= 0.0:
+        return None
+    total = float(np.nanstd(amplitude))
+    residual = total * total - noise_sigma * noise_sigma
+    signal = math.sqrt(residual) if residual > 0.0 else 0.0
+    return float(signal / noise_sigma)
 
 
 def operation_applicability(dataset: Dataset) -> tuple[OperationApplicability, ...]:

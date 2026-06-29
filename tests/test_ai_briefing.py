@@ -90,6 +90,48 @@ def test_observations_note_plane_level_not_yet_applied(synthetic_dataset: Datase
     assert "already been applied" in " ".join(st.text for st in obs2.statements)
 
 
+def test_observations_surface_harmonic_signal_noise() -> None:
+    # A briefing surfaces the deterministic signal-vs-noise classification of harmonics.
+    import numpy as np
+    import xarray as xr
+
+    from snomniman.core import ChannelInfo, DataKind, Metadata, ProvenanceNode, StepRecord
+
+    ny, nx = 64, 64
+    yy, xx = np.mgrid[0:ny, 0:nx].astype(float)
+    smooth = np.exp(-(((xx - 30) ** 2 + (yy - 32) ** 2) / (2 * 15.0**2))) + 5.0  # coherent
+    rng = np.random.default_rng(1)
+    noise = np.abs(rng.standard_normal((ny, nx)) + 1j * rng.standard_normal((ny, nx)))  # noise
+    x = (np.arange(nx) + 0.5) * 50.0
+    y = (np.arange(ny) + 0.5) * 50.0
+    data = xr.Dataset(
+        {
+            "O2": (("y", "x"), smooth.astype(np.complex128)),
+            "O4": (("y", "x"), noise.astype(np.complex128)),
+        },
+        coords={
+            "x": ("x", x, {"unit": "nm", "axis": "X"}),
+            "y": ("y", y, {"unit": "nm", "axis": "Y"}),
+        },
+    )
+    meta = Metadata(
+        data_kind=DataKind.IMAGE,
+        channels=(
+            ChannelInfo("O2", "optical", "signal", "complex128", harmonic=2),
+            ChannelInfo("O4", "optical", "signal", "complex128", harmonic=4),
+        ),
+    )
+    node = ProvenanceNode(
+        node_id="n0", record=StepRecord(step_id="io.read", step_version=1, deterministic=True)
+    )
+    ds = Dataset(data, kind=DataKind.IMAGE, metadata=meta, provenance=node)
+
+    obs = next(s for s in build_briefing(ds).sections if s.title == "Scientific Observations")
+    text = " ".join(st.text for st in obs.statements)
+    assert "coherent signal: O2" in text
+    assert "O4 (noise)" in text
+
+
 # -- grounding context ------------------------------------------------------- #
 
 

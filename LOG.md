@@ -2269,3 +2269,81 @@ complementary and where each is appropriate. Raw never mutated.
   C3 open multiple measurements. C4 is now done.
 - **Science:** open the **harmonic-ranking** validation study (`docs/next-scientific-priorities.md`
   Candidate 2) - the next science-track milestone; ship the diagnostic fact before any rule.
+
+---
+
+## 2026-06-28 - Harmonic signal-vs-noise classification (Candidate 2 / first Outcome-1 study; ADR-0026)
+
+The science-track Candidate 2 (`docs/next-scientific-priorities.md`), worked through the
+full Scientific Validation lifecycle (`docs/scientific-validation.md`) to a recorded
+Outcome. It is the **first study to reach Outcome 1** (validate-and-implement) - the
+phase-wrapping exemplar reached Outcome 2 - and it demonstrates the validation process
+flowing into deterministic capability with **no architectural change** (Rule 7).
+
+### The study (docs/harmonic-ranking-analysis.md)
+Question: can the boundary between signal-bearing and noise-dominated optical harmonics be
+drawn deterministically from a single measurement, validatable on both branches? Worked
+the 9-section template: literature (Immerkaer 1996 single-image noise; Moran/Cliff-Ord
+spatial autocorrelation; Keilmann/Hillenbrand demodulation), candidate diagnostics,
+analytical + synthetic + **two-sided real-data** validation across all three CdO imaging
+runs.
+
+### Decision (two distinct claims)
+- **Signal-vs-noise classification - READY (Outcome 1), implemented.** Per harmonic:
+  spatial coherence (lag-1 autocorrelation; analytical white-noise null), a single-image
+  SNR estimate (Immerkaer), and a label `signal`/`weak`/`noise`/`empty`/`unknown`.
+  Thresholds tied to the synthetic SNR=1 (coherence ~0.5) / SNR=0.5 (~0.2) crossovers -
+  calibrated, not fitted. Meets Beta Readiness M4.
+- **"Informativeness ranking / best-harmonic recommendation" - REJECTED.** The decisive
+  honesty finding: spatial coherence/SNR measure structure-vs-noise, **not**
+  near-field-vs-background. Real O1 (far-field background, anti-correlated with the
+  near-field family) reads as high-SNR "signal" and in run1 outscores genuine near-field
+  O3 - so a quality-ranking would promote the background order. "Best harmonic" is the
+  confinement-vs-SNR expert tradeoff, not a deterministic fact. **No `ReasoningRule`
+  added** (ship the fact, decline the judgment - as with phase-unwrap/line-flatten).
+- **Discharges ADR-0019's SNR deferral.** ADR-0019 declined SNR for want of a validated
+  noise model; this study supplies one (recovers true SNR to ~1% on synthetic data;
+  validated two-sided on real data). The deferral is lifted only now that evidence exists.
+
+### Validation results
+- Analytical: white noise -> coherence +0.005 (null ~0.0067), SNR 0.15; smooth signal ->
+  coherence 0.999; constant -> empty.
+- Synthetic SNR sweep: SNR estimate tracks truth (8.0->7.93, 1.0->0.985, 0.5->0.497);
+  coherence crosses ~0.50 at SNR=1; size-robust at 150x150 and 300x400.
+- Real CdO (3 runs): O2/O3 signal everywhere (coherence 0.84-0.97, SNR 2.4-8.7); O4 is the
+  transition (signal in the short run, noise/weak in the two longer runs, SNR 0.6-0.7) -
+  a genuine signal->noise crossover on real data; O0 incoherent DC artifact -> noise; O5
+  not recorded -> empty. **Both branches validated** (the bar phase-wrapping could not clear).
+
+### Implementation (extends existing abstractions only)
+- `diagnostics`: `HarmonicAmplitude` gains `spatial_coherence` / `snr_estimate` /
+  `classification`; `harmonic_diagnostics` computes them via `_spatial_coherence`,
+  `_immerkaer_noise_sigma`, `_spatial_snr`, `_classify_harmonic`. Constants exported.
+- `ai.briefing`: Scientific Observations now lists which orders carry coherent signal vs.
+  are noise/empty (replacing the old "strongest amplitude" line, which pointed at the O0
+  artifact).
+- `knowledge`: new `diagnostic.harmonic_signal_noise` article; cross-linked from
+  `concept.harmonics` / `diagnostic.harmonic_decay`; integrity + no-drift green.
+- `gui.model`: the Optical harmonics diagnostics rows render the class + coherence
+  (display only).
+- No reasoning rule, no new operation, no GUI subsystem code.
+
+### Tests / gates
+- 415 tests pass (was 406; +9 net incl. the now-runnable real golden cases), `ruff` clean,
+  `mypy --strict` clean (91 files), Qt-free invariant green. Known-answer tests:
+  analytical (white/smooth/checkerboard/constant), synthetic SNR crossover, small-image
+  "unknown", two-sided real-CdO golden, briefing + GUI integration.
+
+### Documentation Updated
+- New `docs/harmonic-ranking-analysis.md`; `decisions.md` (ADR-0026); `diagnostics-engine.md`
+  (descriptor + SNR-deferral discharge); `scientific-validation.md` (queue: Outcome 1);
+  `next-scientific-priorities.md` (Candidate 2 done); `CLAUDE.md` (doc hierarchy). LOG (this
+  entry), NEXT, project memory.
+
+### Next Recommended Actions
+- **Science:** Candidate 3 - **reference-normalization criteria**
+  (`docs/reference-normalization-analysis.md`), which should now **reuse** this study's
+  single-image noise-floor primitive (`snr_estimate`/`spatial_coherence`) to ask "is this
+  reference channel above the noise floor?" rather than re-derive it.
+- **Product (Beta Readiness Critical):** C1 export the processed dataset, C2 export
+  measurement numbers (CSV/clipboard), C3 open multiple measurements.

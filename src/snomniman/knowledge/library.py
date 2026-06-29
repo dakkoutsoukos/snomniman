@@ -21,6 +21,8 @@ _HUTH = "Huth et al., Nano Lett. 12, 3973 (2012) - nano-FTIR."
 _GHIGLIA = "Ghiglia & Pritt, Two-Dimensional Phase Unwrapping, Wiley (1998)."
 _GWYDDION = "Necas & Klapetek, Cent. Eur. J. Phys. 10, 181 (2012) - Gwyddion SPM analysis."
 _WSXM = "Horcas et al., Rev. Sci. Instrum. 78, 013705 (2007) - WSxM SPM software."
+_IMMERKAER = "Immerkaer, Comput. Vis. Image Underst. 64, 300 (1996) - single-image noise sigma."
+_MORAN = "Moran, Biometrika 37, 17 (1950); Cliff & Ord, Spatial Processes (1981)."
 
 
 # --------------------------------------------------------------------------- #
@@ -82,7 +84,7 @@ _CONCEPTS = (
             "Reading higher-harmonic noise as structure when the signal has decayed into noise.",
         ),
         related_concepts=("concept.near_field_microscopy", "concept.pseudoheterodyne"),
-        related_diagnostics=("harmonic_decay",),
+        related_diagnostics=("harmonic_decay", "harmonic_signal_noise"),
         references=(_KEILMANN,),
     ),
     Article(
@@ -446,6 +448,56 @@ _DIAGNOSTICS = (
             "has reached the noise floor."
         ),
         related_concepts=("concept.harmonics",),
+        related_diagnostics=("harmonic_signal_noise",),
+    ),
+    Article(
+        article_id="diagnostic.harmonic_signal_noise",
+        category=DIAGNOSTIC,
+        title="Harmonic signal-vs-noise classification",
+        summary=(
+            "Each optical harmonic is classified signal / weak / noise / empty from the "
+            "spatial coherence of its amplitude image and a single-image SNR estimate - a "
+            "deterministic answer to 'which orders are signal vs. noise?'."
+        ),
+        explanation=(
+            "Genuine near-field signal is spatially structured (neighbouring pixels are "
+            "correlated); detector/demodulation noise is spatially white. The classifier "
+            "measures the amplitude image's spatial coherence (mean nearest-neighbour "
+            "autocorrelation; ~1 for smooth signal, ~0 for white noise) and corroborates it "
+            "with a single-image SNR estimate, then labels each order: signal (coherent, "
+            "above the noise floor), weak (signal comparable to noise - a transition), noise "
+            "(noise-dominated or incoherent), or empty (not meaningfully recorded). It is a "
+            "noise-floor classification, not a near-field-vs-background or 'best harmonic' "
+            "judgement: a low order dominated by far-field background is still 'signal' here."
+        ),
+        scientific_background=(
+            "Validated analytically (white noise -> coherence 0; smooth signal -> 1), "
+            "synthetically (coherence ~0.5 at SNR=1), and on real data on both branches - "
+            "strong signal (O2/O3) and genuine noise (high orders at the floor). The noise "
+            "floor uses Immerkaer's single-image estimate; spatial coherence is the lag-1 "
+            "case of Moran's I, whose white-noise null is known. See "
+            "docs/harmonic-ranking-analysis.md."
+        ),
+        mathematical_background=(
+            "coherence = mean lag-1 Pearson autocorrelation over x and y of the mean-removed "
+            "amplitude; sigma_noise from a Laplacian 3x3 kernel (Immerkaer); SNR = "
+            "sqrt(max(var_total - sigma_noise^2, 0)) / sigma_noise. Bands: signal "
+            "(coherence >= 0.5 ~ SNR>=1), weak ([0.2, 0.5)), noise (< 0.2)."
+        ),
+        practical_guidance=(
+            "Use it to skip noise/empty orders quickly. It does not tell you the best working "
+            "harmonic - choosing between the signal-bearing orders is still the "
+            "confinement-vs-background-vs-SNR judgement of the harmonics concept (often O2/O3)."
+        ),
+        common_mistakes=(
+            "Reading 'signal' as 'near-field' or 'the order to use' - it only means 'above the "
+            "noise floor' (O0/O1 background can read as signal).",
+            "Trusting it on a scan dominated by coherent per-line or drift artifacts, which "
+            "are not spatially white.",
+        ),
+        related_concepts=("concept.harmonics", "concept.complex_signals"),
+        related_diagnostics=("harmonic_decay", "dynamic_range"),
+        references=(_IMMERKAER, _MORAN, _KEILMANN),
     ),
     Article(
         article_id="diagnostic.dynamic_range",

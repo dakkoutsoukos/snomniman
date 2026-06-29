@@ -60,7 +60,7 @@ All are frozen, typed, and JSON-serializable via `to_dict` (mirroring `describe`
 |---|---|
 | `ChannelStatistics` | Per channel: count, finite/invalid counts, min/max/mean/std, dynamic range. Complex channels are summarized by their amplitude view (`view="amplitude"`); phase is cyclic and deliberately not summarized this way (OHD-6D). |
 | `TopographyDiagnostics` | Plane slope (x/y and magnitude, per micrometre), height range, and RMS roughness after plane removal, for the real topography channel. |
-| `HarmonicDiagnostics` / `HarmonicAmplitude` | Optical signal harmonics present, mean amplitude each, and the decay ratio vs the next-lower order. |
+| `HarmonicDiagnostics` / `HarmonicAmplitude` | Optical signal harmonics present; per order the mean amplitude, decay ratio vs the next-lower order, **spatial coherence**, **single-image SNR estimate**, and a **signal-vs-noise classification** (`signal`/`weak`/`noise`/`empty`/`unknown`). See `docs/harmonic-ranking-analysis.md` (ADR-0026). |
 | `OperationApplicability` | Per registered step: whether it structurally applies (declared capabilities ⊆ dataset capabilities), which capabilities are missing, and whether it already appears in the provenance DAG. |
 | `MeasurementDiagnostics` | The aggregate: minimal identity (`title`, `is_raw`) plus all of the above. Deliberately does **not** repeat the structural summary - that is `describe`'s job. |
 
@@ -79,10 +79,17 @@ All are frozen, typed, and JSON-serializable via `to_dict` (mirroring `describe`
   unit. Roughness is the residual standard deviation after plane removal (an
   Sq-like measure with global tilt removed). Validated against synthetic planes
   with exact known slopes (`tests/test_diagnostics.py`).
-- **No SNR.** A genuine signal-to-noise ratio needs a noise model or a signal-free
-  region; neither is available deterministically from a single image. Reporting a
-  number anyway would violate Rule 6. The **amplitude-decay ratio** is reported
-  instead - a measurable, convention-free proxy for harmonic confidence.
+- **Per-harmonic SNR (now reported, validated).** ADR-0019 originally declined SNR
+  because "a true SNR needs a noise model or a signal-free region, neither available
+  deterministically from a single image." The harmonic-ranking validation study
+  (ADR-0026, `docs/harmonic-ranking-analysis.md`) supplies and validates a single-image
+  noise model (Immerkaer 1996; recovers true SNR to ~1% on synthetic data, validated
+  two-sided on real data), so each harmonic now carries a **spatial coherence** and an
+  **`snr_estimate`** plus a conservative **signal/noise classification**. This is a
+  *noise-floor* judgment (signal vs. noise), **not** a near-field-vs-background or
+  "best-harmonic" ranking - the latter was rejected as not deterministically defensible.
+  The deferral was lifted only when the evidence existed; it rests on a documented
+  white-noise assumption (study §8). The amplitude-decay ratio remains reported alongside.
 - **No clipping / saturation / drift (yet).** Clipping needs the instrument's
   ADC/dynamic-range limit (often absent from metadata); drift from a single image
   is ill-posed. These are deferred rather than guessed. Invalid (NaN/inf) pixel

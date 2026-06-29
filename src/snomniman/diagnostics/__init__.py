@@ -20,6 +20,11 @@ JSON-serializable via each descriptor's ``to_dict``. See
 from __future__ import annotations
 
 from .descriptors import (
+    HARMONIC_EMPTY,
+    HARMONIC_NOISE,
+    HARMONIC_SIGNAL,
+    HARMONIC_UNKNOWN,
+    HARMONIC_WEAK,
     ChannelStatistics,
     HarmonicAmplitude,
     HarmonicDiagnostics,
@@ -36,6 +41,11 @@ from .diagnose import (
 )
 
 __all__ = [
+    "HARMONIC_EMPTY",
+    "HARMONIC_NOISE",
+    "HARMONIC_SIGNAL",
+    "HARMONIC_UNKNOWN",
+    "HARMONIC_WEAK",
     "ChannelStatistics",
     "HarmonicAmplitude",
     "HarmonicDiagnostics",

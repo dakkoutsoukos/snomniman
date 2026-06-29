@@ -495,6 +495,44 @@ are updated to point here. Full detail: `docs/scientific-validation.md`, `docs/b
 
 ---
 
+## ADR-0026 - Harmonic signal-vs-noise classification; discharge ADR-0019's SNR deferral  [ACCEPTED]
+**Context.** The first Scientific-Validation study to reach **Outcome 1**
+([`harmonic-ranking-analysis.md`](harmonic-ranking-analysis.md), the Candidate-2 milestone of
+ADR-0025). The question - "which optical harmonics are signal vs. noise, deterministically?" -
+is the Beta Readiness M4 gap and, per ADR-0019, the exact judgment the Diagnostics Engine had
+**declined** to make: ADR-0019 reported amplitude/decay but not SNR, because "a true SNR needs a
+noise model or a signal-free region, neither available deterministically from a single image."
+The study supplies and validates that missing noise model.
+**Decision.** Extend the existing `HarmonicAmplitude` descriptor (Rule 7 - no new subsystem) with
+a deterministic **signal-vs-noise classification**: per optical harmonic, a **spatial coherence**
+(mean lag-1 autocorrelation of the amplitude image; analytical white-noise null), a **single-image
+SNR estimate** (Immerkaer 1996 noise sigma), and a conservative label - `signal` / `weak` /
+`noise` / `empty` / `unknown`. Thresholds are tied to the SNR=1 (coherence ~0.5) and SNR=0.5
+(~0.2) crossovers (calibrated synthetically, not fitted). This **discharges ADR-0019's SNR
+deferral** for a *validated single-image estimate under a stated white-noise assumption* - the
+Validation Phase working as designed (a deferral lifted when evidence arrived). The fact is
+surfaced by the generic Diagnostics panel, the Briefing, and a Knowledge article; **no
+`ReasoningRule` is added.**
+**Alternatives.** (a) A total-order "informativeness ranking" / "best-harmonic recommendation" -
+**rejected**: the structure/SNR metrics conflate near-field with far-field background (real O1
+background reads as high-SNR "signal", even outscoring near-field O3), and "best" is the genuine
+confinement-vs-SNR expert tradeoff - not a deterministic fact (study §6/§7). (b) Ship a reasoning
+rule "use harmonic N" - rejected for the same reason (mirrors phase-unwrap/line-flatten: ship the
+fact, decline the judgment). (c) Keep ADR-0019's blanket "no SNR" - rejected: it was conditioned
+on the *absence of a validated noise model*, which now exists (recovers true SNR to ~1% on
+synthetic data; validated two-sided on real data). (d) Coherence only, no SNR - rejected: the SNR
+is the reusable noise-floor primitive Candidate 3 (reference-normalization criteria) consumes.
+**Consequences.** The Diagnostics Engine now answers M4 ("which orders are signal vs. noise") with
+a fact validated on **both** branches (the bar phase-wrapping could not clear). The single-image
+noise-floor estimate is now available for Candidate 3 to reuse rather than re-derive (Rule 7).
+Honest scope is preserved: the classification is a noise-floor judgment, **not** near-field-vs-
+background nor "best harmonic." 415 tests pass (analytical + synthetic + two-sided real CdO golden
++ briefing/GUI integration); `ruff`, `mypy --strict`, and the Qt-free invariant green.
+`diagnostics-engine.md`, `knowledge-center.md`, `scientific-validation.md`, and
+`next-scientific-priorities.md` are updated.
+
+---
+
 ## Decision Closure (OHD-1..9 resolved)
 
 | OHD | Topic | Resolution | ADR |

@@ -69,9 +69,37 @@ class TopographyDiagnostics:
         return {k: _jsonify(v) for k, v in asdict(self).items()}
 
 
+#: Harmonic signal-vs-noise classification labels (docs/harmonic-ranking-analysis.md).
+HARMONIC_SIGNAL = "signal"  # spatially-coherent content above the noise floor
+HARMONIC_WEAK = "weak"  # signal comparable to or below noise (the transition band)
+HARMONIC_NOISE = "noise"  # noise-dominated / incoherent
+HARMONIC_EMPTY = "empty"  # not meaningfully recorded (~zero variance)
+HARMONIC_UNKNOWN = "unknown"  # cannot be computed (no 2-D amplitude image)
+
+
 @dataclass(frozen=True)
 class HarmonicAmplitude:
-    """Mean amplitude of one optical harmonic, and its decay vs the previous order."""
+    """One optical harmonic's magnitude, decay, and signal-vs-noise classification.
+
+    Beyond magnitude this carries a deterministic, validated answer to "is this
+    harmonic signal or noise?" (docs/harmonic-ranking-analysis.md, Outcome 1):
+
+    - ``spatial_coherence`` - mean lag-1 autocorrelation of the amplitude image (over
+      x and y), a structure-vs-noise measure with an analytical white-noise null
+      ``~N(0, 1/N)``; ``~1`` for smooth signal, ``~0`` for white noise. ``None`` when
+      there is no 2-D amplitude image or the channel is degenerate.
+    - ``snr_estimate`` - a single-image signal-to-noise estimate using an Immerkaer
+      (1996) noise-floor estimate (``signal_std / noise_std``); ``None`` likewise. This
+      discharges ADR-0019's SNR deferral *for a validated single-image estimate*.
+    - ``classification`` - the conservative summary, one of :data:`HARMONIC_SIGNAL` /
+      :data:`HARMONIC_WEAK` / :data:`HARMONIC_NOISE` / :data:`HARMONIC_EMPTY` /
+      :data:`HARMONIC_UNKNOWN`.
+
+    This is a **noise-floor / coherence** classification, NOT a near-field-vs-background
+    or "best-harmonic" judgement: a low order dominated by far-field background is
+    legitimately "signal" here (it carries coherent content). Choosing the working
+    harmonic remains an expert judgement (see the knowledge base), not a computed fact.
+    """
 
     order: int
     mean_amplitude: float
@@ -79,6 +107,9 @@ class HarmonicAmplitude:
     #: for the lowest order present. In s-SNOM a value well below 1 indicates the
     #: expected background suppression at higher harmonics.
     decay_ratio: float | None
+    spatial_coherence: float | None = None
+    snr_estimate: float | None = None
+    classification: str = HARMONIC_UNKNOWN
 
     def to_dict(self) -> dict[str, Any]:
         return {k: _jsonify(v) for k, v in asdict(self).items()}
@@ -86,11 +117,13 @@ class HarmonicAmplitude:
 
 @dataclass(frozen=True)
 class HarmonicDiagnostics:
-    """Optical harmonic content, by amplitude (a deterministic confidence proxy).
+    """Optical harmonic content: magnitude, decay, and signal-vs-noise classification.
 
-    No "SNR" is reported: a true SNR needs a noise model or a signal-free region,
-    neither of which is available deterministically here. The amplitude-decay
-    ratio is reported instead - a measurable, convention-free quantity.
+    Reports mean amplitude and the convention-free decay ratio per order, plus a
+    deterministic per-harmonic signal/noise classification (spatial coherence +
+    single-image SNR; docs/harmonic-ranking-analysis.md). The classification answers
+    the M4 "which orders are signal vs. noise" question; it does not rank harmonics by
+    "informativeness" (rejected as not deterministically defensible - see the study).
     """
 
     harmonics: tuple[int, ...]  # optical signal orders present, ascending
@@ -152,6 +185,11 @@ def _jsonify(obj: Any) -> Any:
 
 
 __all__ = [
+    "HARMONIC_EMPTY",
+    "HARMONIC_NOISE",
+    "HARMONIC_SIGNAL",
+    "HARMONIC_UNKNOWN",
+    "HARMONIC_WEAK",
     "ChannelStatistics",
     "HarmonicAmplitude",
     "HarmonicDiagnostics",

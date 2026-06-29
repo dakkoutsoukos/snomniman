@@ -15,7 +15,13 @@ from datetime import UTC, datetime
 
 from snomniman.core import Dataset
 from snomniman.describe import MeasurementDescription, describe_measurement
-from snomniman.diagnostics import MeasurementDiagnostics, diagnose
+from snomniman.diagnostics import (
+    HARMONIC_EMPTY,
+    HARMONIC_NOISE,
+    HARMONIC_SIGNAL,
+    MeasurementDiagnostics,
+    diagnose,
+)
 
 from .provider import NarrativeProvider
 from .report import FACT, Briefing, BriefingContext, BriefingSection, BriefingStatement
@@ -121,9 +127,26 @@ def _observations_section(
         ))
     harm = diag.harmonics
     if harm is not None and harm.amplitudes:
-        strongest = max(harm.amplitudes, key=lambda a: a.mean_amplitude)
+        signal = [a for a in harm.amplitudes if a.classification == HARMONIC_SIGNAL]
+        not_signal = [
+            a for a in harm.amplitudes if a.classification in (HARMONIC_NOISE, HARMONIC_EMPTY)
+        ]
+        if signal:
+            orders = ", ".join(f"O{a.order}" for a in signal)
+            statements.append(_fact(
+                f"Optical harmonics carrying spatially-coherent signal: {orders}.", "diagnostics"
+            ))
+        if not_signal:
+            labels = ", ".join(f"O{a.order} ({a.classification})" for a in not_signal)
+            statements.append(_fact(
+                f"Noise-dominated or unrecorded optical harmonics: {labels}.", "diagnostics"
+            ))
+        # Strongest among signal-bearing orders (avoids pointing at a background/DC order);
+        # falls back to all orders when none could be classified (e.g. a tiny scan).
+        pool = signal or list(harm.amplitudes)
+        strongest = max(pool, key=lambda a: a.mean_amplitude)
         statements.append(_fact(
-            f"Strongest mean optical amplitude is at O{strongest.order}.", "diagnostics"
+            f"Strongest mean optical amplitude among them is at O{strongest.order}.", "diagnostics"
         ))
     for stat in diag.channel_statistics:
         if stat.invalid_count:

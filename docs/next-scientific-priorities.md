@@ -149,6 +149,14 @@ implementable immediately.
 
 **Classification: B - Ready for Scientific Validation.**
 
+> **Status (2026-06-28): study complete - Outcome 1, implemented.**
+> [`harmonic-ranking-analysis.md`](harmonic-ranking-analysis.md) validated the
+> signal-vs-noise *classification* on both branches and shipped it as a `diagnostics`
+> fact (ADR-0026); it **rejected** the literal "informativeness ranking / best-harmonic
+> recommendation" (the metrics conflate near-field with far-field background), so no
+> reasoning rule was added. The single-image noise-floor primitive it produced is now
+> available for Candidate 3 to reuse. The analysis below is the pre-study triage.
+
 ### Evaluation
 
 | Criterion | Assessment |

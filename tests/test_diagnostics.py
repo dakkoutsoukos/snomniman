@@ -169,6 +169,106 @@ def test_harmonic_amplitudes_and_decay(synthetic_dataset: Dataset) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Harmonic signal-vs-noise classification (docs/harmonic-ranking-analysis.md)
+# --------------------------------------------------------------------------- #
+
+
+def _optical_dataset(amplitudes: dict[int, npt.NDArray[np.float64]]) -> Dataset:
+    """A 2-D Dataset whose complex optical channel O{n} has amplitude ``amplitudes[n]``.
+
+    Each channel is stored as ``amplitude + 0j`` so the amplitude view is exactly the
+    supplied (non-negative) image - giving the classifier an analytically known input.
+    """
+    ny, nx = next(iter(amplitudes.values())).shape
+    y = (np.arange(ny, dtype=np.float64) + 0.5) * 50.0
+    x = (np.arange(nx, dtype=np.float64) + 0.5) * 50.0
+    data = xr.Dataset(
+        {f"O{n}": (("y", "x"), img.astype(np.complex128)) for n, img in amplitudes.items()},
+        coords={
+            "x": ("x", x, {"unit": "nm", "axis": "X"}),
+            "y": ("y", y, {"unit": "nm", "axis": "Y"}),
+        },
+    )
+    channels = tuple(
+        ChannelInfo(f"O{n}", "optical", "signal", "complex128", harmonic=n) for n in amplitudes
+    )
+    meta = Metadata(data_kind=DataKind.IMAGE, channels=channels)
+    node = ProvenanceNode(
+        node_id="n0", record=StepRecord(step_id="io.read", step_version=1, deterministic=True)
+    )
+    return Dataset(data, kind=DataKind.IMAGE, metadata=meta, provenance=node)
+
+
+def _smooth_field(ny: int = 64, nx: int = 64) -> npt.NDArray[np.float64]:
+    """A smooth, band-limited near-field-like image (broad Gaussian blobs), all positive."""
+    yy, xx = np.mgrid[0:ny, 0:nx].astype(np.float64)
+    f = np.zeros((ny, nx))
+    for cy, cx, s in [(20, 24, 12.0), (44, 40, 16.0)]:
+        f += np.exp(-((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * s * s))
+    return f + 5.0
+
+
+def test_pure_smooth_signal_classifies_as_signal() -> None:
+    # Analytical anchor: a smooth field has spatial coherence ~1 -> "signal".
+    ds = _optical_dataset({2: _smooth_field()})
+    harm = diagnose(ds).harmonics
+    assert harm is not None
+    a = harm.amplitudes[0]
+    assert a.spatial_coherence is not None and a.spatial_coherence > 0.95
+    assert a.classification == "signal"
+
+
+def test_pure_white_noise_classifies_as_noise() -> None:
+    # Analytical anchor: white-noise amplitude has coherence ~0 -> "noise".
+    rng = np.random.default_rng(20260628)
+    amp = np.abs(rng.standard_normal((96, 96)) + 1j * rng.standard_normal((96, 96)))
+    a = diagnose(_optical_dataset({3: amp})).harmonics.amplitudes[0]  # type: ignore[union-attr]
+    assert a.spatial_coherence is not None and abs(a.spatial_coherence) < 0.1
+    assert a.snr_estimate is not None and a.snr_estimate < 0.5
+    assert a.classification == "noise"
+
+
+def test_checkerboard_is_incoherent_noise() -> None:
+    # A perfect checkerboard is maximally anti-correlated (coherence ~ -1): not signal.
+    yy, xx = np.mgrid[0:32, 0:32]
+    amp = (((xx + yy) % 2) + 1.0).astype(np.float64)  # alternating 1.0 / 2.0
+    a = diagnose(_optical_dataset({2: amp})).harmonics.amplitudes[0]  # type: ignore[union-attr]
+    assert a.spatial_coherence is not None and a.spatial_coherence < 0.0
+    assert a.classification == "noise"
+
+
+def test_empty_channel_classifies_as_empty() -> None:
+    # A not-recorded harmonic (identically zero) is flagged, never fed to the classifier.
+    a = diagnose(_optical_dataset({5: np.zeros((40, 40))})).harmonics.amplitudes[0]  # type: ignore[union-attr]
+    assert a.classification == "empty"
+    assert a.spatial_coherence is None and a.snr_estimate is None
+
+
+def test_snr_crossover_known_answer() -> None:
+    # Synthetic SNR sweep: high SNR -> signal, low SNR -> noise; SNR estimate ~ true SNR.
+    rng = np.random.default_rng(7)
+    base = _smooth_field(80, 80)
+    base = (base - base.mean()) / base.std()  # unit-variance signal shape
+    noise = rng.standard_normal((80, 80))
+    strong = np.abs(4.0 * base + 6.0 + noise)  # true amplitude SNR ~ 4
+    weak = np.abs(0.3 * base + 6.0 + noise)  # true amplitude SNR ~ 0.3
+    ds = _optical_dataset({2: strong, 4: weak})
+    by_order = {a.order: a for a in diagnose(ds).harmonics.amplitudes}  # type: ignore[union-attr]
+    assert by_order[2].classification == "signal"
+    assert by_order[2].snr_estimate == pytest.approx(4.0, rel=0.25)
+    assert by_order[4].classification == "noise"
+
+
+def test_small_image_classification_is_unknown(synthetic_dataset: Dataset) -> None:
+    # The 3x4 fixture is too small for a meaningful estimate -> honest "unknown".
+    harm = diagnose(synthetic_dataset).harmonics
+    assert harm is not None
+    for a in harm.amplitudes:
+        assert a.classification == "unknown"
+        assert a.spatial_coherence is None and a.snr_estimate is None
+
+
+# --------------------------------------------------------------------------- #
 # Applicability
 # --------------------------------------------------------------------------- #
 

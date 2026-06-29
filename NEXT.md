@@ -3,9 +3,10 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-28 (shipped beta blocker C4 `image.line_flatten`, the Candidate-1
-engineering milestone; governance: the Scientific Validation Phase + Beta Readiness Review
-remain the planning systems)
+**Last updated:** 2026-06-28 (shipped the harmonic signal-vs-noise classification - Candidate 2,
+the first Scientific-Validation **Outcome 1**, ADR-0026; earlier: beta blocker C4
+`image.line_flatten`. Governance: the Scientific Validation Phase + Beta Readiness Review remain
+the planning systems)
 
 ---
 
@@ -65,26 +66,31 @@ and ends in one of three outcomes - validate-and-implement / defer / stop. **Hon
 deferral is success.**
 
 > **Triage (2026-06-28):** [`docs/next-scientific-priorities.md`](docs/next-scientific-priorities.md)
-> classified three candidates - **Line Flatten** = Category A (settled science; implement
-> via the product track, C4), **Harmonic ranking** = Category B (**validate next**),
-> **Reference normalization criteria** = Category B (**validate after** harmonic ranking,
-> reusing its noise-floor fact). The two B items reduce to one primitive - a deterministic
-> single-scan noise-floor estimate - which fixes their order.
+> classified three candidates - **Line Flatten** = Category A (settled science; **shipped**
+> via the product track, C4), **Harmonic ranking** = Category B (**shipped** - Outcome 1,
+> ADR-0026), **Reference normalization criteria** = Category B (**validate next**, reusing
+> harmonic ranking's noise-floor fact). The two B items reduce to one primitive - a
+> deterministic single-scan noise-floor estimate - now shipped by harmonic ranking.
 
-- **Harmonic ranking** - which optical harmonics carry signal vs noise, deterministically?
-  Subsumes Beta Readiness M4 ("signal-vs-noise channel triage"); a real workflow need, so
-  a strong next candidate. **The strongest next study** (triage above); open
-  `docs/harmonic-ranking-analysis.md` and ship the diagnostic *fact* before any rule.
+- **Harmonic ranking** - **DONE (2026-06-28, Outcome 1).**
+  [`docs/harmonic-ranking-analysis.md`](docs/harmonic-ranking-analysis.md) (ADR-0026): the
+  signal-vs-noise *classification* (spatial coherence + single-image SNR) is validated on
+  both branches and shipped in `diagnostics` (meets M4); the *informativeness ranking /
+  best-harmonic recommendation* was **rejected** (the metrics conflate near-field with
+  far-field background), so no reasoning rule. Produced the single-image noise-floor
+  primitive the next study reuses.
+- **Reference-normalization criteria - the next science study.** When is normalizing an
+  order by its reference appropriate vs misleading? Open
+  `docs/reference-normalization-analysis.md`; **reuse** the harmonic-ranking
+  `snr_estimate`/`spatial_coherence` to judge whether a reference channel is above the
+  noise floor, refining `ReferenceNormalizeRule`'s flat-prior confidence (do not duplicate
+  the noise estimator - Rule 7).
 - **Phase-wrapping recommendation** - **Outcome 2 already reached**
   ([`docs/phase-wrapping-analysis.md`](docs/phase-wrapping-analysis.md)): criterion
   defensible, rule deferred. Building the *diagnostic fact* (residues + unwrap-range +
   amplitude mask, with the synthetic known-answers as tests) is justified now; the
   *recommendation rule* is **blocked on a genuinely-wrapping real golden measurement**
   (nano-FTIR phase / interferometric / dispersive sample). `(user)`
-- **Reference-normalization criteria** - when is normalizing an order by its reference
-  appropriate vs misleading? The operation *and* a flat-prior recommendation already ship;
-  the study refines *when to decline*. **Sequence after harmonic ranking** (reuses its
-  noise-floor fact rather than duplicating it; triage above).
 - **Poor-scan / drift / tip-artifact detection** - revisit the metrics `diagnostics`
   currently defers (SNR / clipping / drift, ADR-0019) through the validation process;
   investigate honestly rather than guess (likely Outcome-2/3 candidates).

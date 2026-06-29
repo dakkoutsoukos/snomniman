@@ -250,7 +250,7 @@ data availability reorder it.
 
 | Candidate judgment | The question to answer | Notes / known blockers |
 |---|---|---|
-| **Harmonic ranking** | Which optical harmonics carry signal vs. noise, deterministically? | Subsumes the Beta Readiness "signal-vs-noise channel triage" (M4). A real workflow need; must pass validation before any marking/recommendation ships. |
+| **Harmonic ranking** | Which optical harmonics carry signal vs. noise, deterministically? | **Outcome 1 reached - DONE** ([`harmonic-ranking-analysis.md`](harmonic-ranking-analysis.md); ADR-0026). Signal-vs-noise *classification* validated on both branches and shipped in `diagnostics` (M4 met); the *informativeness ranking / best-harmonic recommendation* was **rejected** (metrics conflate near-field with background) - no rule. First study to flow validation -> implementation. |
 | **Phase-wrapping recommendation** | When should phase unwrapping be auto-recommended? | **Outcome 2 already reached** ([`phase-wrapping-analysis.md`](phase-wrapping-analysis.md)): criterion defensible, rule deferred. Blocked on a genuinely-wrapping real golden measurement (nano-FTIR / interferometric). |
 | **Reference normalization criteria** | When is normalizing an optical order by its reference appropriate (vs. misleading)? | The operation ships; the *judgment of when* is the open question. |
 | **Poor-scan detection** | Can an unusable scan (instability, parasitic interference, tracking loss) be flagged deterministically? | Diagnostics currently defers SNR/clipping/drift as not-yet-defensible (ADR-0019); revisit under this process. |

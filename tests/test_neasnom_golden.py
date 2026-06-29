@@ -15,6 +15,7 @@ import numpy.typing as npt
 import pytest
 
 from snomniman.core import Capability, DataKind, ReaderError, deserialize_dag, serialize_dag
+from snomniman.diagnostics import harmonic_diagnostics
 from snomniman.io import read, read_gsf, read_neasnom_measurement
 from snomniman.io.neasnom import READER_ID
 
@@ -129,6 +130,32 @@ def test_topography_converted_to_nm(golden) -> None:  # type: ignore[no-untyped-
 
 
 # -- metadata ---------------------------------------------------------------- #
+
+
+def test_harmonic_signal_noise_classification(golden) -> None:  # type: ignore[no-untyped-def]
+    # Two-sided real-data validation of the signal-vs-noise classifier
+    # (docs/harmonic-ranking-analysis.md, Outcome 1). Values are the exact computed
+    # quantities for this golden scan, so they lock the algorithm, not just the label.
+    harm = harmonic_diagnostics(golden)
+    assert harm is not None
+    by_order = {a.order: a for a in harm.amplitudes}
+
+    # Signal branch: O2/O3 carry strong, coherent near-field signal.
+    assert by_order[2].classification == "signal"
+    assert by_order[3].classification == "signal"
+    assert by_order[2].spatial_coherence == pytest.approx(0.915, abs=0.02)
+    assert by_order[2].snr_estimate == pytest.approx(8.65, rel=0.05)
+    assert by_order[3].spatial_coherence == pytest.approx(0.847, abs=0.02)
+
+    # Noise branch: O0 is an incoherent DC artifact; O5 is not recorded.
+    assert by_order[0].classification == "noise"
+    assert by_order[0].spatial_coherence == pytest.approx(-0.091, abs=0.02)
+    assert by_order[5].classification == "empty"
+    assert by_order[5].spatial_coherence is None and by_order[5].snr_estimate is None
+
+    # O4 is the transition order; in this (shorter) scan it is still weak signal.
+    assert by_order[4].classification == "signal"
+    assert by_order[4].spatial_coherence == pytest.approx(0.657, abs=0.02)
 
 
 def test_metadata_instrument_and_excitation(golden) -> None:  # type: ignore[no-untyped-def]
