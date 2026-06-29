@@ -49,20 +49,27 @@ rather than repeating them.
 > Accept/Cancel derivation - never mutating the raw measurement. A suggested next step
 > Previews straight into the Workspace (no AI-specific execution path). Adding a new
 > operation needs **no GUI code** (implement, register, declare params + capabilities).
-> A **File menu** completes the workflow (ADR-0027): New / Open Measurement / Open
-> Project / Save / Save As, and exports for the processed dataset (Zarr loss-less /
-> GSF grid + provenance sidecar), measurement numbers (CSV / clipboard), and figures.
-> A **project** (`snomniman.pipeline`: `Project` + `save_project`/`load_project`) is a
-> `.snomproj` bundle - one canonical Zarr store per dataset (raw + every derivation)
-> plus a manifest - so a whole session (history, active selection, view, measurements)
-> reopens exactly where it left off, with the full provenance DAG and raw immutability
-> intact.
+> A **File menu** completes the workflow (ADR-0027/ADR-0028): project + measurement open/
+> save (New/Close Project, Open Project, Open/Add/Close Measurement, Save/Save As), and
+> exports for the processed dataset (Zarr loss-less / GSF grid + provenance sidecar),
+> measurement numbers (CSV / clipboard), and figures.
+> A **project** (`snomniman.pipeline`: `Project` + `Measurement` + `save_project`/
+> `load_project`) is now a **collection of measurements** (ADR-0028): a `Measurement` is one
+> scientific object (raw + every derivation + active selection + per-measurement view/overlay
+> state); a `Project` owns an ordered set of them + which is active. (`Measurement` is the
+> *promotion* of the original single-measurement `Project`; a one-measurement project behaves
+> exactly like before.) It persists as a `.snomproj` bundle - one canonical Zarr store per
+> dataset (grouped by measurement) plus a manifest (schema v2; v1 bundles still load) - so a
+> whole multi-measurement session reopens exactly where it left off, full provenance DAG and raw
+> immutability intact. The Explorer surfaces this through a **Measurement Manager** dock; the GUI
+> holds a Qt-free `MeasurementSession` per measurement and switches between them (preserving each
+> one's history/view/overlays) with no disk reload.
 > A **Knowledge Center** (`snomniman.knowledge`, ADR-0024) teaches the science in-app:
 > a browsable/searchable base of curated, interconnected articles (concepts, every
 > operation, diagnostics, the AI's philosophy), with "Learn more" deep-links from
 > operations and recommendations - the same curated content a future AI narrator grounds
 > its explanations in.
-> 447 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> 458 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
@@ -182,8 +189,9 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
   h5py for vendor HDF5.
 - `snomniman.processing` - operations as `ProcessingStep`s (command pattern) + registry.
 - `snomniman.pipeline` - the reproducibility engine: provenance **DAG**, replay,
-  (de)serialization, environment/operation-version capture, and the `Project` bundle
-  with save/reopen persistence (reusing the `io` Zarr store; depends on `io` - ADR-0027).
+  (de)serialization, environment/operation-version capture, and the `Project` (a
+  collection of `Measurement`s, ADR-0028) + `save_project`/`load_project` bundle with
+  save/reopen persistence (reusing the `io` Zarr store; depends on `io` - ADR-0027).
 - `snomniman.describe` - the Scientific Description API: a Qt-free, read-only
   projection of `core` + the step registry into structured, JSON-serializable
   descriptors (consumed by `gui`/`batch`/future `ai`; not `viz`).

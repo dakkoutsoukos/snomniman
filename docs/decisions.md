@@ -572,6 +572,61 @@ the real CdO measurement, GSF export round-trip, CSV builders, and window save/r
 
 ---
 
+## ADR-0028 - Multi-measurement projects: `Measurement` (a promotion) + `Project` container  [ACCEPTED]
+**Context.** Beta Readiness Section 3 names **C3** (open more than one measurement) as the last
+Critical workflow gap: a researcher must work on a whole experiment - many independent scans - in
+one session without relaunching. The original `Project` (ADR-0027) modeled a *single* measurement's
+derivation history (a tuple of datasets, raw first). The load-bearing insight from reading the code:
+**that `Project` was already a `Measurement`** - the datasets tuple is one scan's history. So the
+correct move is a *promotion*, not a parallel "list of projects" bolted on top.
+**Decision.** (1) **Promote the single-measurement `Project` to a new immutable `Measurement`**
+(`measurement_id`, `title`, `datasets` history, `current_index`, opaque `session`) and redefine
+**`Project` as an ordered collection of `Measurement`s** (+ active `current_index` + opaque
+project-level `session`). The dataset-history semantics are unchanged (`datasets[0]` = raw). A
+single-measurement project is the common case and behaves like the old model. (2) **Persistence
+evolves in place - no second format (Rule 2/7).** Schema `1 -> 2`; the `.snomproj` bundle nests
+datasets under `measurements/measurement_NN/datasets/dataset_NN.zarr`; on-disk directory names are
+**ordinal** (reflect display order at save) while the **stable id lives in the manifest**, so
+reordering/removal never churns paths. **v1 bundles still load**, migrated into a one-measurement
+project with the v1 `session` re-homed onto the measurement. (3) **Measurement ids are stable,
+project-local, human-readable, and never reused** (`measurement-0001`, ...), assigned by the GUI via
+a **persisted monotonic counter** (in the project-level `session`) - **not UUIDs** (ids are never
+networked or shared; sequential ids are debuggable). (4) **GUI ownership split (reuses the ADR-0027
+materialize-at-save pattern):** a Qt-free `MeasurementSession` holds one measurement's *live* working
+state (active view-model, derivation back-stack, captured view + overlay records); the window hosts a
+list of sessions + an active index and binds a single set of widgets to the active one. **Switching
+captures the outgoing session's view + overlays and restores the incoming one's with no disk reload.**
+A **Measurement Manager** dock (list, active marker, Add / Rename / Close) is the primary navigation
+tool; the File menu gains New/Close Project and Add/Close Measurement. (5) **Success criterion: a
+one-measurement project is indistinguishable from the prior app** - existing single-measurement GUI
+tests pass unchanged (the window's `_model`/`_history` became properties delegating to the active
+session), the Manager shows a single quiet row, and the "m/n" title appears only when n > 1.
+**Alternatives.** (a) A new `Workspace` layer *above* `Project` (a list of projects) - rejected:
+contradicts the product model ("a Project *is* a collection of measurements") and ignores that the
+existing `Project` was already a `Measurement`; promotion is the smaller conceptual change (Rule 2).
+(b) UUID ids - rejected (user direction): project-local, never-shared ids are better as readable
+sequential handles; a persisted counter guarantees non-reuse, which keeps them safe as stable handles
+for later cross-measurement/batch features. (c) A new project file format - rejected (Rule 2/7):
+evolve `.snomproj` (bump schema, nest, migrate v1); keep one format that reuses the Zarr store. (d)
+Lazy-load datasets to bound memory at 100+ measurements - **deferred** (Rule 7): unnecessary for
+imaging now; the seam (`load_project` / `Measurement`) localizes a future change. Honest known
+limitation, not solved speculatively. (e) Mutation methods on the frozen value objects - rejected:
+the GUI owns mutable working state and materializes immutable `Measurement`/`Project` snapshots at
+save (the ADR-0027 pattern); the value objects stay immutable, the assignment policy (ids) stays in
+the GUI.
+**Consequences.** A researcher can open many measurements in one session, **switch instantly with
+each measurement's state preserved**, process each independently, and **save/reopen the whole
+project** with every measurement, derivation history, provenance DAG, active selection, view, and
+overlays restored. No new module and **no new cross-layer edge** (reuses `pipeline -> io`);
+`Measurement`/`Project` stay Qt-free; raw immutability and reproducibility are intact. The `Project`
+value-object shape changed (a deliberate promotion), so the project-store and GUI-session tests were
+rewritten and extended (add / switch-preserves-state / close / rename, multi-measurement round-trip,
+**v1 migration**). 458 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant green. Beta
+blocker **C3 closed**; this is the architectural foundation for cross-measurement comparison, batch,
+and experiment-wide scientific workflows (later phases).
+
+---
+
 ## Decision Closure (OHD-1..9 resolved)
 
 | OHD | Topic | Resolution | ADR |

@@ -58,7 +58,7 @@ def _open(path: str) -> MeasurementExplorerWindow:
     """Open ``path`` as a saved project (if it is one) or a raw measurement directory."""
     if (Path(path) / MANIFEST_NAME).is_file():
         project = load_project(path)
-        window = MeasurementExplorerWindow(ExplorerModel(project.current))
+        window = MeasurementExplorerWindow(ExplorerModel(project.current_dataset))
         window.load_project_object(project)
         window._project_path = Path(path)
         return window

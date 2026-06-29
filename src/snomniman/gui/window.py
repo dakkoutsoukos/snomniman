@@ -15,7 +15,6 @@ the researcher can navigate back to the original measurement after a derivation.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +24,13 @@ from snomniman import viz
 from snomniman.core.exceptions import DatasetError, ProcessingError, ReaderError
 from snomniman.io import export_channel_gsf, write_zarr
 from snomniman.knowledge import article_for_operation
-from snomniman.pipeline import Project, load_project, project_from_history, save_project
+from snomniman.pipeline import (
+    Measurement,
+    Project,
+    load_project,
+    measurement_from_history,
+    save_project,
+)
 from snomniman.viz import RenderData
 
 from .briefing import BriefingPanel
@@ -38,10 +43,16 @@ from .model import (
     PRESET_LABELS,
     ExplorerModel,
     MeasurementIdentity,
+    MeasurementSession,
     OperationPreview,
     PaneSpec,
 )
-from .panels import ChannelBrowser, MetadataInspector, ProvenanceInspector
+from .panels import (
+    ChannelBrowser,
+    MeasurementManager,
+    MetadataInspector,
+    ProvenanceInspector,
+)
 from .process import ProcessingWorkspace
 
 
@@ -50,11 +61,19 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
     def __init__(self, model: ExplorerModel) -> None:
         super().__init__()
-        self._model = model
-        self._history: list[ExplorerModel] = []
+        # The session list is established first: the _model/_history properties read
+        # the active session, so it must exist before any other state is touched.
+        self._next_seq = 1
+        self._sessions: list[MeasurementSession] = [
+            MeasurementSession(
+                model=model, measurement_id=self._new_measurement_id(), title=model.title
+            )
+        ]
+        self._active_index = 0
+        self._project_title = model.title
         self._preview: OperationPreview | None = None
         # The saved project this session is bound to (Save vs Save As), and the
-        # active comparison preset (persisted with the session view state).
+        # active comparison preset (persisted with the active session's view state).
         self._project_path: Path | None = None
         self._comparison_preset: str | None = None
 
@@ -66,6 +85,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._comparison = ComparisonView()
         self._contact = ContactSheet()
         self._stack = QtWidgets.QStackedWidget()
+        self._manager = MeasurementManager()
         self._browser = ChannelBrowser()
         self._metadata = MetadataInspector()
         self._provenance = ProvenanceInspector()
@@ -83,6 +103,35 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._build_layout()
         self._wire()
         self._load()
+        self._refresh_manager()
+
+    # -- active session (the model/history the single set of widgets is bound to) --
+
+    @property
+    def _active_session(self) -> MeasurementSession:
+        return self._sessions[self._active_index]
+
+    @property
+    def _model(self) -> ExplorerModel:
+        return self._active_session.model
+
+    @_model.setter
+    def _model(self, value: ExplorerModel) -> None:
+        self._active_session.model = value
+
+    @property
+    def _history(self) -> list[ExplorerModel]:
+        return self._active_session.history
+
+    @_history.setter
+    def _history(self, value: list[ExplorerModel]) -> None:
+        self._active_session.history = value
+
+    def _new_measurement_id(self) -> str:
+        """Mint the next stable, project-local measurement id (never reused)."""
+        mid = f"measurement-{self._next_seq:04d}"
+        self._next_seq += 1
+        return mid
 
     # -- construction ---------------------------------------------------------
 
@@ -98,9 +147,12 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         # Hold Python references so the QMenu wrappers stay valid (and testable).
         self._file_menu = file_menu
         self._export_menu = export_menu
-        self._menu_action(file_menu, "&New", self._new_measurement, "Ctrl+N")
-        self._menu_action(file_menu, "&Open Measurement...", self._open_measurement, "Ctrl+O")
+        self._menu_action(file_menu, "&New Project", self._new_project, "Ctrl+N")
         self._menu_action(file_menu, "Open &Project...", self._open_project, "Ctrl+Shift+O")
+        file_menu.addSeparator()
+        self._menu_action(file_menu, "Open &Measurement...", self._open_measurement, "Ctrl+O")
+        self._menu_action(file_menu, "&Add Measurement...", self._add_measurement, "Ctrl+Shift+A")
+        self._menu_action(file_menu, "&Close Measurement", self._close_active_measurement)
         file_menu.addSeparator()
         self._menu_action(file_menu, "&Save Project", self._save_project, "Ctrl+S")
         self._menu_action(file_menu, "Save Project &As...", self._save_project_as, "Ctrl+Shift+S")
@@ -111,6 +163,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._menu_action(export_menu, "&Measurement (CSV)...", self._export_measurement_csv)
         self._menu_action(export_menu, "&Figure...", self._export_figure)
         file_menu.addSeparator()
+        self._menu_action(file_menu, "Close &Project", self._close_project)
         self._menu_action(file_menu, "E&xit", self.close, "Ctrl+Q")
 
     def _menu_action(
@@ -144,10 +197,18 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         outer.addWidget(self._active)
         self.setCentralWidget(central)
 
+        measurements = QtWidgets.QDockWidget("Measurements")
+        measurements.setWidget(self._manager)
+        measurements.setFeatures(QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable)
+        self.addDockWidget(QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, measurements)
+
         channels = QtWidgets.QDockWidget("Channels")
         channels.setWidget(self._browser)
         channels.setFeatures(QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable)
         self.addDockWidget(QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, channels)
+        # Measurements on top, the channel browser below it (one left column).
+        self.splitDockWidget(measurements, channels, QtCore.Qt.Orientation.Vertical)
+        self.resizeDocks([measurements, channels], [150, 460], QtCore.Qt.Orientation.Vertical)
 
         tabs = QtWidgets.QTabWidget()
         self._inspect_tabs = tabs
@@ -198,6 +259,11 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         return bar
 
     def _wire(self) -> None:
+        # Measurement Manager: switch / add / close / rename across the project.
+        self._manager.measurementActivated.connect(self.switch_to)
+        self._manager.addRequested.connect(self._add_measurement)
+        self._manager.removeRequested.connect(self.close_measurement)
+        self._manager.renameRequested.connect(self._rename_measurement)
         self._browser.channelSelected.connect(self._on_channel_selected)
         self._browser.representationSelected.connect(self._on_representation_selected)
         self._image.cursorMoved.connect(self._on_cursor_moved)
@@ -255,6 +321,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._measure.set_model(new_model)
         self._refresh_navigation()
         self._load()
+        self._refresh_manager()
 
     def _navigate_back(self) -> None:
         if not self._history:
@@ -357,8 +424,16 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
     # -- project session: new / open / save -----------------------------------
 
-    def _new_measurement(self) -> None:
-        """Start a fresh analysis from a raw measurement (same gesture as Open)."""
+    def _new_project(self) -> None:
+        """Start a fresh project from a newly chosen measurement (replaces the current)."""
+        self._open_measurement()
+
+    def _close_project(self) -> None:
+        """Close the whole project and start fresh from a newly chosen measurement.
+
+        A project always holds at least one measurement, so (like New Project) this
+        prompts for one; cancelling keeps the current project untouched.
+        """
         self._open_measurement()
 
     def _open_measurement(self) -> None:
@@ -374,6 +449,34 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             return
         self._project_path = None
         self.load_explorer_model(model)
+
+    def _add_measurement(self) -> None:
+        """Open a measurement and append it to the current project (does not replace)."""
+        path = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Add neaSNOM measurement directory"
+        )
+        if not path:
+            return
+        try:
+            model = ExplorerModel.open_measurement(path)
+        except ReaderError as exc:
+            QtWidgets.QMessageBox.critical(self, "Could not open measurement", str(exc))
+            return
+        self.add_measurement_model(model)
+
+    def _rename_measurement(self, index: int) -> None:
+        """Prompt for and apply a new display name for the measurement at ``index``."""
+        if not 0 <= index < len(self._sessions):
+            return
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, "Rename measurement", "Name:", text=self._sessions[index].title
+        )
+        if ok and name:
+            self.rename_measurement(index, name)
+
+    def _close_active_measurement(self) -> None:
+        """File-menu handler: close the currently active measurement."""
+        self.close_measurement(self._active_index)
 
     def _open_project(self) -> None:
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "Open SNOMNIMAN project")
@@ -394,7 +497,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             self._write_project(self._project_path)
 
     def _save_project_as(self) -> None:
-        default = f"{self._model.title}.snomproj"
+        default = f"{self._project_title}.snomproj"
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self, "Save project as", default, "SNOMNIMAN project (*.snomproj)"
         )
@@ -415,49 +518,189 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.information(self, "Project saved", f"Saved project:\n{path}")
 
     def current_project(self) -> Project:
-        """Bundle the whole session (history + current + view + measurements) for saving."""
-        models = [*self._history, self._model]
-        datasets = [m.dataset for m in models]
-        session: dict[str, Any] = {
-            "titles": [m.title for m in models],
-            "view": self._view_state(),
-            "measurements": self._measure.to_records(),
-        }
-        return project_from_history(
-            datasets,
-            title=self._model.title,
-            current_index=len(self._history),
-            session=session,
+        """Bundle every measurement (each with its history + view + overlays) for saving."""
+        self._capture_active_session()
+        measurements = tuple(self._measurement_of(s) for s in self._sessions)
+        return Project(
+            title=self._project_title,
+            measurements=measurements,
+            current_index=self._active_index,
+            session={"next_measurement_seq": self._next_seq},
         )
+
+    def _measurement_of(self, session: MeasurementSession) -> Measurement:
+        """Build the immutable :class:`Measurement` snapshot of one working session."""
+        models = [*session.history, session.model]
+        doc: dict[str, Any] = {
+            "titles": [m.title for m in models],
+            "view": session.view_state,
+            "measurements": session.measure_records,
+        }
+        return measurement_from_history(
+            [m.dataset for m in models],
+            title=session.title,
+            measurement_id=session.measurement_id,
+            current_index=len(session.history),
+            session=doc,
+        )
+
+    def _capture_active_session(self) -> None:
+        """Snapshot the live widget state (view + overlays) into the active session.
+
+        The active session's view/overlays live in the widgets until captured; the
+        inactive sessions already hold the state captured when they were last left.
+        """
+        s = self._active_session
+        s.view_state = self._view_state()
+        s.measure_records = self._measure.to_records()
+
+    # -- multi-measurement management (switch / add / rename / close) ----------
+
+    def switch_to(self, index: int) -> None:
+        """Make measurement ``index`` active, preserving both sessions (no disk reload).
+
+        The outgoing session's live view + overlays are captured first; the incoming
+        session's captured state is restored into the single set of widgets.
+        """
+        if not 0 <= index < len(self._sessions) or index == self._active_index:
+            return
+        self._capture_active_session()
+        self._active_index = index
+        self._bind_active_session()
+
+    def add_measurement_model(self, model: ExplorerModel) -> None:
+        """Append a measurement to the project and switch to it (the dialog seam).
+
+        Public so tests can add a measurement without a file dialog or disk access.
+        """
+        self._capture_active_session()
+        self._sessions.append(
+            MeasurementSession(
+                model=model, measurement_id=self._new_measurement_id(), title=model.title
+            )
+        )
+        self._active_index = len(self._sessions) - 1
+        self._bind_active_session()
+
+    def rename_measurement(self, index: int, name: str) -> None:
+        """Set a measurement's display name (the seam ``_rename_measurement`` calls)."""
+        if not 0 <= index < len(self._sessions) or not name:
+            return
+        self._sessions[index].title = name
+        # For a single-measurement project, the project name follows the measurement.
+        if len(self._sessions) == 1:
+            self._project_title = name
+        self._refresh_manager()
+
+    def close_measurement(self, index: int) -> None:
+        """Close the measurement at ``index``.
+
+        Closing the active measurement binds a neighbour into the widgets; closing
+        an inactive one leaves the active view untouched. A project keeps at least
+        one measurement, so closing the last one starts a fresh project instead.
+        """
+        if not 0 <= index < len(self._sessions):
+            return
+        if len(self._sessions) == 1:
+            self._close_project()
+            return
+        closing_active = index == self._active_index
+        del self._sessions[index]
+        if index < self._active_index:
+            self._active_index -= 1
+        elif closing_active:
+            self._active_index = min(self._active_index, len(self._sessions) - 1)
+        if closing_active:
+            self._bind_active_session()
+        else:
+            self._refresh_manager()
+
+    def _refresh_manager(self) -> None:
+        """Update the Manager list + the window title to reflect the open measurements.
+
+        With a single measurement the window title is left exactly as the single-
+        measurement Explorer sets it, so the app feels unchanged; the "m/n" hint
+        appears only once a project holds more than one measurement.
+        """
+        labels = [self._manager_label(s) for s in self._sessions]
+        self._manager.set_measurements(labels, self._active_index)
+        n = len(self._sessions)
+        if n > 1:
+            self.setWindowTitle(
+                f"{self._active_session.title} - Measurement {self._active_index + 1}/{n}"
+                " - SNOMNIMAN Measurement Explorer"
+            )
+
+    @staticmethod
+    def _manager_label(session: MeasurementSession) -> str:
+        steps = len(session.history)
+        if steps:
+            return f"{session.title}   ({steps} step{'s' if steps != 1 else ''})"
+        return session.title
 
     def load_explorer_model(self, model: ExplorerModel) -> None:
         """Reset the window to a single fresh measurement (New / Open Measurement)."""
-        self._history = []
+        self._next_seq = 1
+        self._sessions = [
+            MeasurementSession(
+                model=model, measurement_id=self._new_measurement_id(), title=model.title
+            )
+        ]
+        self._active_index = 0
+        self._project_title = model.title
         self._preview = None
         self._comparison_preset = None
         self._process.set_preview_mode(False)
-        self._model = model
-        self._measure.set_model(model)
-        self._refresh_navigation()
-        self._load()
+        self._bind_active_session()
 
     def load_project_object(self, project: Project) -> None:
-        """Rebuild the window from a saved :class:`Project` (history + session)."""
-        session = dict(project.session)
-        titles = session.get("titles")
-        models: list[ExplorerModel] = []
-        for index, dataset in enumerate(project.datasets):
-            title = titles[index] if isinstance(titles, list) and index < len(titles) else None
-            models.append(ExplorerModel(dataset, title=title if isinstance(title, str) else None))
-        self._history = models[: project.current_index]
-        self._model = models[project.current_index]
+        """Rebuild the window from a saved :class:`Project` (every measurement + session)."""
+        self._sessions = [self._session_of(m) for m in project.measurements]
+        self._active_index = project.current_index
+        self._project_title = project.title
+        self._next_seq = _safe_int(
+            project.session.get("next_measurement_seq"), len(self._sessions) + 1
+        )
         self._preview = None
         self._comparison_preset = None
         self._process.set_preview_mode(False)
-        self._measure.set_model(self._model)
+        self._bind_active_session()
+
+    def _session_of(self, measurement: Measurement) -> MeasurementSession:
+        """Rebuild a working session from an immutable :class:`Measurement` snapshot."""
+        doc = dict(measurement.session)
+        titles = doc.get("titles")
+        models: list[ExplorerModel] = []
+        for index, dataset in enumerate(measurement.datasets):
+            title = titles[index] if isinstance(titles, list) and index < len(titles) else None
+            models.append(ExplorerModel(dataset, title=title if isinstance(title, str) else None))
+        view = doc.get("view")
+        records = doc.get("measurements")
+        return MeasurementSession(
+            model=models[measurement.current_index],
+            measurement_id=measurement.measurement_id,
+            title=measurement.title,
+            history=models[: measurement.current_index],
+            measure_records=list(records) if isinstance(records, list) else [],
+            view_state=dict(view) if isinstance(view, dict) else {},
+        )
+
+    def _bind_active_session(self) -> None:
+        """Bind the single set of widgets to the active session and restore its view.
+
+        Used after the active measurement changes (load, switch): the widgets are
+        repainted from the active session's model and its captured view + overlays
+        are restored, all without re-reading anything from disk.
+        """
+        s = self._active_session
+        self._comparison_preset = None
+        self._preview = None
+        self._process.set_preview_mode(False)
+        self._measure.set_model(s.model)
         self._refresh_navigation()
         self._load()
-        self._restore_session(session)
+        self._restore_view_and_measurements(s)
+        self._refresh_manager()
 
     def _view_state(self) -> dict[str, Any]:
         current = self._stack.currentWidget()
@@ -473,9 +716,9 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             "preset": self._comparison_preset,
         }
 
-    def _restore_session(self, session: Mapping[str, Any]) -> None:
-        """Restore the active view and the measurements from a loaded project."""
-        view = session.get("view") or {}
+    def _restore_view_and_measurements(self, s: MeasurementSession) -> None:
+        """Restore the active view (channel / representation / mode) and overlays."""
+        view = s.view_state or {}
         channel = view.get("channel")
         if isinstance(channel, str) and channel in self._model.dataset.channel_names:
             self._model.set_channel(channel)
@@ -484,9 +727,9 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
                 self._model.set_representation(representation)
             self._browser.select(channel)
             self._refresh_channel()
-        records = session.get("measurements")
-        has_measurements = isinstance(records, list) and bool(records)
-        if isinstance(records, list) and records:
+        records = s.measure_records
+        has_measurements = bool(records)
+        if has_measurements:
             self._measure.load_records(records)
         # Measurements live on the single image, so they force that view; otherwise
         # restore whatever multi-pane view the session was last in.
@@ -643,6 +886,14 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             return self._model.dataset.metadata.channel(channel).state
         except KeyError:
             return "raw"
+
+
+def _safe_int(value: Any, default: int) -> int:
+    """Coerce a manifest value to int, falling back to ``default`` (tolerate junk)."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _facts_line(identity: MeasurementIdentity) -> str:

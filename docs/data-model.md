@@ -239,7 +239,7 @@ Schema versions are explicit so formats can evolve with migrations.
 | Artifact | Format | Notes |
 |---|---|---|
 | Canonical dataset store | **Zarr** (OHD-3) | complex-native, chunked, JSON attrs; suits large cubes + rich metadata. One per dataset |
-| Project (a session: datasets + derived + state) | **`.snomproj` bundle** (ADR-0027) | a directory of per-dataset Zarr stores + a `project.json` manifest |
+| Project (a session: many measurements, each datasets + derived + state) | **`.snomproj` bundle** (ADR-0027/0028) | a directory of per-measurement, per-dataset Zarr stores + a `project.json` manifest (schema v2) |
 | Provenance DAG / project metadata | JSON | human-readable, diffable, version-controllable |
 | Manifest | JSON | raw sources (relative path + sha256 + bytes + reader) |
 | Vendor file reading | format-specific readers | Phase 1: GSF measurement directories (neaSNOM); h5py for future HDF5-based formats; vendor formats are independent of the store |
@@ -264,16 +264,25 @@ on load* (pure functions of the array data), never stored, so they cannot drift.
 Stores are written `consolidated=False` (Zarr v3 spec) and loaded eagerly, so the
 reconstructed arrays are frozen and immutable exactly as on first import.
 
-**Project bundle layout (implemented in `snomniman.pipeline`, ADR-0027).** A whole
-analysis session is a `Project` (the datasets oldest-to-newest, a `current_index`,
-and an opaque `session` document). `save_project` writes a `<name>.snomproj`
-directory: `datasets/dataset_NN.zarr` (one canonical store per dataset, reusing
-`write_zarr`) plus `project.json` (format marker `snomniman.project`, a
-`schema_version`, the dataset order, `current_index`, and the `session` blob, which
-`pipeline` stores verbatim - the GUI uses it for view/layout and measurement state).
-`load_project` restores each dataset with `read_zarr`, so the full provenance DAG and
-raw immutability come back intact; the processing history is preserved because it
-lives inside each dataset's store, not in the manifest.
+**Project bundle layout (implemented in `snomniman.pipeline`, ADR-0027/ADR-0028).** A
+whole analysis session is a `Project`: an ordered collection of `Measurement`s (+ a
+`current_index` selecting the active measurement + a project-level `session`). Each
+`Measurement` is one scientific object - a stable id, a title, its datasets
+oldest-to-newest, a per-measurement `current_index`, and an opaque per-measurement
+`session` (the GUI's view/overlay state). (`Measurement` is the *promotion* of the
+original single-measurement `Project`, ADR-0028.) `save_project` writes a
+`<name>.snomproj` directory: `measurements/measurement_NN/datasets/dataset_NN.zarr`
+(one canonical store per dataset, reusing `write_zarr`) plus `project.json` (format
+marker `snomniman.project`, `schema_version` 2, the measurement order with each
+measurement's id/title/`current_index`/`session`/dataset paths, the project
+`current_index`, and the project `session` blob, all stored verbatim). On-disk
+directory names are **ordinal** (display order at save time); a measurement's stable,
+project-local id (`measurement-0001`, never reused) lives in the manifest, so
+reordering or removing measurements never churns paths. `load_project` restores each
+dataset with `read_zarr`, so every measurement's full provenance DAG and raw
+immutability come back intact; **schema-version-1 (single-measurement) bundles still
+load**, migrated into a one-measurement project with the v1 session re-homed onto the
+measurement.
 
 ## 11. Invariants (enforced by tests)
 
@@ -283,7 +292,8 @@ lives inside each dataset's store, not in the manifest.
   inputs' graph plus exactly one `StepRecord`.
 - `Dataset -> Zarr -> Dataset` round-trips data, coordinates, units, conventions,
   and metadata without loss; `Project -> .snomproj -> Project` round-trips every
-  dataset (with its provenance DAG), the active selection, and the session state.
+  measurement and every dataset (with its provenance DAG), the active measurement +
+  per-measurement active selection, and the session state.
 - Replaying the provenance DAG on unchanged `RawSource`s reproduces the recorded
   result; for steps declared **deterministic** on a matching environment, output
   fingerprints match bit-for-bit; otherwise results reproduce to a documented

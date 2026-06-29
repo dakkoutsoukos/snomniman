@@ -18,8 +18,10 @@ from .project import (
     MANIFEST_NAME,
     PROJECT_FORMAT,
     PROJECT_SCHEMA_VERSION,
+    Measurement,
     Project,
     load_project,
+    measurement_from_history,
     project_from_history,
     save_project,
 )
@@ -28,8 +30,10 @@ __all__ = [
     "MANIFEST_NAME",
     "PROJECT_FORMAT",
     "PROJECT_SCHEMA_VERSION",
+    "Measurement",
     "Project",
     "load_project",
+    "measurement_from_history",
     "project_from_history",
     "save_project",
 ]

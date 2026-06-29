@@ -1035,6 +1035,32 @@ class ExplorerModel:
 
 
 # --------------------------------------------------------------------------- #
+# Measurement session (one measurement's live working state; Qt-free)
+# --------------------------------------------------------------------------- #
+
+
+@dataclass
+class MeasurementSession:
+    """One measurement's live working state in the Explorer (Qt-free).
+
+    The Explorer binds a single set of widgets to the *active* session at a time. A
+    session owns the active view-model (``model``), its derivation back-stack
+    (``history``, oldest first), a stable project-local id, and an editable display
+    ``title``. ``measure_records`` and ``view_state`` hold the overlay geometry and
+    the view (channel / representation / mode / preset) captured when the user
+    switches away, so switching back restores the measurement without re-reading
+    from disk. The immutable, persisted counterpart is ``pipeline.Measurement``.
+    """
+
+    model: ExplorerModel
+    measurement_id: str
+    title: str
+    history: list[ExplorerModel] = field(default_factory=list)
+    measure_records: list[dict[str, Any]] = field(default_factory=list)
+    view_state: dict[str, Any] = field(default_factory=dict)
+
+
+# --------------------------------------------------------------------------- #
 # Formatting helpers
 # --------------------------------------------------------------------------- #
 
@@ -1281,6 +1307,7 @@ __all__ = [
     "CursorValue",
     "ExplorerModel",
     "MeasurementIdentity",
+    "MeasurementSession",
     "MetadataItem",
     "MetadataSection",
     "OperationField",

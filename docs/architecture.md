@@ -202,13 +202,20 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
 - The **provenance DAG** (OHD-2): nodes are operations with named inputs, allowing
   multi-input workflows (sample/reference normalization, background subtraction,
   calibration inputs, stitched scans).
-- `Project` **(implemented, ADR-0027):** a whole analysis session - the raw
-  measurement, every derived dataset, which one is active, and an opaque `session`
-  document (the GUI's view + measurement state). `save_project`/`load_project`
-  persist it as a `<name>.snomproj` **bundle**: one canonical Zarr store per dataset
-  (reusing `io.write_zarr`/`read_zarr`) plus a JSON manifest. Because each dataset
-  serializes its full provenance DAG, the processing history round-trips; raw data
-  stays immutable.
+- `Measurement` + `Project` **(implemented, ADR-0027/ADR-0028):** a `Measurement` is
+  one scientific object - a stable id, a display title, the raw dataset, every
+  dataset derived from it (its history), which one is active, and an opaque per-
+  measurement `session` document (the GUI's view + overlay state). A `Project` is an
+  **ordered collection of `Measurement`s** (+ which is active + a project-level
+  `session`); a one-measurement project is the common case and behaves like the
+  original single-measurement model. (`Measurement` is a *promotion* of the original
+  single-measurement `Project`, ADR-0028.) `save_project`/`load_project` persist a
+  project as a `<name>.snomproj` **bundle**: one canonical Zarr store per dataset,
+  grouped under `measurements/measurement_NN/datasets/` (reusing
+  `io.write_zarr`/`read_zarr`), plus a JSON manifest (schema v2; v1 single-measurement
+  bundles still load, migrated to one measurement). On-disk paths are ordinal; stable
+  ids live in the manifest. Because each dataset serializes its full provenance DAG,
+  every measurement's processing history round-trips; raw data stays immutable.
 - `replay`: reconstruct a derived dataset from sources + the DAG (Rule 5) - a future
   optimization; today every derivation is stored faithfully in the bundle.
 - `serialization`: DAG <-> JSON (schemas in `data-model.md`).
@@ -241,12 +248,18 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
   presenter plus thin PyQtGraph/PySide6 widgets (image view, channel browser,
   metadata/provenance/diagnostics inspectors, the Scientific Briefing, the generic
   Processing Workspace, interactive measurements, and the Knowledge Center) and the
-  `python -m snomniman.gui` entry point. It now also closes the research workflow
-  (ADR-0027): a **File menu** for New / Open Measurement / Open Project / Save / Save
-  As, and **exports** for the processed dataset (Zarr / GSF), measurement numbers
-  (CSV / clipboard), and publication figures. Scientific logic stays in the Qt-free
-  presenter/backend (Rule 4); the package `__init__` does not import Qt, so the
-  presenter and backend import without the `gui` extra.
+  `python -m snomniman.gui` entry point. It closes the research workflow (ADR-0027):
+  a **File menu** for project/measurement open + save, and **exports** for the
+  processed dataset (Zarr / GSF), measurement numbers (CSV / clipboard), and
+  publication figures. It supports **multi-measurement projects** (ADR-0028): a
+  **Measurement Manager** dock lists every open measurement, and the window holds a
+  Qt-free `MeasurementSession` per measurement, binding one set of widgets to the
+  active one - switching preserves each measurement's history, view, and overlays
+  with no disk reload (File: New/Close Project, Add/Close Measurement). A
+  one-measurement project is indistinguishable from the prior single-measurement app.
+  Scientific logic stays in the Qt-free presenter/backend (Rule 4); the package
+  `__init__` does not import Qt, so the presenter and backend import without the
+  `gui` extra.
 
 ## 4. Key patterns
 

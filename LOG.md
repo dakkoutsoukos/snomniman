@@ -2558,3 +2558,80 @@ architecture redesign (one new acyclic dependency edge, `pipeline -> io`). C3
   run the user-testing protocol now that a full workday is possible end-to-end.
 - **Science:** the open Validation Queue items (poor-scan/drift detection; the deferred
   phase-wrapping and positive reference-normalization rules await a suitable golden measurement).
+
+---
+
+## 2026-06-29b - Multi-measurement projects (Phase 2A, ADR-0028)
+
+Closed beta blocker **C3** (open more than one measurement). Implemented after a written design
+proposal that the user reviewed and approved with two refinements (sequential local ids over
+UUIDs; an explicit "one-measurement project == the prior app" success criterion). The work is a
+*promotion*, not a rewrite: reading the code showed the original `Project` already modeled one
+measurement's derivation history, so it became a `Measurement` and a new `Project` was defined
+above it as a collection of measurements.
+
+### Completed
+- **Backend (`pipeline/project.py`):** new immutable `Measurement` (stable `measurement_id`,
+  `title`, datasets-history, `current_index`, opaque `session`; `.current`/`.raw`) - the promoted
+  single-measurement `Project`. `Project` refactored to hold `measurements` + active
+  `current_index` + a project-level `session` (`.current_measurement`/`.current_dataset`). Added
+  `measurement_from_history`; kept `project_from_history` (now a one-measurement project).
+- **Persistence (same file):** schema `1 -> 2`; bundle nests
+  `measurements/measurement_NN/datasets/dataset_NN.zarr` (ordinal paths; stable ids in the
+  manifest). `save_project`/`load_project` extended; **v1 bundles load via migration** into a
+  one-measurement project (the v1 `session` re-homed onto the measurement). No second format,
+  no new module, no new layer edge (reuses `pipeline -> io`).
+- **GUI session split (`gui/model.py`, `gui/window.py`):** new Qt-free `MeasurementSession`
+  (one measurement's live working state: model, history, captured `view_state` +
+  `measure_records`, id, title). The window holds `_sessions` + `_active_index`; `_model` and
+  `_history` became **properties delegating to the active session**, so the ~30 methods that
+  read/assign them are unchanged (behaviour-preserving for one measurement). `current_project()`
+  now bundles every session as a `Measurement`; `load_project_object()` rebuilds sessions.
+- **Manager + File workflow (`gui/panels.py`, `gui/window.py`):** a **Measurement Manager** dock
+  (left, above Channels) lists measurements, marks the active one, and offers Add / Rename /
+  Close (pure presentation, signal-based, Rule 4). File menu gained New Project / Add
+  Measurement / Close Measurement / Close Project (kept Open Measurement/Project, Save/Save As,
+  Export). **Switching** captures the outgoing session's view + overlays and restores the
+  incoming one's with **no disk reload** (reuses `MeasurementController.to_records/load_records/
+  set_model`). Sequential, never-reused ids (`measurement-0001`) via a persisted per-project
+  counter in the project `session`. The "m/n" window-title hint appears only when n > 1, so a
+  one-measurement project looks like the prior app.
+
+### Decisions
+- **ADR-0028.** Promote `Project` -> `Measurement`; `Project` becomes a collection. Evolve the
+  `.snomproj` format in place (schema v2 + v1 migration), not a second format (Rule 2/7).
+  Sequential project-local ids (a persisted monotonic counter), **not UUIDs** (user direction;
+  ids are never shared/networked, and non-reuse keeps them safe as stable handles for later
+  cross-measurement/batch work). The GUI owns mutable working state and materializes immutable
+  snapshots at save (the ADR-0027 pattern); `Measurement`/`Project` stay frozen + Qt-free.
+  Lazy-loading datasets (memory at 100+ measurements) **deferred** (Rule 7) - an honest known
+  limitation with a localized future seam.
+
+### Issues Found
+- One mismatched signal wiring caught by `mypy --strict` (manager `removeRequested` -> the
+  renamed `close_measurement`); fixed before any test run. No scientific-logic leak into Qt -
+  the session/switch logic is exercised through Qt-free seams (`add_measurement_model`,
+  `switch_to`, `close_measurement`, `rename_measurement`) and unit-tested headlessly.
+
+### Tests / gates
+- 458 tests (up from 447). `test_project_store.py` rewritten for the two-level model + new tests
+  (multi-measurement round-trip, single-measurement equivalence, **v1 migration**, Measurement
+  guards). `test_gui_session.py` extended: add-and-activate, **switch preserves per-measurement
+  channel + overlays**, close-and-reactivate, rename, multi-measurement save/reopen (asserts the
+  id counter round-trips). `ruff` clean; `mypy --strict` clean (98 files); Qt-free invariant
+  green (`Measurement`/`Project` add no Qt; the Manager widget lives in `gui`).
+
+### Documentation Updated
+- `docs/decisions.md` (ADR-0028), `docs/architecture.md` (pipeline `Measurement`+`Project`
+  description; gui multi-measurement + Manager), `docs/data-model.md` (Section 10 table + bundle
+  layout + round-trip invariant). `LOG.md` (this entry), `NEXT.md`, `CLAUDE.md` status, project
+  memory.
+
+### Next Recommended Actions
+- **Product (Beta Readiness):** with C1-C4 + H1 + C3 done, the Critical cluster is closed - run
+  the **user-testing protocol** (a full workday is now possible: multi-measurement, process,
+  measure, save/reopen, export). Then the High tier (H2 keyboard nav, H3 background subtraction +
+  height zero/offset, H4 absolute-value profile, H5 verbatim vendor-header view).
+- **Later phases now have a home:** cross-measurement comparison, batch (`snomniman.batch`),
+  and experiment-wide statistics build on the `Project`/`Measurement` foundation.
+- **Science:** unchanged - the open Validation Queue items await suitable golden measurements.

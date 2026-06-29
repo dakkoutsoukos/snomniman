@@ -100,6 +100,67 @@ class ChannelBrowser(QtWidgets.QWidget):
             self.channelSelected.emit(str(canonical))
 
 
+class MeasurementManager(QtWidgets.QWidget):
+    """The project's measurements: a list with the active one selected, plus actions.
+
+    Pure presentation - it lists the measurement labels the window builds, marks the
+    active one, and emits intent signals (activate / add / remove / rename). It holds
+    no session state and never touches a Dataset (Rule 4). Scales from one
+    measurement (a single quiet row, so the app feels unchanged) to many.
+    """
+
+    measurementActivated = QtCore.Signal(int)  # the user picked a measurement to work on
+    addRequested = QtCore.Signal()  # "Add Measurement..."
+    removeRequested = QtCore.Signal(int)  # close the measurement at this row
+    renameRequested = QtCore.Signal(int)  # rename the measurement at this row
+
+    def __init__(self) -> None:
+        super().__init__()
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+
+        self._list = QtWidgets.QListWidget()
+        self._list.itemSelectionChanged.connect(self._on_selection)
+        layout.addWidget(self._list, 1)
+
+        tools = QtWidgets.QHBoxLayout()
+        for label, slot in (
+            ("Add...", lambda: self.addRequested.emit()),
+            ("Rename", self._emit_rename),
+            ("Close", self._emit_remove),
+        ):
+            button = QtWidgets.QPushButton(label)
+            button.clicked.connect(slot)
+            tools.addWidget(button)
+        tools.addStretch(1)
+        layout.addLayout(tools)
+
+    def set_measurements(self, labels: Sequence[str], active: int) -> None:
+        """Replace the list; select ``active`` (signals are suppressed during refresh)."""
+        self._list.blockSignals(True)
+        self._list.clear()
+        for label in labels:
+            self._list.addItem(label)
+        if 0 <= active < len(labels):
+            self._list.setCurrentRow(active)
+        self._list.blockSignals(False)
+
+    def _on_selection(self) -> None:
+        row = self._list.currentRow()
+        if row >= 0:
+            self.measurementActivated.emit(row)
+
+    def _emit_rename(self) -> None:
+        row = self._list.currentRow()
+        if row >= 0:
+            self.renameRequested.emit(row)
+
+    def _emit_remove(self) -> None:
+        row = self._list.currentRow()
+        if row >= 0:
+            self.removeRequested.emit(row)
+
+
 class MetadataInspector(QtWidgets.QTreeWidget):
     """Typed metadata in readable groups; each value shows its unit and source."""
 
@@ -169,4 +230,9 @@ class ProvenanceInspector(QtWidgets.QWidget):
             self._tree.resizeColumnToContents(column)
 
 
-__all__ = ["ChannelBrowser", "MetadataInspector", "ProvenanceInspector"]
+__all__ = [
+    "ChannelBrowser",
+    "MeasurementManager",
+    "MetadataInspector",
+    "ProvenanceInspector",
+]

@@ -209,10 +209,12 @@ deliberate scope decisions for later phases. G7 is polish.
 - **C2. Export measurement data. DONE (2026-06-29, ADR-0027).** The Measure panel gained
   `Copy` + `Export CSV...`; Qt-free `gui.export` builders render `ProfileSet`/`RegionReport`
   as CSV (provenance header + unit-bearing columns). (G2)
-- **C3. Open more than one measurement. NEXT.** At minimum a File -> Open that replaces or
-  adds a measurement without relaunch; ideally a small Recent list. A session is
-  multi-scan. (G3) *(The File menu now exists - ADR-0027 - so this is the remaining
-  multi-measurement-session work.)*
+- **C3. Open more than one measurement. DONE (2026-06-29, ADR-0028).** `Project` is now a
+  collection of `Measurement`s (the single-measurement Project was promoted to `Measurement`); a
+  Measurement Manager dock + File New/Close Project, Add/Close Measurement; switching preserves
+  each measurement's history/view/overlays with no disk reload; `.snomproj` schema v2 + v1
+  migration; sequential never-reused ids. A session is now multi-scan. (G3) *(Recent-projects
+  list still deferred - needs the future settings store.)*
 - **C4. `image.line_flatten`. DONE (2026-06-28).** A registered ProcessingStep for
   line-by-line offset/bow removal - the most-missed topography operation. Validated +
   Knowledge article; zero GUI work by design. (G4)

@@ -3,11 +3,13 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-29 (shipped the complete research workflow - project save/reopen +
-processed-data / measurement / figure export, ADR-0027: beta blockers **C1, C2, and H1 done**.
-Earlier: harmonic signal-vs-noise classification - Candidate 2, Outcome 1, ADR-0026; beta blocker
-C4 `image.line_flatten`. Governance: the Scientific Validation Phase + Beta Readiness Review remain
-the planning systems)
+**Last updated:** 2026-06-29 (shipped **multi-measurement projects** - Phase 2A, ADR-0028: beta
+blocker **C3 done** -> the Critical cluster C1-C4 + H1 is now fully closed. `Project` is now a
+collection of `Measurement`s (the old single-measurement Project was promoted to `Measurement`);
+schema v2 + v1 migration; a Measurement Manager dock + Add/Close/switch with per-measurement state
+preserved. Earlier this date: the complete research workflow - project save/reopen + data/
+measurement/figure export, ADR-0027 (C1, C2, H1). Governance: the Scientific Validation Phase +
+Beta Readiness Review remain the planning systems)
 
 ---
 
@@ -36,6 +38,12 @@ Implement only at their intersection - *needed* **and** *validated*. See `CLAUDE
 Beta Readiness Section 3, Critical. Each **reuses an abstraction that already exists** -
 no new subsystem, and (for operations) no GUI code. Ordered. `(user)` = needs a human action.
 
+> **The Critical cluster (C1-C4) + H1 is now COMPLETE (2026-06-29).** The strongest next step
+> is the **user-testing protocol** (Beta Readiness Section 5) - a real workday is now possible
+> end-to-end (multi-measurement, process, measure, save/reopen, export). After that, the **High**
+> tier (H2-H5). Watching real users will re-order the remaining backlog better than any internal
+> critique.
+
 1. **C1 - Export the processed dataset. DONE (2026-06-29, ADR-0027).** GUI "Export ->
    Processed Data (Zarr)" wires `io.write_zarr` (loss-less); "Export -> Channel (GSF)" adds
    `io.export_channel_gsf` (one real grid + a provenance sidecar). Closes most of the Phase 4
@@ -50,9 +58,12 @@ no new subsystem, and (for operations) no GUI code. Ordered. `(user)` = needs a 
    analytically + on real CdO data, Knowledge article added, auto-surfaced in the
    Workspace/Diagnostics/Briefing with no GUI code. No auto-recommendation rule (needs a
    validated line-artifact diagnostic - a future science-track study). See `LOG.md`. (G4)
-4. **C3 - Open more than one measurement. NEXT.** A File menu / Open / Recent so a multi-scan
-   session is possible without relaunching. GUI-only. The File menu now exists (ADR-0027), so
-   this is the remaining multi-measurement-session work. (G3)
+4. **C3 - Open more than one measurement. DONE (2026-06-29, ADR-0028).** `Project` is now a
+   collection of `Measurement`s (the old single-measurement Project promoted to `Measurement`);
+   a Measurement Manager dock + File New/Close Project, Add/Close Measurement; switching
+   preserves each measurement's history/view/overlays with no disk reload; `.snomproj` schema v2
+   with v1 migration; sequential never-reused ids. **This closes the whole Critical cluster
+   (C1-C4 + H1).** (G3)
 
 The **High** tier: **H1 project save/reopen - DONE (2026-06-29, ADR-0027):** `snomniman.pipeline`
 `Project` + `save_project`/`load_project` (a `.snomproj` bundle of Zarr stores + manifest) reopen
@@ -135,8 +146,8 @@ The canonical queue lives in `docs/scientific-validation.md` Section 7.
 
 ## Blockers
 
-- **Product track: none.** The Critical cluster (C1-C4) reuses existing abstractions and
-  can start immediately.
+- **Product track: none.** The Critical cluster (C1-C4) + H1 is **complete**; the next step
+  is user-testing, then the High tier (H2-H5) - all reuse existing abstractions.
 - **Science track:** the phase-wrapping *recommendation* is blocked on a
   genuinely-wrapping real golden measurement `(user)`; other queue items are unblocked
   investigations.

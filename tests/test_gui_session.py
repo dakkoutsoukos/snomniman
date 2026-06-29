@@ -47,13 +47,17 @@ def _apply_plane_level(window: MeasurementExplorerWindow) -> None:
 
 def test_file_menu_exposes_the_workflow_actions(window: MeasurementExplorerWindow) -> None:
     texts = {a.text() for a in window._file_menu.actions()}
-    # The required File actions are present (ampersands are keyboard accelerators).
+    # The required File actions are present (ampersands are keyboard accelerators),
+    # including the multi-measurement project workflow (add / close / project).
     assert {
-        "&New",
-        "&Open Measurement...",
+        "&New Project",
         "Open &Project...",
+        "Open &Measurement...",
+        "&Add Measurement...",
+        "&Close Measurement",
         "&Save Project",
         "Save Project &As...",
+        "Close &Project",
     } <= texts
     # The Export submenu carries the data / channel / measurement / figure exports.
     export_texts = {a.text() for a in window._export_menu.actions()}
@@ -71,10 +75,13 @@ def test_file_menu_exposes_the_workflow_actions(window: MeasurementExplorerWindo
 def test_current_project_bundles_history(window: MeasurementExplorerWindow) -> None:
     _apply_plane_level(window)
     project = window.current_project()
-    assert len(project.datasets) == 2  # raw + leveled
-    assert project.current_index == 1
-    assert project.current.is_raw is False
-    assert project.raw.is_raw is True
+    # One open measurement, with a two-dataset derivation history (raw + leveled).
+    assert len(project.measurements) == 1
+    assert project.current_index == 0
+    measurement = project.current_measurement
+    assert len(measurement.datasets) == 2
+    assert measurement.current.is_raw is False
+    assert measurement.raw.is_raw is True
 
 
 def test_save_then_reopen_restores_the_session(
@@ -193,3 +200,102 @@ def test_export_measurement_csv_writes_file(
     assert out.exists()
     text = out.read_text(encoding="utf-8")
     assert "# SNOMNIMAN" in text and "channel,unit,mean" in text
+
+
+# -- multi-measurement project management ------------------------------------ #
+
+
+def test_add_measurement_appends_and_activates(
+    window: MeasurementExplorerWindow, synthetic_dataset: Dataset
+) -> None:
+    assert len(window._sessions) == 1
+    window.add_measurement_model(ExplorerModel(synthetic_dataset, title="CdO-B"))
+    assert len(window._sessions) == 2
+    assert window._active_index == 1  # the new measurement becomes active
+    assert window._active_session.title == "CdO-B"
+    # Stable, sequential, never-reused ids (not UUIDs).
+    assert [s.measurement_id for s in window._sessions] == ["measurement-0001", "measurement-0002"]
+    assert window._next_seq == 3
+
+
+def test_switch_preserves_per_measurement_state(
+    window: MeasurementExplorerWindow, qapp: Any, synthetic_dataset: Dataset
+) -> None:
+    # On measurement A: move off the default channel and place a measurement overlay.
+    window._browser.channelSelected.emit("O3")
+    window._measure.add_rectangle()
+    qapp.processEvents()
+    assert window._model.current_channel == "O3"
+    assert len(window._measure.items) == 1
+
+    # Add measurement B and switch to it: B starts clean (its own fresh state).
+    window.add_measurement_model(ExplorerModel(synthetic_dataset, title="CdO-B"))
+    qapp.processEvents()
+    assert window._active_index == 1
+    assert len(window._measure.items) == 0  # B has no overlays
+    assert window._model.current_channel != "O3"  # B is on its own default channel
+
+    # Switch back to A: its channel and overlay are restored without a disk reload.
+    window.switch_to(0)
+    qapp.processEvents()
+    assert window._active_index == 0
+    assert window._model.current_channel == "O3"
+    assert len(window._measure.items) == 1
+    assert window._measure.items[0].kind == "rectangle"
+
+
+def test_close_measurement_removes_and_reactivates(
+    window: MeasurementExplorerWindow, synthetic_dataset: Dataset
+) -> None:
+    window.add_measurement_model(ExplorerModel(synthetic_dataset, title="CdO-B"))
+    assert len(window._sessions) == 2 and window._active_index == 1
+    window.close_measurement(window._active_index)  # close the active (B)
+    assert len(window._sessions) == 1
+    assert window._active_index == 0
+    assert window._active_session.title == "CdO"  # measurement A remains active
+
+
+def test_rename_measurement_updates_title_and_manager(
+    window: MeasurementExplorerWindow, synthetic_dataset: Dataset
+) -> None:
+    window.add_measurement_model(ExplorerModel(synthetic_dataset, title="CdO-B"))
+    window.rename_measurement(0, "First scan")
+    assert window._sessions[0].title == "First scan"
+    # The Manager list reflects the new name.
+    labels = {window._manager._list.item(i).text() for i in range(window._manager._list.count())}
+    assert any(label.startswith("First scan") for label in labels)
+
+
+def test_multi_measurement_save_and_reopen(
+    window: MeasurementExplorerWindow, qapp: Any, synthetic_dataset: Dataset, tmp_path: Path
+) -> None:
+    # Measurement A gets a derivation; measurement B is added raw; B ends up active.
+    _apply_plane_level(window)
+    window.add_measurement_model(ExplorerModel(synthetic_dataset, title="CdO-B"))
+    assert window._active_index == 1
+
+    bundle = save_project(window.current_project(), tmp_path / "multi.snomproj")
+
+    reopened = MeasurementExplorerWindow(ExplorerModel(synthetic_dataset))
+    reopened.resize(1100, 720)
+    reopened.show()
+    qapp.processEvents()
+    try:
+        reopened.load_project_object(load_project(bundle))
+        qapp.processEvents()
+        assert len(reopened._sessions) == 2
+        # Measurement A: its 2-dataset history (raw + leveled) is restored, derived active.
+        first = reopened._sessions[0]
+        assert len(first.history) == 1
+        assert first.model.dataset.is_raw is False
+        # Measurement B: a single raw dataset, no history.
+        second = reopened._sessions[1]
+        assert len(second.history) == 0
+        assert second.model.dataset.is_raw is True
+        # The active measurement and the never-reused id counter both round-trip.
+        assert reopened._active_index == 1
+        assert reopened._next_seq == 3
+    finally:
+        reopened.close()
+        reopened.deleteLater()
+        qapp.processEvents()
