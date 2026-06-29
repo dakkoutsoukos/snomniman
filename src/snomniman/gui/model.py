@@ -43,6 +43,8 @@ from snomniman.io import read
 from snomniman.processing import CHANNEL_COMPLEX, CHANNEL_REAL, get_step
 from snomniman.viz import AMPLITUDE, PHASE, REAL, FigureSpec, OverlaySpec, RegionStats, RenderData
 
+from .export import ExportContext
+
 # --------------------------------------------------------------------------- #
 # View value objects (plain data the widgets render verbatim)
 # --------------------------------------------------------------------------- #
@@ -652,6 +654,27 @@ class ExplorerModel:
             created_at=datetime.now(UTC).isoformat(),
             snomniman_version=software.get("snomniman", ""),
             software=software,
+        )
+
+    # -- measurement export context (read-only) -------------------------------
+
+    def export_context(self) -> ExportContext:
+        """Identity + provenance facts that head every measurement (CSV) export.
+
+        Shared by the profile and region exporters so a saved table always records
+        which measurement and derivation it came from (the same honesty the figure
+        and GSF exports carry).
+        """
+        source = self._ds.source
+        steps = summarize_provenance(self._ds.provenance).steps
+        return ExportContext(
+            measurement=self._title,
+            source_path=source.path if source is not None else None,
+            source_sha256=source.sha256 if source is not None else None,
+            conventions=self.conventions_summary(),
+            provenance=tuple(step.step_id for step in steps),
+            snomniman_version=current_software().get("snomniman", ""),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
     # -- diagnostics (read-only deterministic observations) -------------------

@@ -8,11 +8,13 @@ shows is produced by the read-only backend + model.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import pyqtgraph as pg
 from PySide6 import QtWidgets
 
 from snomniman.core.exceptions import ReaderError
+from snomniman.pipeline import MANIFEST_NAME, load_project
 
 from .model import ExplorerModel
 from .window import MeasurementExplorerWindow
@@ -42,15 +44,25 @@ def run(path: str | None = None, *, argv: list[str] | None = None) -> int:
             return 0
 
     try:
-        model = ExplorerModel.open_measurement(path)
+        window = _open(path)
     except ReaderError as exc:
-        QtWidgets.QMessageBox.critical(None, "Could not open measurement", str(exc))
+        QtWidgets.QMessageBox.critical(None, "Could not open", str(exc))
         return 1
 
-    window = MeasurementExplorerWindow(model)
     window.resize(1180, 760)
     window.show()
     return int(app.exec())
+
+
+def _open(path: str) -> MeasurementExplorerWindow:
+    """Open ``path`` as a saved project (if it is one) or a raw measurement directory."""
+    if (Path(path) / MANIFEST_NAME).is_file():
+        project = load_project(path)
+        window = MeasurementExplorerWindow(ExplorerModel(project.current))
+        window.load_project_object(project)
+        window._project_path = Path(path)
+        return window
+    return MeasurementExplorerWindow(ExplorerModel.open_measurement(path))
 
 
 __all__ = ["run"]

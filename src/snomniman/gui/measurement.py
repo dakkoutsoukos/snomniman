@@ -16,7 +16,8 @@ changes - their geometry persists and the results update to the new channel.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -25,6 +26,7 @@ from PySide6 import QtCore, QtWidgets
 
 from snomniman.viz import OverlaySpec
 
+from .export import ExportContext, profile_to_csv, region_to_csv
 from .imageview import ChannelImageView
 from .model import ExplorerModel, PaneSpec, ProfileSet, RegionReport
 
@@ -150,18 +152,57 @@ class MeasurementController(QtCore.QObject):
                 specs.append(OverlaySpec("polygon", item.name, points))
         return specs
 
+    # -- session persistence (geometry round-trips with a saved project) ------
+
+    def to_records(self) -> list[dict[str, Any]]:
+        """Serialize every measurement (geometry in nm) for the saved session.
+
+        Geometry is read back in canonical nm coordinates - the same read-back the
+        figure overlays use - so restoring a project recreates the exact overlays.
+        """
+        view_box = self._image.view_box
+        return [
+            {
+                "kind": item.kind,
+                "name": item.name,
+                "visible": item.visible,
+                "geometry": _geometry_of(item, view_box),
+            }
+            for item in self._items
+        ]
+
+    def load_records(self, records: Sequence[Mapping[str, Any]]) -> None:
+        """Recreate measurements from :meth:`to_records` output (replaces any current)."""
+        self.clear()
+        for rec in records:
+            roi = _make_roi_from_geometry(str(rec["kind"]), dict(rec["geometry"]))
+            self._place(str(rec["kind"]), str(rec["name"]), bool(rec.get("visible", True)), roi)
+
+    def export_context(self) -> ExportContext:
+        """Identity + provenance facts for a measurement CSV export (from the model)."""
+        return self._model.export_context()
+
     # -- internals ------------------------------------------------------------
 
     def _add(self, kind: str) -> None:
         roi = _make_roi(kind, self._image.view_box)
+        self._place(kind, f"{_KIND_LABEL[kind]} {self._next}", True, roi, focus=True)
+
+    def _place(
+        self, kind: str, name: str, visible: bool, roi: Any, *, focus: bool = False
+    ) -> None:
+        """Adopt a ready-made overlay as a measurement (shared by add + restore)."""
         self._image.add_overlay(roi)
-        item = _Measurement(self._next, kind, f"{_KIND_LABEL[kind]} {self._next}", roi)
+        item = _Measurement(self._next, kind, name, roi)
+        item.visible = visible
+        roi.setVisible(visible)
         self._next += 1
         roi.sigRegionChanged.connect(lambda *_: self._recompute(item))
         self._items.append(item)
         self._active = item
         self._recompute(item, emit=False)
-        self.measurementAdded.emit()
+        if focus:
+            self.measurementAdded.emit()
         self.historyChanged.emit()
         self.resultChanged.emit()
 
@@ -204,6 +245,32 @@ def _make_roi(kind: str, view_box: Any) -> Any:
         )
     roi.setZValue(20)
     return roi
+
+
+def _make_roi_from_geometry(kind: str, geometry: Mapping[str, Any]) -> Any:
+    """Build an overlay at a stored nm geometry (the inverse of :func:`_geometry_of`)."""
+    if kind == "line":
+        p0, p1 = geometry["points"]
+        roi = pg.LineSegmentROI([list(p0), list(p1)], pen=_MEASURE_PEN)
+    elif kind == "rectangle":
+        roi = pg.RectROI(list(geometry["pos"]), list(geometry["size"]), pen=_MEASURE_PEN)
+    else:  # polygon
+        roi = pg.PolyLineROI(
+            [list(p) for p in geometry["points"]], closed=True, pen=_MEASURE_PEN
+        )
+    roi.setZValue(20)
+    return roi
+
+
+def _geometry_of(item: _Measurement, view_box: Any) -> dict[str, Any]:
+    """Read one measurement's geometry back as plain nm coordinates (for the session)."""
+    if item.kind == "line":
+        p0, p1 = _line_points(item.roi, view_box)
+        return {"points": [list(p0), list(p1)]}
+    if item.kind == "rectangle":
+        x0, y0, x1, y1 = _rect_bounds(item.roi)
+        return {"pos": [x0, y0], "size": [x1 - x0, y1 - y0]}
+    return {"points": [list(p) for p in _poly_vertices(item.roi, view_box)]}
 
 
 def _line_points(roi: Any, view_box: Any) -> tuple[tuple[float, float], tuple[float, float]]:
@@ -271,6 +338,18 @@ class MeasurementPanel(QtWidgets.QWidget):
         self._result_stack.addWidget(self._profile)
         self._result_stack.addWidget(self._table)
         layout.addWidget(self._result_stack, 1)
+
+        export_row = QtWidgets.QHBoxLayout()
+        copy_btn = QtWidgets.QPushButton("Copy")
+        copy_btn.setToolTip("Copy the active measurement's numbers (tab-separated) for paste")
+        copy_btn.clicked.connect(self.copy_active_csv)
+        csv_btn = QtWidgets.QPushButton("Export CSV...")
+        csv_btn.setToolTip("Save the active measurement's numbers as CSV (Excel / Origin / Python)")
+        csv_btn.clicked.connect(self.export_active_csv)
+        export_row.addWidget(copy_btn)
+        export_row.addWidget(csv_btn)
+        export_row.addStretch(1)
+        layout.addLayout(export_row)
 
         layout.addWidget(QtWidgets.QLabel("Measurements (this session)"))
         self._list = QtWidgets.QListWidget()
@@ -391,6 +470,43 @@ class MeasurementPanel(QtWidgets.QWidget):
             f"{report.kind.capitalize()} region:   {report.count} pixels   "
             f"area {report.area_nm2:.0f} nm&sup2;"
         )
+
+    # -- export (CSV / clipboard) ---------------------------------------------
+
+    def copy_active_csv(self) -> None:
+        """Copy the active measurement's numbers to the clipboard (tab-separated)."""
+        text = self._active_csv(delimiter="\t")
+        if text is not None:
+            QtWidgets.QApplication.clipboard().setText(text)
+
+    def export_active_csv(self) -> None:
+        """Save the active measurement's numbers as a CSV file (Excel / Origin / Python)."""
+        text = self._active_csv(delimiter=",")
+        if text is None:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Export measurement",
+                "Add a measurement and select it, then export its numbers.",
+            )
+            return
+        active = self._c.active
+        default = f"{active.name}.csv" if active is not None else "measurement.csv"
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Export measurement", default, "CSV (*.csv)"
+        )
+        if not path:
+            return
+        Path(path).write_text(text, encoding="utf-8")
+
+    def _active_csv(self, *, delimiter: str) -> str | None:
+        """CSV text for the active measurement's result, or ``None`` if there is none."""
+        active = self._c.active
+        if active is None or active.result is None:
+            return None
+        context = self._c.export_context()
+        if isinstance(active.result, ProfileSet):
+            return profile_to_csv(active.result, context, delimiter=delimiter)
+        return region_to_csv(active.result, context, delimiter=delimiter)
 
 
 __all__ = ["MeasurementController", "MeasurementPanel"]

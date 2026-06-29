@@ -15,13 +15,17 @@ the researcher can navigate back to the original measurement after a derivation.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from snomniman import viz
-from snomniman.core.exceptions import ProcessingError
+from snomniman.core.exceptions import DatasetError, ProcessingError, ReaderError
+from snomniman.io import export_channel_gsf, write_zarr
 from snomniman.knowledge import article_for_operation
+from snomniman.pipeline import Project, load_project, project_from_history, save_project
 from snomniman.viz import RenderData
 
 from .briefing import BriefingPanel
@@ -49,6 +53,10 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._model = model
         self._history: list[ExplorerModel] = []
         self._preview: OperationPreview | None = None
+        # The saved project this session is bound to (Save vs Save As), and the
+        # active comparison preset (persisted with the session view state).
+        self._project_path: Path | None = None
+        self._comparison_preset: str | None = None
 
         self._title = QtWidgets.QLabel()
         self._facts = QtWidgets.QLabel()
@@ -71,11 +79,48 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._measure = MeasurementController(model, self._image, model.single_view_specs)
         self._measure_panel = MeasurementPanel(self._measure)
 
+        self._build_menu()
         self._build_layout()
         self._wire()
         self._load()
 
     # -- construction ---------------------------------------------------------
+
+    def _build_menu(self) -> None:
+        """The File menu: open/save a project, open a measurement, and the exports.
+
+        Every action delegates to a handler; the menu holds no logic itself. Project
+        save/open reuse the pipeline persistence (a bundle of Zarr stores); the
+        exports reuse the existing io/viz writers.
+        """
+        file_menu = self.menuBar().addMenu("&File")
+        export_menu = QtWidgets.QMenu("&Export", self)
+        # Hold Python references so the QMenu wrappers stay valid (and testable).
+        self._file_menu = file_menu
+        self._export_menu = export_menu
+        self._menu_action(file_menu, "&New", self._new_measurement, "Ctrl+N")
+        self._menu_action(file_menu, "&Open Measurement...", self._open_measurement, "Ctrl+O")
+        self._menu_action(file_menu, "Open &Project...", self._open_project, "Ctrl+Shift+O")
+        file_menu.addSeparator()
+        self._menu_action(file_menu, "&Save Project", self._save_project, "Ctrl+S")
+        self._menu_action(file_menu, "Save Project &As...", self._save_project_as, "Ctrl+Shift+S")
+        file_menu.addSeparator()
+        file_menu.addMenu(export_menu)
+        self._menu_action(export_menu, "Processed &Data (Zarr)...", self._export_data_zarr)
+        self._menu_action(export_menu, "&Channel (GSF)...", self._export_channel_gsf)
+        self._menu_action(export_menu, "&Measurement (CSV)...", self._export_measurement_csv)
+        self._menu_action(export_menu, "&Figure...", self._export_figure)
+        file_menu.addSeparator()
+        self._menu_action(file_menu, "E&xit", self.close, "Ctrl+Q")
+
+    def _menu_action(
+        self, menu: QtWidgets.QMenu, text: str, slot: Any, shortcut: str | None = None
+    ) -> QtGui.QAction:
+        action = menu.addAction(text)
+        action.triggered.connect(slot)
+        if shortcut is not None:
+            action.setShortcut(shortcut)
+        return action
 
     def _build_layout(self) -> None:
         central = QtWidgets.QWidget()
@@ -231,6 +276,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._refresh_channel()
 
     def _show_comparison(self, preset: str) -> None:
+        self._comparison_preset = preset
         specs = self._model.comparison_layout(preset)
         self._comparison.set_panes(specs, self._model.render_spec)
         self._stack.setCurrentWidget(self._comparison)
@@ -308,6 +354,203 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
     def _operation_title(self, step_id: str) -> str:
         return self._model.operation_option(step_id).title
+
+    # -- project session: new / open / save -----------------------------------
+
+    def _new_measurement(self) -> None:
+        """Start a fresh analysis from a raw measurement (same gesture as Open)."""
+        self._open_measurement()
+
+    def _open_measurement(self) -> None:
+        path = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Open neaSNOM measurement directory"
+        )
+        if not path:
+            return
+        try:
+            model = ExplorerModel.open_measurement(path)
+        except ReaderError as exc:
+            QtWidgets.QMessageBox.critical(self, "Could not open measurement", str(exc))
+            return
+        self._project_path = None
+        self.load_explorer_model(model)
+
+    def _open_project(self) -> None:
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Open SNOMNIMAN project")
+        if not path:
+            return
+        try:
+            project = load_project(path)
+        except ReaderError as exc:
+            QtWidgets.QMessageBox.critical(self, "Could not open project", str(exc))
+            return
+        self.load_project_object(project)
+        self._project_path = Path(path)
+
+    def _save_project(self) -> None:
+        if self._project_path is None:
+            self._save_project_as()
+        else:
+            self._write_project(self._project_path)
+
+    def _save_project_as(self) -> None:
+        default = f"{self._model.title}.snomproj"
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save project as", default, "SNOMNIMAN project (*.snomproj)"
+        )
+        if not path:
+            return
+        bundle = Path(path)
+        if bundle.suffix != ".snomproj":
+            bundle = bundle.with_suffix(".snomproj")
+        self._write_project(bundle)
+
+    def _write_project(self, path: Path) -> None:
+        try:
+            save_project(self.current_project(), path, overwrite=True)
+        except (OSError, FileExistsError) as exc:
+            QtWidgets.QMessageBox.warning(self, "Save failed", str(exc))
+            return
+        self._project_path = path
+        QtWidgets.QMessageBox.information(self, "Project saved", f"Saved project:\n{path}")
+
+    def current_project(self) -> Project:
+        """Bundle the whole session (history + current + view + measurements) for saving."""
+        models = [*self._history, self._model]
+        datasets = [m.dataset for m in models]
+        session: dict[str, Any] = {
+            "titles": [m.title for m in models],
+            "view": self._view_state(),
+            "measurements": self._measure.to_records(),
+        }
+        return project_from_history(
+            datasets,
+            title=self._model.title,
+            current_index=len(self._history),
+            session=session,
+        )
+
+    def load_explorer_model(self, model: ExplorerModel) -> None:
+        """Reset the window to a single fresh measurement (New / Open Measurement)."""
+        self._history = []
+        self._preview = None
+        self._comparison_preset = None
+        self._process.set_preview_mode(False)
+        self._model = model
+        self._measure.set_model(model)
+        self._refresh_navigation()
+        self._load()
+
+    def load_project_object(self, project: Project) -> None:
+        """Rebuild the window from a saved :class:`Project` (history + session)."""
+        session = dict(project.session)
+        titles = session.get("titles")
+        models: list[ExplorerModel] = []
+        for index, dataset in enumerate(project.datasets):
+            title = titles[index] if isinstance(titles, list) and index < len(titles) else None
+            models.append(ExplorerModel(dataset, title=title if isinstance(title, str) else None))
+        self._history = models[: project.current_index]
+        self._model = models[project.current_index]
+        self._preview = None
+        self._comparison_preset = None
+        self._process.set_preview_mode(False)
+        self._measure.set_model(self._model)
+        self._refresh_navigation()
+        self._load()
+        self._restore_session(session)
+
+    def _view_state(self) -> dict[str, Any]:
+        current = self._stack.currentWidget()
+        mode = "single"
+        if current is self._comparison:
+            mode = "comparison"
+        elif current is self._contact:
+            mode = "contact"
+        return {
+            "channel": self._model.current_channel,
+            "representation": self._model.current_representation,
+            "mode": mode,
+            "preset": self._comparison_preset,
+        }
+
+    def _restore_session(self, session: Mapping[str, Any]) -> None:
+        """Restore the active view and the measurements from a loaded project."""
+        view = session.get("view") or {}
+        channel = view.get("channel")
+        if isinstance(channel, str) and channel in self._model.dataset.channel_names:
+            self._model.set_channel(channel)
+            representation = view.get("representation")
+            if isinstance(representation, str) and representation in self._model.representations():
+                self._model.set_representation(representation)
+            self._browser.select(channel)
+            self._refresh_channel()
+        records = session.get("measurements")
+        has_measurements = isinstance(records, list) and bool(records)
+        if isinstance(records, list) and records:
+            self._measure.load_records(records)
+        # Measurements live on the single image, so they force that view; otherwise
+        # restore whatever multi-pane view the session was last in.
+        mode = view.get("mode", "single")
+        preset = view.get("preset")
+        if not has_measurements and mode == "comparison" and isinstance(preset, str):
+            self._show_comparison(preset)
+        elif not has_measurements and mode == "contact":
+            self._show_contact()
+        else:
+            self._show_single()
+
+    # -- data export (processed dataset / channel / measurement) --------------
+
+    def _export_data_zarr(self) -> None:
+        """Export the current (processed) dataset as a loss-less canonical Zarr store."""
+        default = f"{self._model.title}.zarr"
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Export processed data (Zarr)", default, "Zarr store (*.zarr)"
+        )
+        if not path:
+            return
+        store_path = Path(path)
+        if store_path.suffix != ".zarr":
+            store_path = store_path.with_suffix(".zarr")
+        try:
+            written = write_zarr(self._model.dataset, store_path, overwrite=True)
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self, "Export failed", str(exc))
+            return
+        QtWidgets.QMessageBox.information(
+            self,
+            "Data exported",
+            f"Saved the processed dataset (full provenance) to:\n{written}",
+        )
+
+    def _export_channel_gsf(self) -> None:
+        """Export the channel/representation on screen as a Gwyddion Simple Field grid."""
+        channel = self._model.current_channel
+        representation = self._model.current_representation
+        default = f"{self._model.title}_{channel}_{representation}.gsf"
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Export channel (GSF)", default, "Gwyddion Simple Field (*.gsf)"
+        )
+        if not path:
+            return
+        try:
+            gsf_path, provenance_path = export_channel_gsf(
+                self._model.dataset, channel, path, representation=representation
+            )
+        except (OSError, DatasetError) as exc:
+            QtWidgets.QMessageBox.warning(self, "Export failed", str(exc))
+            return
+        QtWidgets.QMessageBox.information(
+            self,
+            "Channel exported",
+            f"Saved {channel} ({representation}):\n{gsf_path}\n\n"
+            f"with provenance:\n{provenance_path.name}",
+        )
+
+    def _export_measurement_csv(self) -> None:
+        """Export the active measurement's numbers as CSV (delegates to the Measure panel)."""
+        self._inspect_tabs.setCurrentWidget(self._measure_panel)
+        self._measure_panel.export_active_csv()
 
     # -- publication export ---------------------------------------------------
 

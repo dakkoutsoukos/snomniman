@@ -10,17 +10,20 @@ verbatim rather than discarded.
 
 from __future__ import annotations
 
+from .export import GSF_EXPORT_FORMAT, export_channel_gsf
 from .gsf import GsfFile, parse_gsf, read_gsf, write_gsf
 from .neasnom import READER_ID, read_neasnom_measurement
 from .registry import available_readers, get_reader, read, register, sniff
 from .zarrstore import STORE_FORMAT, STORE_SCHEMA_VERSION, read_zarr, write_zarr
 
 __all__ = [
+    "GSF_EXPORT_FORMAT",
     "READER_ID",
     "STORE_FORMAT",
     "STORE_SCHEMA_VERSION",
     "GsfFile",
     "available_readers",
+    "export_channel_gsf",
     "get_reader",
     "parse_gsf",
     "read",

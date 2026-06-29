@@ -2467,3 +2467,94 @@ scientific honesty.
 ### Next
 - A *positive* reference-normalization rule remains deferred until a genuinely-referenced
   golden measurement validates the appropriateness branch `(user)`.
+
+---
+
+## 2026-06-29 - Complete the research workflow: project save/reopen + data/measurement export (ADR-0027)
+
+The first **end-to-end** product milestone: close the Beta Readiness Critical cluster so a
+researcher can finish a real analysis and resume it later. Implemented C1 (export the
+processed dataset), C2 (export measurement numbers), and H1 (project save/reopen) - each
+*exposing a backend capability that already existed* (the Zarr store, the GSF writer, the
+provenance DAG, the measurement engine), with **no new scientific subsystem** and no
+architecture redesign (one new acyclic dependency edge, `pipeline -> io`). C3
+(multi-measurement) and AI/spectral/batch were explicitly out of scope.
+
+### Completed
+- **`snomniman.pipeline.project` (implements the long-stubbed package):** `Project`
+  (datasets oldest->newest + `current_index` + an opaque `session` mapping),
+  `save_project`/`load_project`/`project_from_history`. A project saves as a
+  `<name>.snomproj` **bundle** - one canonical Zarr store per dataset (reusing
+  `io.write_zarr`/`read_zarr` verbatim) plus a `project.json` manifest (format marker
+  `snomniman.project`, schema_version, dataset order, current index, the session blob).
+  Because every dataset serializes its own provenance DAG, the **processing history
+  round-trips for free**; raw immutability is restored exactly as on first import. Overwrite
+  is refused unless the target is empty or an existing project bundle (never clobbers
+  unrelated dirs).
+- **`snomniman.io.export.export_channel_gsf`:** export one channel as a Gwyddion Simple
+  Field grid - a complex channel as amplitude/phase/real, float32, flipped back to GSF
+  top-to-bottom (the exact inverse of the reader's import flip), with a header built from the
+  canonical nm coordinates - plus a `<file>.provenance.json` sidecar embedding the serialized
+  DAG, source anchor, and conventions (a GSF file cannot hold a DAG), mirroring the figure
+  export. Zarr stays the loss-less path; GSF is the lossy single-grid interchange path.
+- **`snomniman.gui.export` (Qt-free):** `profile_to_csv` / `region_to_csv` + `ExportContext` -
+  a commented provenance header (measurement, source+sha, geometry/region, conventions,
+  provenance chain, version) then a clean table with explicit unit-bearing column headers;
+  delimiter-parameterized (`,` for a file, tab for clipboard). Numbers come from the validated
+  `viz.measure` backend; NaN -> blank cell.
+- **GUI wiring (`window.py`, `measurement.py`, `app.py`):** a **File menu** (New, Open
+  Measurement, Open Project, Save Project, Save Project As, an Export submenu - Processed Data
+  (Zarr) / Channel (GSF) / Measurement (CSV) / Figure - and Exit) with the standard shortcuts;
+  `current_project()` bundles the history + current + view + measurements; `load_project_object`
+  rebuilds the whole session (history stack, active dataset, channel/representation/view, and
+  the measurement overlays); the Measure panel gained `Copy` + `Export CSV...`; the
+  MeasurementController gained `to_records()`/`load_records()` (geometry persisted in canonical
+  nm). `python -m snomniman.gui <path>` now opens a `.snomproj` bundle or a raw measurement.
+- **Verified end-to-end on the real CdO measurement** (headless): load (32 channels) -> plane
+  level Z -> save project -> reopen -> the derived dataset returns with `[io.read,
+  image.plane_level]` provenance and bit-identical Z -> export Zarr (reloadable) + GSF (round-
+  trips to float32). The offscreen GUI tests cover the same path through the window (save in
+  one window, reopen in a fresh one, measurements + channel restored).
+
+### Decisions
+- **ADR-0027.** Project persistence lives in `pipeline` (its constitutional home) and reuses
+  the Zarr store, adding the single acyclic edge `pipeline -> io` (no second dataset
+  serialization, Rule 2). GSF channel export lands in `io`; measurement CSV is Qt-free
+  presenter logic in `gui`. Derived datasets are **stored faithfully** rather than replayed
+  (reproducibility first; the DAG is still fully persisted, so replay stays a future
+  optimization). Persistent "Recent Projects" deferred (needs a settings store - out of scope).
+- **"New" == "Open Measurement"** in this single-measurement app (both start a fresh analysis
+  from a raw directory); kept as separate menu items per the brief.
+
+### Issues Found
+- A PySide6 wrapper-lifetime quirk: re-wrapping the File QMenu via `action.menu()` in a test
+  hit "C++ object already deleted." Fixed by holding Python references to the menus on the
+  window (`self._file_menu`/`self._export_menu`) - the established in-package test style.
+- No scientific-logic leak into Qt: the CSV builders and the project/export logic are Qt-free
+  and unit-tested headlessly; the widgets only choose a destination/delimiter (Rule 4).
+
+### Tests / gates
+- +34 tests (447 total, up from 413): `test_project_store.py` (14 - round-trip incl. a derived
+  2-node DAG + the real golden measurement, session/current restore, overwrite + foreign-dir +
+  bad-manifest + validation guards), `test_io_export.py` (8 - amplitude/phase/real round-trip,
+  header + units, sidecar, invalid-representation guards, non-mutation), `test_gui_export.py`
+  (4 - CSV headers/units/values/NaN/tab, Qt-free), `test_gui_session.py` (8 - File menu, save
+  then reopen restores history+channel+measurements, the open handler, records round-trip, and
+  the three exports through the window). `ruff` clean; `mypy --strict` clean (63 files); the
+  Qt-free invariant green (pipeline now imports io - both Qt-free).
+
+### Documentation Updated
+- `docs/decisions.md` (ADR-0027 + date), `docs/architecture.md` (layer graph `pipeline -> io`,
+  Section 3 pipeline/io/viz/gui, Section 10 export row, status/date), `docs/data-model.md`
+  (Section 10 persistence formats + the `.snomproj` bundle layout + the Project round-trip
+  invariant), `CLAUDE.md` (status block, layer graph, io/pipeline module lines, 447),
+  `docs/beta-readiness-v1.md` (C1/C2 + H1 marked done). `LOG.md` (this entry), `NEXT.md`,
+  project memory.
+
+### Next Recommended Actions
+- **Product (Beta Readiness):** C3 - open more than one measurement at once (a multi-measurement
+  session); then the High tier (H2 keyboard navigation, H3 background subtraction + height
+  zero/offset, H4 absolute-value profile, H5 verbatim vendor-header view). Strongly recommended:
+  run the user-testing protocol now that a full workday is possible end-to-end.
+- **Science:** the open Validation Queue items (poor-scan/drift detection; the deferred
+  phase-wrapping and positive reference-normalization rules await a suitable golden measurement).

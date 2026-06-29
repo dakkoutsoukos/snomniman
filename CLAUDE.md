@@ -9,14 +9,18 @@ rather than repeating them.
 2. `NEXT.md` - what to work on right now, blockers, open questions.
 3. `LOG.md` - recent history (newest entries at the bottom).
 
-> **Project status (2026-06-28): Phase 1 COMPLETE; read-only Explorer + generic
+> **Project status (2026-06-29): Phase 1 COMPLETE; Explorer + generic
 > Processing Workspace + Description API + Diagnostics Engine + AI Scientist
 > (Scientific Briefing + deterministic Suggested Next Steps) + Knowledge Center
-> shipped. Foundational development is complete; the project is now governed by two
-> permanent planning systems (see "Planning and Governance").**
+> shipped, and now the complete research workflow - project save/reopen + processed-
+> data / measurement / figure export (ADR-0027) - so a researcher can load, analyze,
+> process, save, reopen, and export end-to-end. Foundational development is complete;
+> the project is now governed by two permanent planning systems (see "Planning and
+> Governance").**
 > Backend validated end-to-end against the real neaSNOM GSF measurement directory:
 > `snomniman.core`; `snomniman.io` (GSF parser, neaSNOM reader, registry, canonical
-> **Zarr** store - `Dataset -> Zarr -> Dataset` round-trips loss-lessly, OHD-3);
+> **Zarr** store - `Dataset -> Zarr -> Dataset` round-trips loss-lessly, OHD-3 - plus
+> GSF channel export with a provenance sidecar);
 > `snomniman.viz` (display-ready render data, quantitative line/ROI measurement,
 > provenance-bearing publication figures); `snomniman.processing` (the
 > `ProcessingStep` engine + a growing operation vocabulary - `image.plane_level`,
@@ -45,12 +49,20 @@ rather than repeating them.
 > Accept/Cancel derivation - never mutating the raw measurement. A suggested next step
 > Previews straight into the Workspace (no AI-specific execution path). Adding a new
 > operation needs **no GUI code** (implement, register, declare params + capabilities).
+> A **File menu** completes the workflow (ADR-0027): New / Open Measurement / Open
+> Project / Save / Save As, and exports for the processed dataset (Zarr loss-less /
+> GSF grid + provenance sidecar), measurement numbers (CSV / clipboard), and figures.
+> A **project** (`snomniman.pipeline`: `Project` + `save_project`/`load_project`) is a
+> `.snomproj` bundle - one canonical Zarr store per dataset (raw + every derivation)
+> plus a manifest - so a whole session (history, active selection, view, measurements)
+> reopens exactly where it left off, with the full provenance DAG and raw immutability
+> intact.
 > A **Knowledge Center** (`snomniman.knowledge`, ADR-0024) teaches the science in-app:
 > a browsable/searchable base of curated, interconnected articles (concepts, every
 > operation, diagnostics, the AI's philosophy), with "Learn more" deep-links from
 > operations and recommendations - the same curated content a future AI narrator grounds
 > its explanations in.
-> 373 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> 447 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
@@ -166,10 +178,12 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
 **Module responsibilities (one line each):**
 - `snomniman.core` - the data model; depends on nothing internal.
 - `snomniman.io` - import/export; reader *registry* (not a plugin system); readers
-  (neaSNOM imaging first); Zarr writers; h5py for vendor HDF5.
+  (neaSNOM imaging first); Zarr writers; GSF channel export (+ provenance sidecar);
+  h5py for vendor HDF5.
 - `snomniman.processing` - operations as `ProcessingStep`s (command pattern) + registry.
 - `snomniman.pipeline` - the reproducibility engine: provenance **DAG**, replay,
-  (de)serialization, environment/operation-version capture, `Project`.
+  (de)serialization, environment/operation-version capture, and the `Project` bundle
+  with save/reopen persistence (reusing the `io` Zarr store; depends on `io` - ADR-0027).
 - `snomniman.describe` - the Scientific Description API: a Qt-free, read-only
   projection of `core` + the step registry into structured, JSON-serializable
   descriptors (consumed by `gui`/`batch`/future `ai`; not `viz`).

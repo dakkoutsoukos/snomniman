@@ -3,9 +3,10 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-28 (shipped the harmonic signal-vs-noise classification - Candidate 2,
-the first Scientific-Validation **Outcome 1**, ADR-0026; earlier: beta blocker C4
-`image.line_flatten`. Governance: the Scientific Validation Phase + Beta Readiness Review remain
+**Last updated:** 2026-06-29 (shipped the complete research workflow - project save/reopen +
+processed-data / measurement / figure export, ADR-0027: beta blockers **C1, C2, and H1 done**.
+Earlier: harmonic signal-vs-noise classification - Candidate 2, Outcome 1, ADR-0026; beta blocker
+C4 `image.line_flatten`. Governance: the Scientific Validation Phase + Beta Readiness Review remain
 the planning systems)
 
 ---
@@ -35,25 +36,31 @@ Implement only at their intersection - *needed* **and** *validated*. See `CLAUDE
 Beta Readiness Section 3, Critical. Each **reuses an abstraction that already exists** -
 no new subsystem, and (for operations) no GUI code. Ordered. `(user)` = needs a human action.
 
-1. **C1 - Export the processed dataset.** Wire the existing `io.write_zarr` (and/or
-   `write_gsf`) into the GUI as "Export data...". Without it a beta tester cannot keep
-   their work; also closes most of the Phase 4 reproducibility gap. (G1)
-2. **C2 - Export measurement numbers.** Profile samples + region statistics to CSV +
-   copy-to-clipboard on the stats table; reuses `viz` `ProfileSet` / `RegionReport`. (G2)
+1. **C1 - Export the processed dataset. DONE (2026-06-29, ADR-0027).** GUI "Export ->
+   Processed Data (Zarr)" wires `io.write_zarr` (loss-less); "Export -> Channel (GSF)" adds
+   `io.export_channel_gsf` (one real grid + a provenance sidecar). Closes most of the Phase 4
+   reproducibility gap. (G1)
+2. **C2 - Export measurement numbers. DONE (2026-06-29, ADR-0027).** The Measure panel gained
+   `Copy` + `Export CSV...`; Qt-free `gui.export` builders turn `ProfileSet` / `RegionReport`
+   into CSV (provenance header, unit-bearing columns) over the validated `viz.measure`
+   numbers. (G2)
 3. **C4 - `image.line_flatten`. DONE (2026-06-28).** Registered `ProcessingStep` for
    per-scan-line median/mean/polynomial baseline removal (the genuinely-new flattening
    verb, distinct from `image.plane_level`; no `polynomial_flatten`, Rule 2). Validated
    analytically + on real CdO data, Knowledge article added, auto-surfaced in the
    Workspace/Diagnostics/Briefing with no GUI code. No auto-recommendation rule (needs a
    validated line-artifact diagnostic - a future science-track study). See `LOG.md`. (G4)
-4. **C3 - Open more than one measurement.** A File menu / Open / Recent so a multi-scan
-   session is possible without relaunching. GUI-only. (G3)
+4. **C3 - Open more than one measurement. NEXT.** A File menu / Open / Recent so a multi-scan
+   session is possible without relaunching. GUI-only. The File menu now exists (ADR-0027), so
+   this is the remaining multi-measurement-session work. (G3)
 
-Then the **High** tier: H1 project save/reopen (serialize the provenance DAG -> meets the
-Phase 4 exit criterion; follows C1), H2 keyboard navigation + persist representation, H3
-background subtraction + height zero/offset, H4 absolute-value profile + on-profile
-readout, H5 verbatim vendor-header view + metadata search/copy. Full ordered backlog:
-[`docs/beta-readiness-v1.md`](docs/beta-readiness-v1.md) Section 7.
+The **High** tier: **H1 project save/reopen - DONE (2026-06-29, ADR-0027):** `snomniman.pipeline`
+`Project` + `save_project`/`load_project` (a `.snomproj` bundle of Zarr stores + manifest) reopen
+a whole session with its provenance DAG intact -> meets the Phase 4 exit criterion. Remaining:
+H2 keyboard navigation + persist representation, H3 background subtraction + height zero/offset,
+H4 absolute-value profile + on-profile readout, H5 verbatim vendor-header view + metadata
+search/copy. Full ordered backlog: [`docs/beta-readiness-v1.md`](docs/beta-readiness-v1.md)
+Section 7.
 
 ---
 

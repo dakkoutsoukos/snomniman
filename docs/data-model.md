@@ -238,15 +238,18 @@ Schema versions are explicit so formats can evolve with migrations.
 
 | Artifact | Format | Notes |
 |---|---|---|
-| Canonical project store (datasets + derived) | **Zarr** (OHD-3) | complex-native, chunked, JSON attrs; suits large cubes + rich metadata |
+| Canonical dataset store | **Zarr** (OHD-3) | complex-native, chunked, JSON attrs; suits large cubes + rich metadata. One per dataset |
+| Project (a session: datasets + derived + state) | **`.snomproj` bundle** (ADR-0027) | a directory of per-dataset Zarr stores + a `project.json` manifest |
 | Provenance DAG / project metadata | JSON | human-readable, diffable, version-controllable |
 | Manifest | JSON | raw sources (relative path + sha256 + bytes + reader) |
 | Vendor file reading | format-specific readers | Phase 1: GSF measurement directories (neaSNOM); h5py for future HDF5-based formats; vendor formats are independent of the store |
-| Exported figures | PDF/SVG/PNG (matplotlib) | vector for publication |
-| Exported data | CSV / Zarr / HDF5 | tabular spectra, ROI stats, etc. |
+| Exported figures | PDF/SVG/PNG (matplotlib) | vector for publication; provenance sidecar |
+| Exported dataset | Zarr (loss-less) / GSF (one real grid + `.provenance.json`) | the whole dataset, or one channel/representation for Gwyddion/neaPLOT |
+| Exported measurement | CSV / clipboard TSV | line profiles + region statistics, with a provenance header and physical units |
 
-Raw vendor files are **never overwritten or modified**. A self-contained export
-bundle (raw copied in + manifest + derived results) is a later deliverable.
+Raw vendor files are **never overwritten or modified**. A project bundle embeds the
+*dataset arrays* (so a session reopens without the vendor files) while still
+referencing each raw source by path + sha256.
 
 **Canonical store layout (implemented in `snomniman.io.zarrstore`).** A `Dataset`
 is written with `write_zarr` and reconstructed with `read_zarr`. The labeled
@@ -261,6 +264,17 @@ on load* (pure functions of the array data), never stored, so they cannot drift.
 Stores are written `consolidated=False` (Zarr v3 spec) and loaded eagerly, so the
 reconstructed arrays are frozen and immutable exactly as on first import.
 
+**Project bundle layout (implemented in `snomniman.pipeline`, ADR-0027).** A whole
+analysis session is a `Project` (the datasets oldest-to-newest, a `current_index`,
+and an opaque `session` document). `save_project` writes a `<name>.snomproj`
+directory: `datasets/dataset_NN.zarr` (one canonical store per dataset, reusing
+`write_zarr`) plus `project.json` (format marker `snomniman.project`, a
+`schema_version`, the dataset order, `current_index`, and the `session` blob, which
+`pipeline` stores verbatim - the GUI uses it for view/layout and measurement state).
+`load_project` restores each dataset with `read_zarr`, so the full provenance DAG and
+raw immutability come back intact; the processing history is preserved because it
+lives inside each dataset's store, not in the manifest.
+
 ## 11. Invariants (enforced by tests)
 
 - A raw `Dataset` loaded from a `RawSource` has empty history and is never mutated
@@ -268,7 +282,8 @@ reconstructed arrays are frozen and immutable exactly as on first import.
 - Every processing step returns a new `Dataset` whose provenance node is the
   inputs' graph plus exactly one `StepRecord`.
 - `Dataset -> Zarr -> Dataset` round-trips data, coordinates, units, conventions,
-  and metadata without loss.
+  and metadata without loss; `Project -> .snomproj -> Project` round-trips every
+  dataset (with its provenance DAG), the active selection, and the session state.
 - Replaying the provenance DAG on unchanged `RawSource`s reproduces the recorded
   result; for steps declared **deterministic** on a matching environment, output
   fingerprints match bit-for-bit; otherwise results reproduce to a documented

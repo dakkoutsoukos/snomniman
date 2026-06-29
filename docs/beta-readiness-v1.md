@@ -203,23 +203,26 @@ deliberate scope decisions for later phases. G7 is polish.
 ## 3. Beta blockers
 
 ### Critical - must land before an open beta
-- **C1. Save / export the processed dataset.** Wire the existing `write_zarr` (and/or
-  `write_gsf`) into the GUI as "Export data...". Without it a beta tester literally
-  cannot keep their work. (G1)
-- **C2. Export measurement data.** Profile samples and region statistics to CSV, plus
-  copy-to-clipboard on the stats table. Cheap; removes a guaranteed daily exit. (G2)
-- **C3. Open more than one measurement.** At minimum a File -> Open that replaces or
+- **C1. Save / export the processed dataset. DONE (2026-06-29, ADR-0027).** GUI "Export ->
+  Processed Data (Zarr)" wires `write_zarr` (loss-less, full provenance); "Export -> Channel
+  (GSF)" adds `export_channel_gsf` (one real grid + a `.provenance.json` sidecar). (G1)
+- **C2. Export measurement data. DONE (2026-06-29, ADR-0027).** The Measure panel gained
+  `Copy` + `Export CSV...`; Qt-free `gui.export` builders render `ProfileSet`/`RegionReport`
+  as CSV (provenance header + unit-bearing columns). (G2)
+- **C3. Open more than one measurement. NEXT.** At minimum a File -> Open that replaces or
   adds a measurement without relaunch; ideally a small Recent list. A session is
-  multi-scan. (G3)
-- **C4. `image.line_flatten`.** A registered ProcessingStep for line-by-line offset/
-  bow removal - the most-missed topography operation. Implement + register + declare
-  params/capabilities + Knowledge article (the no-drift test will require it); zero GUI
-  work by design. (G4)
+  multi-scan. (G3) *(The File menu now exists - ADR-0027 - so this is the remaining
+  multi-measurement-session work.)*
+- **C4. `image.line_flatten`. DONE (2026-06-28).** A registered ProcessingStep for
+  line-by-line offset/bow removal - the most-missed topography operation. Validated +
+  Knowledge article; zero GUI work by design. (G4)
 
 ### High - strongly recommended for beta
-- **H1. Project save / reopen.** Serialize the provenance DAG (the pipeline layer is
-  designed for exactly this) so a session reopens and replays from project + raw -
-  meeting the Phase 4 exit criterion. Naturally follows C1.
+- **H1. Project save / reopen. DONE (2026-06-29, ADR-0027).** `snomniman.pipeline` `Project`
+  + `save_project`/`load_project` persist a session as a `.snomproj` bundle (a Zarr store per
+  dataset + a manifest); reopening restores every dataset with its provenance DAG intact -
+  meeting the Phase 4 exit criterion. (Storage of derived datasets is faithful rather than
+  replay-on-load; the DAG is fully persisted, so replay stays a future optimization.)
 - **H2. Keyboard navigation.** Arrow keys step harmonics; a single key toggles
   amplitude/phase; *persist the representation across channel switches*. Makes browsing
   feel like turning a dial.
@@ -357,12 +360,13 @@ Each area scored out of 5, with justification grounded in the running app.
   judgments it cannot defend (the deferred phase-unwrap rule). Nothing observed
   overstates what is measured.
 
-- **Reproducibility - 4.0.** Every derivation records a provenance node (sources,
-  params, software + operation versions); the exported figure carries a full
-  regeneratable spec and caption. It is not 5.0 because reproducibility currently lives
-  **in memory and in the figure sidecar** - the GUI cannot save the project or the
-  processed dataset, so a session cannot be reopened and replayed. Wiring `write_zarr`
-  + DAG serialization (C1/H1) closes this to 5.0.
+- **Reproducibility - 5.0 (was 4.0; closed 2026-06-29, ADR-0027).** Every derivation
+  records a provenance node (sources, params, software + operation versions); the exported
+  figure carries a full regeneratable spec and caption. The remaining gap - reproducibility
+  living only in memory and in the figure sidecar - is now closed: the GUI **saves and
+  reopens the project** (a `.snomproj` bundle of Zarr stores + manifest, C1/H1) and
+  **exports the processed dataset** (Zarr loss-less / GSF), so a whole session reopens with
+  its provenance DAG intact and raw data immutable.
 
 - **Trust - 4.5.** The v0.1 trust gap (an image whose scale you cannot see) is fixed:
   colorbar + histogram + explicit contrast make the scale visible and adjustable, and

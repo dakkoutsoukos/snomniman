@@ -4,7 +4,7 @@
 Diagnostics / AI / Knowledge layers are implemented (ADR-0018..0024). **Foundational
 development is complete** - new capability now enters via the governance process
 (Section 10), extending these layers rather than adding new ones.
-**Last updated:** 2026-06-28
+**Last updated:** 2026-06-29 (project persistence + data/measurement export, ADR-0027)
 
 Authoritative description of the system's structure. When the architecture changes,
 this file changes in the same commit, with rationale in [`decisions.md`](decisions.md).
@@ -37,8 +37,9 @@ reverse). `core` imports nothing else in the project. There are no cycles.
   +----------------+   +-------------------+   +----------------+
   | snomniman.batch|-->| snomniman.pipeline|   | snomniman.viz  |
   | headless runs  |   | provenance DAG,   |   | display-ready  |
-  | over many srcs |   | replay, (de)ser.  |   | data + mpl     |
-  +----------------+   +-------------------+   | static export  |
+  | over many srcs |   | replay, (de)ser., |   | data + mpl     |
+  | (stub)         |   | Project save/open |   | static export  |
+  +----------------+   +-------------------+   +----------------+
                             | uses             +----------------+
                             v                          |
                      +-------------------+              |
@@ -52,15 +53,19 @@ reverse). `core` imports nothing else in the project. There are no cycles.
   | snomniman.io   |-->|  snomniman.core   |<-----------+
   | reader registry|   | Dataset, DataKind+|
   | readers/writers|   | capabilities,     |
-  +----------------+   | Metadata, units,  |
-                       | RawSource,        |
-                       | provenance VOs    |
+  | + project store|   | Metadata, units,  |
+  | (Zarr) + export|   | RawSource,        |
+  +----------------+   | provenance VOs    |
                        +-------------------+
+   (pipeline also -> io: it persists a Project via the Zarr store, ADR-0027)
 ```
 
 **Dependency rule (enforced):** `core` depends on nothing internal; nothing in the
-backend imports `gui`; no cycles. Checked in CI (a dependency/import test; the
-Qt-free part is already enforced by `tests/test_smoke.py`).
+backend imports `gui`; no cycles. `pipeline` depends on `io` (and `processing`,
+`core`): persisting a `Project` reuses the canonical Zarr store rather than a second
+dataset serialization (ADR-0027); this is acyclic because `io -> core` only. Checked
+in CI (a dependency/import test; the Qt-free part is already enforced by
+`tests/test_smoke.py`).
 
 **Scientific Description API:** `snomniman.describe` is a Qt-free, read-only layer
 (depends on `core` + `processing`; the `pipeline` tier) that projects the core and
@@ -122,8 +127,12 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
   for future HDF5-based vendor formats. Each reader returns a `Dataset` with correct
   dims, coords, canonical units, channels, and a populated `Metadata` + `RawSource`;
   unknown header fields preserved verbatim.
-- `writers/`: persistence to the **canonical Zarr store** (OHD-3) and export of
-  derived data (CSV, ...).
+- `writers/`: persistence to the **canonical Zarr store** (OHD-3,
+  `write_zarr`/`read_zarr`) and **export** of derived data - a channel to a
+  Gwyddion Simple Field grid with a provenance sidecar (`export_channel_gsf`,
+  ADR-0027). The Zarr store is the loss-less project format; GSF is the lossy,
+  single-grid interchange format. (The multi-dataset `Project` bundle is assembled
+  one layer up, in `pipeline`, reusing these writers.)
 - **Validation note (Rule 6):** exact vendor formats are *not assumed*; readers
   are validated against real files and cross-checked against neaPLOT.
 
@@ -189,16 +198,22 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
   recommendations, no execution** (a later milestone).
 - **Implemented (v1).** See `docs/ai-scientist-v1.md` (ADR-0020).
 
-### `snomniman.pipeline` - reproducibility engine (depends on `processing`, `core`)
+### `snomniman.pipeline` - reproducibility engine (depends on `io`, `processing`, `core`)
 - The **provenance DAG** (OHD-2): nodes are operations with named inputs, allowing
   multi-input workflows (sample/reference normalization, background subtraction,
   calibration inputs, stitched scans).
-- `replay`: reconstructs every derived dataset from sources + the DAG (Rule 5).
-- `serialization`: DAG/Project <-> JSON (schemas in `data-model.md`).
+- `Project` **(implemented, ADR-0027):** a whole analysis session - the raw
+  measurement, every derived dataset, which one is active, and an opaque `session`
+  document (the GUI's view + measurement state). `save_project`/`load_project`
+  persist it as a `<name>.snomproj` **bundle**: one canonical Zarr store per dataset
+  (reusing `io.write_zarr`/`read_zarr`) plus a JSON manifest. Because each dataset
+  serializes its full provenance DAG, the processing history round-trips; raw data
+  stays immutable.
+- `replay`: reconstruct a derived dataset from sources + the DAG (Rule 5) - a future
+  optimization; today every derivation is stored faithfully in the bundle.
+- `serialization`: DAG <-> JSON (schemas in `data-model.md`).
 - `environment`: captures `snomniman` + library versions and operation versions
   for full traceability (OHD-5).
-- `Project`: sources + DAG (+ view state later). References raw files by path +
-  hash; **never copies or mutates raw data.**
 
 ### `snomniman.viz` - visualization model and static export (depends on `core`)
 - Backend-neutral display-ready data (array, physical extent honoring the
@@ -209,7 +224,8 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
   keeping `viz` Qt-free.
 - **Implemented:** `render` - the `RenderData` value object + `prepare_channel`
   (honest amplitude/phase, cyclic colormap for phase, robust ranges, lower-left
-  pixel-edge extent) + `pick_scale_bar`. matplotlib static export not yet built.
+  pixel-edge extent) + `pick_scale_bar`; `measure` (line/region quantitative
+  measurement); and `figure` - provenance-bearing matplotlib publication export.
 
 ### `snomniman.batch` - headless multi-dataset runs (depends on `pipeline`, `io`, `core`)
 - Applies a DAG (or template) across many sources, emitting results + a per-result
@@ -221,12 +237,16 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
 - Strictly a consumer: it builds steps/graphs and calls the backend. **No
   scientific computation in widgets, dialogs, event handlers, or view classes**
   (Rule 4); every GUI feature must also satisfy Rule 9 (improve understanding).
-- **Implemented:** the read-only **Measurement Explorer** - a Qt-free
-  `ExplorerModel` presenter plus thin PyQtGraph/PySide6 widgets (image view,
-  channel browser, metadata + provenance inspectors, cursor readout) and the
-  `python -m snomniman.gui` entry point. Open/browse/inspect only; processing,
-  editing, export, and AI authoring are not yet built. The package `__init__` does
-  not import Qt, so the presenter and backend import without the `gui` extra.
+- **Implemented:** the **Measurement Explorer** - a Qt-free `ExplorerModel`
+  presenter plus thin PyQtGraph/PySide6 widgets (image view, channel browser,
+  metadata/provenance/diagnostics inspectors, the Scientific Briefing, the generic
+  Processing Workspace, interactive measurements, and the Knowledge Center) and the
+  `python -m snomniman.gui` entry point. It now also closes the research workflow
+  (ADR-0027): a **File menu** for New / Open Measurement / Open Project / Save / Save
+  As, and **exports** for the processed dataset (Zarr / GSF), measurement numbers
+  (CSV / clipboard), and publication figures. Scientific logic stays in the Qt-free
+  presenter/backend (Rule 4); the package `__init__` does not import Qt, so the
+  presenter and backend import without the `gui` extra.
 
 ## 4. Key patterns
 
@@ -341,7 +361,7 @@ both **extends an existing abstraction** (Rule 7). The mapping is fixed:
 | A deterministic **recommendation** | `snomniman.ai.reasoning` | a registered `ReasoningRule` (ADR-0023) |
 | A deterministic **operation** | `snomniman.processing` | a registered `ProcessingStep` (ADR-0021) |
 | Its **teaching** content | `snomniman.knowledge` | a curated `Article` (ADR-0024) |
-| An **export / persistence** path | `snomniman.io`, `snomniman.viz` | a writer the GUI calls (the top product gap) |
+| An **export / persistence** path | `snomniman.io`, `snomniman.viz`, `snomniman.pipeline` | a writer the GUI calls; project bundles via `pipeline` over `io` (ADR-0027, **shipped**) |
 
 Because the Diagnostics panel, the AI Scientist panel, the Processing Workspace, and
 the Knowledge Center are **generic and registry-driven**, a capability registered in

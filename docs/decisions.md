@@ -1,6 +1,6 @@
 # Decisions (ADR log)
 
-**Status:** Living document - **Last updated:** 2026-06-23 (measurement discovery; format corrections)
+**Status:** Living document - **Last updated:** 2026-06-29 (ADR-0027: project persistence + data/measurement export)
 
 Architecture Decision Records, lightweight. Each entry: context -> decision ->
 alternatives -> consequences -> status. New major decisions are appended here in
@@ -530,6 +530,45 @@ background nor "best harmonic." 415 tests pass (analytical + synthetic + two-sid
 + briefing/GUI integration); `ruff`, `mypy --strict`, and the Qt-free invariant green.
 `diagnostics-engine.md`, `knowledge-center.md`, `scientific-validation.md`, and
 `next-scientific-priorities.md` are updated.
+
+## ADR-0027 - Project persistence + data/measurement export; `pipeline -> io`  [ACCEPTED]
+**Context.** Beta Readiness Section 3 names three Critical workflow gaps that complete the
+research workflow: **C1** (export the processed dataset), **C2** (export measurement numbers),
+and **H1** (save/reopen a project - the Phase-4 reproducibility exit criterion). Each is meant to
+*expose a capability the backend already has* (the Zarr store, the GSF writer, the provenance DAG,
+the measurement engine), not to add a new scientific subsystem. The open design question was where
+project persistence lives, because `Project` is documented in `pipeline` (a stub until now) while
+the Zarr store lives in `io`, and persisting a project inherently needs that store.
+**Decision.** (1) **Project persistence lands in `snomniman.pipeline`** (`Project`,
+`save_project`, `load_project`, `project_from_history`) - its constitutionally-documented home. A
+project is a **bundle**: a `<name>.snomproj` directory holding one canonical Zarr store per dataset
+(reusing `io.write_zarr`/`read_zarr` verbatim) plus a `project.json` manifest (dataset order,
+`current_index`, and an **opaque** `session` document). Because each dataset already serializes its
+full provenance DAG, the processing history round-trips for free. This adds one acyclic dependency
+edge **`pipeline -> io`** (no cycle: `io -> core` only). (2) **GSF channel export lands in `io`**
+(`export_channel_gsf`): a single real-valued grid per call (a complex channel as amplitude / phase
+/ real), float32, flipped back to GSF top-to-bottom, with a `.provenance.json` sidecar carrying the
+serialized DAG (a single GSF file cannot hold a DAG) - mirroring the figure export. (3)
+**Measurement CSV export** is Qt-free presenter logic in `gui/export.py` (the `ProfileSet` /
+`RegionReport` value objects live in `gui.model`; the numbers come from the validated `viz.measure`
+backend) with a provenance header; the widgets only choose a delimiter and a destination.
+**Alternatives.** (a) Put `Project` in `io` (no new edge) - rejected: contradicts the constitution's
+explicit assignment of `Project` to `pipeline`, and conflates the reproducibility engine with the
+reader/writer layer. (b) Put persistence in `io` importing `pipeline.Project` (`io -> pipeline`) -
+rejected: a backward edge (io sits below pipeline). (c) Replay derived datasets from the DAG instead
+of storing them - deferred: faithful storage of every derivation is the honest, robust choice now
+(reproducibility first); the DAG is still fully persisted, so replay remains a future optimization.
+(d) A new single-file project format - rejected (Rule 2/7): it would duplicate the Zarr store; a
+bundle reuses it. (e) Persistent "Recent Projects" - deferred: it needs a settings store, out of
+scope here.
+**Consequences.** A researcher can now load -> inspect -> compare -> measure -> process -> **save**
+-> close -> **reopen** -> continue, and export publication figures, processed datasets (Zarr,
+loss-less / GSF, interchange), and quantitative measurements (CSV / clipboard) - the first complete
+end-to-end workflow. Raw immutability and reproducibility are preserved (reopening restores the same
+provenance DAG; raw stays read-only). The new `pipeline -> io` edge is recorded in
+`architecture.md` (layer graph + Section 3 + Section 10). 447 tests pass (project round-trip incl.
+the real CdO measurement, GSF export round-trip, CSV builders, and window save/reopen/export);
+`ruff`, `mypy --strict`, and the Qt-free invariant green (pipeline imports io, both Qt-free).
 
 ---
 
