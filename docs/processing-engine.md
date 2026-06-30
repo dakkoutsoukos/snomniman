@@ -186,9 +186,13 @@ report, and in the AI Scientist's briefing, with **no changes to those layers**
 |---|---|---|
 | `image.plane_level` | `spatial_2d` | Subtract a fitted polynomial **surface** (order 1-3: plane / paraboloid / cubic) from a real channel. |
 | `image.line_flatten` | `spatial_2d` | Subtract an independent **per-scan-line** baseline (median / mean / polynomial order 1-3) from a real channel - removes line-to-line offset/slope striping that a single global surface fit cannot. Complementary to `image.plane_level`. |
+| `image.fix_zero` | `spatial_2d` | Shift a real channel so its **minimum** (default) / mean / median is zero - a defined height datum (constant offset only; tilt/curvature untouched). Standard SPM offset step (Gwyddion "Fix Zero"). Phase 3A. |
+| `image.phase_offset` | `complex_optical` | Re-reference a complex channel's phase by a constant: the **circular mean** (default; cyclic-correct `angle(mean(O))`) or a chosen value. `O -> O*exp(-i*dphi)`, amplitude preserved; records `phase_reference` (explicit re-reference - OHD-6D). Phase 3A. |
+| `image.normalize_amplitude` | `complex_optical` | Divide a complex channel by its **peak** (default, -> [0,1]) or mean amplitude; phase preserved, amplitude dimensionless. Phase 3A. |
 | `image.reference_normalize` | `complex_optical`, `reference` | Divide each complex optical signal channel by its matching reference (`O{n} / R_O{n}`); amplitude becomes a ratio, phase a difference (explicit, recorded re-reference - OHD-6D). Single-input (signal + reference share one measurement). |
 | `image.phase_unwrap` | `spatial_2d` | Add an unwrapped-phase channel `{channel}_phase_unwrapped` for a complex channel; raw phase untouched (OHD-6D), unwrapped phase is its own channel (OHD-4). 2-D unwrap = sequential `numpy.unwrap` (x then y): exact for smooth fields, can mis-handle true 2-D residues (documented limitation; no extra dependency). |
 | `image.crop` | `spatial_2d` | Restrict every channel to a rectangular nm region; coordinates sliced (absolute positions preserved), scan geometry updated. |
+| `image.arithmetic` | `spatial_2d` | **Two-input** (ADR-0030): combine one channel of two compatible measurements - A-B / B-A / \|A-B\| (extensible to sum/ratio). Refuses mismatched grids; result is a two-parent derived dataset in the primary measurement's history. |
 
 **On the two flattening verbs (Rule 2):** `image.plane_level` and
 `image.line_flatten` are deliberately *distinct* operations, not a duplicated pair.

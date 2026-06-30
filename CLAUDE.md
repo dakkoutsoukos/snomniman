@@ -25,8 +25,9 @@ rather than repeating them.
 > provenance-bearing publication figures); `snomniman.processing` (the
 > `ProcessingStep` engine - now **multi-input** (ADR-0030: steps declare inputs via `InputSpec`
 > + a `check_compatibility` gate; single-input is the default) - and a growing operation
-> vocabulary - `image.plane_level`, `image.line_flatten`, `image.reference_normalize`,
-> `image.phase_unwrap`, `image.crop`, and the first two-input op `image.arithmetic`
+> vocabulary - `image.plane_level`, `image.line_flatten`, `image.fix_zero`,
+> `image.reference_normalize`, `image.phase_offset`, `image.normalize_amplitude`,
+> `image.phase_unwrap`, `image.crop`, and the two-input `image.arithmetic`
 > (A-B / B-A / |A-B|, extensible) - with steps declaring `required_capabilities`); `snomniman.describe` (the **Scientific
 > Description API**: structured descriptors *projecting* a measurement);
 > `snomniman.diagnostics` (the **Scientific Diagnostics Engine**: deterministic
@@ -78,7 +79,7 @@ rather than repeating them.
 > operation, diagnostics, the AI's philosophy), with "Learn more" deep-links from
 > operations and recommendations - the same curated content a future AI narrator grounds
 > its explanations in.
-> 500 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> 517 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future

@@ -353,6 +353,131 @@ _OPERATIONS = (
         references=(_GWYDDION,),
     ),
     Article(
+        article_id="operation.image.fix_zero",
+        category=OPERATION,
+        title="Fix Zero (height datum)",
+        summary=(
+            "Shifts a real channel so its minimum, mean, or median is zero - setting a "
+            "defined height datum without removing tilt or curvature."
+        ),
+        explanation=(
+            "AFM/SPM height is recorded relative to an arbitrary scanner origin, so a zero "
+            "datum is chosen before reading feature heights and depths. Fix Zero subtracts a "
+            "single constant from the channel (default: the minimum, so heights are measured "
+            "upward from the lowest point), leaving tilt, curvature, and every height "
+            "difference unchanged. It is the right tool once tilt has been handled (or when "
+            "the data is already flat); use plane leveling or line flattening to remove form."
+        ),
+        scientific_background=(
+            "Shifting the minimum (or mean / median) to zero is the standard offset step in "
+            "scanning-probe software (Gwyddion 'Fix Zero' / 'Shift Minimum to Zero'; WSxM). "
+            "The minimum datum is conventional for reading absolute feature heights; the mean "
+            "gives a zero-mean map for roughness and comparison; the median is robust to a few "
+            "extreme pixels."
+        ),
+        mathematical_background=(
+            "For datum d in {min, mean, median} over finite pixels, the output is z - d(z). "
+            "Only a constant is removed, so the result is information-preserving."
+        ),
+        practical_guidance=(
+            "Use the default minimum datum to read heights from the lowest point; use mean for "
+            "zero-mean comparison. Run it after plane leveling / line flattening, not instead "
+            "of them - Fix Zero does not remove tilt or bow."
+        ),
+        common_mistakes=(
+            "Expecting it to flatten tilt or curvature - it only removes a constant offset.",
+            "Comparing absolute heights across scans without first fixing a common datum.",
+        ),
+        related_concepts=("concept.topography",),
+        related_operations=("image.plane_level", "image.line_flatten"),
+        related_diagnostics=("rms_roughness",),
+        references=(_GWYDDION, _WSXM),
+    ),
+    Article(
+        article_id="operation.image.phase_offset",
+        category=OPERATION,
+        title="Phase Offset (re-reference)",
+        summary=(
+            "Re-references a complex channel's phase by subtracting a constant (the circular "
+            "mean, or a chosen value); the amplitude is preserved exactly."
+        ),
+        explanation=(
+            "In s-SNOM the absolute optical phase is arbitrary - it depends on interferometer "
+            "path length, the demodulation reference, and drift - so only phase contrast "
+            "relative to a chosen datum is interpretable. Phase Offset rotates the channel by a "
+            "constant (O -> O * exp(-i*dphi)), shifting the phase while leaving the amplitude "
+            "untouched, and records the new reference in the dataset's conventions. It is the "
+            "explicit, provenance-tracked phase re-referencing the project's phase convention "
+            "requires (phase is never changed silently)."
+        ),
+        scientific_background=(
+            "Because s-SNOM phase is relative, removing a global phase offset is a routine "
+            "first step (Keilmann & Hillenbrand). The default datum is the circular mean - the "
+            "angle of the (amplitude-weighted) mean complex value - which is the correct way to "
+            "average a cyclic quantity; an arithmetic mean of wrapped angles is wrong near the "
+            "+/-pi wrap. Referencing instead to a known substrate region is the richer form."
+        ),
+        mathematical_background=(
+            "dphi = angle(mean(O)) for the circular mean, or a supplied constant; the output is "
+            "O * exp(-i*dphi). Amplitude |O| is unchanged; phase becomes angle(O) - dphi."
+        ),
+        practical_guidance=(
+            "Use the default mean datum to remove a global phase offset; use a constant to align "
+            "to a value measured elsewhere. To compare phase across measurements, re-reference "
+            "each to the same datum first. Region-based (substrate) referencing is planned."
+        ),
+        common_mistakes=(
+            "Averaging wrapped phase angles arithmetically - always average phase as a complex "
+            "vector (this operation does).",
+            "Reading absolute phase as physical - only phase contrast is meaningful.",
+        ),
+        related_concepts=("concept.phase", "concept.complex_signals"),
+        related_operations=("image.reference_normalize", "image.phase_unwrap"),
+        related_diagnostics=(),
+        references=(_KEILMANN, _OCELIC),
+    ),
+    Article(
+        article_id="operation.image.normalize_amplitude",
+        category=OPERATION,
+        title="Normalize Amplitude",
+        summary=(
+            "Divides a complex channel by its peak (default) or mean amplitude, mapping "
+            "amplitude to a common dimensionless scale; the phase is preserved exactly."
+        ),
+        explanation=(
+            "s-SNOM amplitude is reported in arbitrary units that depend on detector gain, "
+            "demodulation, and alignment, so a single scan's absolute amplitude has no absolute "
+            "meaning - only relative amplitude (contrast) is interpretable. Normalize Amplitude "
+            "divides the channel by a single positive scalar (O -> O / s), rescaling amplitude "
+            "to a common scale while leaving the phase untouched, so amplitude becomes "
+            "comparable across channels, harmonics, and measurements."
+        ),
+        scientific_background=(
+            "Peak normalization (divide by max |O|, mapping into [0, 1]) is the common display "
+            "and figure-preparation default (e.g. ImageJ/Fiji); dividing by the mean gives "
+            "contrast around 1. The most quantitative form normalizes to the mean amplitude of "
+            "a known substrate region (self-normalization), which is planned for a later phase."
+        ),
+        mathematical_background=(
+            "s = max(|O|) or mean(|O|) over finite pixels; the output is O / s. The amplitude "
+            "becomes dimensionless; the phase angle(O) is unchanged."
+        ),
+        practical_guidance=(
+            "Use peak normalization to put amplitude in [0, 1] for display or comparison; use "
+            "the mean for relative contrast. Normalize each measurement consistently before "
+            "comparing amplitude contrast across scans."
+        ),
+        common_mistakes=(
+            "Treating normalized amplitude as a calibrated quantity - it is a dimensionless "
+            "ratio, not an absolute optical amplitude.",
+            "Comparing amplitudes normalized by different data without a common reference.",
+        ),
+        related_concepts=("concept.complex_signals", "concept.near_field_microscopy"),
+        related_operations=("image.reference_normalize",),
+        related_diagnostics=(),
+        references=(_KEILMANN,),
+    ),
+    Article(
         article_id="operation.image.reference_normalize",
         category=OPERATION,
         title="Reference Normalize",

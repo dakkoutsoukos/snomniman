@@ -2770,3 +2770,65 @@ one refinement (a general `image.arithmetic`, not a hardcoded "difference"), whi
   framework work is required.
 - **Product (Beta Readiness):** run the user-testing protocol; then the High tier (H2-H5).
 - **Science:** unchanged - the open Validation Queue items await suitable golden measurements.
+
+---
+
+## 2026-06-30 - Core scientific operations (Phase 3A)
+
+First expansion of the *scientific toolbox* on the now-complete processing framework (no
+architecture change). Driven by a research+design proposal (what researchers do on almost
+every dataset) the user reviewed and approved, with one refinement: include amplitude
+normalization (so the toolbox spans one universal AFM op + one SNOM phase op + one SNOM
+amplitude op). Generic image filters (Gaussian/median blur), FFT/power-spectrum, and
+histogram/threshold were **deferred** (resolution loss / analysis-not-derivation - they
+belong in Diagnostics, not the Processing Workspace); 2-D polynomial background was found
+**already covered** by `image.plane_level` (order 2/3).
+
+### Completed
+- **`image.fix_zero`** - shift a real channel so its minimum (default) / mean / median is
+  zero (a defined height datum; constant offset only, tilt/curvature untouched). Universal
+  AFM step; closes beta-readiness **H3**. `required_capabilities=(SPATIAL_2D,)`.
+- **`image.phase_offset`** - re-reference a complex channel's phase by a constant: the
+  **circular mean** (default, `angle(mean(O))` - cyclic-correct; an arithmetic mean of
+  wrapped angles would be wrong near +/-pi) or a chosen `value_rad`. `O -> O*exp(-i*dphi)`,
+  amplitude preserved; updates `phase_reference` and sets the channel `state="referenced"`
+  (the explicit, recorded re-reference OHD-6D requires). `required_capabilities=(COMPLEX_OPTICAL,)`.
+- **`image.normalize_amplitude`** - divide a complex channel by its peak (default -> [0,1])
+  or mean amplitude; phase preserved, amplitude dimensionless, `state="normalized"`.
+  `required_capabilities=(COMPLEX_OPTICAL,)`.
+- Each is a single-input `ProcessingStep` -> appears in the Processing Workspace, Preview,
+  Accept, provenance, persistence, and export **automatically, with no GUI code**. Each
+  module docstring documents the scientific rationale + the basis for its default behaviour
+  (published practice / Gwyddion / WSxM / ImageJ / common lab workflow) for future
+  maintenance, and each has a Knowledge Center article (no-drift invariant).
+
+### Decisions
+- **No ADR.** Phase 3A adds settled-science *operations* (Category A in the scientific-
+  validation triage), not new abstractions, diagnostics, or recommendation rules - so the
+  bar is a known-answer test (Rule 6), not a validation study. No architectural change.
+- Region-based (substrate) phase/amplitude referencing - the richest quantitative form -
+  is deliberately **deferred**: it needs a region-parameter framework addition; the
+  whole-image/constant versions shipped here are valid and complete on their own.
+
+### Tests / gates
+- 517 tests (up from 500, +17): `test_processing_image_core_ops.py` - known-answer
+  (fix_zero min/mean/median->0; phase_offset constant exact + amplitude preserved + the
+  **circular-mean** pin `angle(mean(O'))~0`; normalize_amplitude peak->1 / mean->1 + phase
+  preserved), non-mutation, recorded provenance, metadata (phase_reference / channel state /
+  amplitude_unit), and validation refusals (wrong channel kind / missing / zero-amplitude).
+  `ruff` clean; `mypy --strict` clean (109 files); Qt-free invariant green.
+
+### Documentation Updated
+- `CLAUDE.md` (operation vocabulary + 517), `docs/processing-engine.md` (registered-ops
+  catalogue: the three new ops + `image.arithmetic`). Three Knowledge Center articles.
+  `LOG.md` (this entry), `NEXT.md`, project memory. (No architecture-doc change - none
+  needed.)
+
+### Next Recommended Actions
+- **Product (Beta Readiness):** run the user-testing protocol - real neaPLOT users will
+  confirm/reorder the next operations (and the High tier H2-H5). The toolbox now covers the
+  most universal post-load steps on both the topography and optical tracks.
+- **Future toolbox:** region-based referencing (Phase 3B, needs a region parameter);
+  despike/scar removal; further `image.arithmetic` modes (sum / ratio / normalized
+  difference) - each extends the existing framework with no new architecture.
+- **Science:** unchanged - the open Validation Queue items await suitable golden measurements.
