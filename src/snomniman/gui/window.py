@@ -15,12 +15,14 @@ the researcher can navigate back to the original measurement after a derivation.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from snomniman import viz
+from snomniman.core import current_software
 from snomniman.core.exceptions import DatasetError, ProcessingError, ReaderError
 from snomniman.io import export_channel_gsf, write_zarr
 from snomniman.knowledge import article_for_operation
@@ -36,6 +38,9 @@ from snomniman.viz import RenderData
 from .briefing import BriefingPanel
 from .comparison import ComparisonView, ContactSheet
 from .diagnostics import DiagnosticsPanel
+from .experiment import ExperimentModel, ExperimentTable
+from .experiment_view import ExperimentPanel
+from .export import ExperimentExportContext, experiment_table_to_csv
 from .imageview import ChannelImageView
 from .knowledge import KnowledgePanel
 from .measurement import MeasurementController, MeasurementPanel
@@ -76,6 +81,13 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         # active comparison preset (persisted with the active session's view state).
         self._project_path: Path | None = None
         self._comparison_preset: str | None = None
+        # Experiment-level state (Phase 2B, read-only): a presenter over all
+        # sessions, the active cross-measurement comparison (indices + shared
+        # channel), and the last computed cross-measurement statistics table.
+        self._experiment = ExperimentModel(self._sessions)
+        self._experiment_compare: tuple[int, ...] | None = None
+        self._experiment_compare_channel = ""
+        self._experiment_stats: ExperimentTable | None = None
 
         self._title = QtWidgets.QLabel()
         self._facts = QtWidgets.QLabel()
@@ -94,6 +106,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._briefing = BriefingPanel()
         self._process = ProcessingWorkspace()
         self._knowledge = KnowledgePanel()
+        self._experiment_panel = ExperimentPanel()
         # Measurements are read-only observations placed on the single image; they
         # report across the single view's channels (current + phase + topography).
         self._measure = MeasurementController(model, self._image, model.single_view_specs)
@@ -215,6 +228,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         tabs.addTab(self._metadata, "Metadata")
         tabs.addTab(self._provenance, "Provenance")
         tabs.addTab(self._diagnostics, "Diagnostics")
+        tabs.addTab(self._experiment_panel, "Experiment")
         tabs.addTab(self._briefing, "Briefing")
         tabs.addTab(self._measure_panel, "Measure")
         tabs.addTab(self._process, "Process")
@@ -259,11 +273,17 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         return bar
 
     def _wire(self) -> None:
-        # Measurement Manager: switch / add / close / rename across the project.
+        # Measurement Manager: switch / add / close / rename / compare across the project.
         self._manager.measurementActivated.connect(self.switch_to)
+        self._manager.compareRequested.connect(self.compare_measurements)
         self._manager.addRequested.connect(self._add_measurement)
         self._manager.removeRequested.connect(self.close_measurement)
         self._manager.renameRequested.connect(self._rename_measurement)
+        # Experiment panel: project-wide diagnostics (lazy) + cross-measurement stats.
+        self._inspect_tabs.currentChanged.connect(self._on_inspect_tab_changed)
+        self._experiment_panel.compareOverlayRequested.connect(self._compare_overlay)
+        self._experiment_panel.exportStatisticsRequested.connect(self._export_experiment_stats)
+        self._experiment_panel.copyStatisticsRequested.connect(self._copy_experiment_stats)
         self._browser.channelSelected.connect(self._on_channel_selected)
         self._browser.representationSelected.connect(self._on_representation_selected)
         self._image.cursorMoved.connect(self._on_cursor_moved)
@@ -303,12 +323,23 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
     def _on_channel_selected(self, canonical: str) -> None:
         # Selecting a channel (from the browser or a contact-sheet thumbnail) opens
-        # it in the single, detailed view.
-        self._model.set_channel(canonical)
+        # it in the single, detailed view - or, in cross-measurement compare, changes
+        # the shared channel for every pane (when the channel is shared).
+        self._model.set_channel(canonical)  # the anchor measurement has this channel
+        if self._experiment_compare is not None:
+            if canonical in self._experiment.shared_channels(list(self._experiment_compare)):
+                self._experiment_compare_channel = canonical
+                self._show_experiment_comparison()
+            else:
+                self._show_single()  # not shared by all -> fall back to a single view
+            return
         self._show_single()
 
     def _on_representation_selected(self, representation: str) -> None:
         self._model.set_representation(representation)
+        if self._experiment_compare is not None:
+            self._show_experiment_comparison()  # shared representation across panes
+            return
         self._show_single()
 
     # -- model switching (derivation navigation) ------------------------------
@@ -339,10 +370,12 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
     # -- view switching -------------------------------------------------------
 
     def _show_single(self) -> None:
+        self._experiment_compare = None  # any single view leaves cross-measurement compare
         self._stack.setCurrentWidget(self._image)
         self._refresh_channel()
 
     def _show_comparison(self, preset: str) -> None:
+        self._experiment_compare = None  # a within-measurement preset, not a cross-measurement view
         self._comparison_preset = preset
         specs = self._model.comparison_layout(preset)
         self._comparison.set_panes(specs, self._model.render_spec)
@@ -350,6 +383,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._active.setText("Comparing:   " + "      |      ".join(s.title for s in specs))
 
     def _show_contact(self) -> None:
+        self._experiment_compare = None
         specs = self._model.harmonic_panes()
         self._contact.set_panes(specs, self._model.render_spec)
         self._stack.setCurrentWidget(self._contact)
@@ -616,14 +650,14 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             self._refresh_manager()
 
     def _refresh_manager(self) -> None:
-        """Update the Manager list + the window title to reflect the open measurements.
+        """Refresh the experiment browser + the window title for the open measurements.
 
         With a single measurement the window title is left exactly as the single-
         measurement Explorer sets it, so the app feels unchanged; the "m/n" hint
         appears only once a project holds more than one measurement.
         """
-        labels = [self._manager_label(s) for s in self._sessions]
-        self._manager.set_measurements(labels, self._active_index)
+        self._experiment.set_sessions(self._sessions)
+        self._manager.set_rows(self._experiment.browser_rows(), self._active_index)
         n = len(self._sessions)
         if n > 1:
             self.setWindowTitle(
@@ -631,12 +665,146 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
                 " - SNOMNIMAN Measurement Explorer"
             )
 
-    @staticmethod
-    def _manager_label(session: MeasurementSession) -> str:
-        steps = len(session.history)
-        if steps:
-            return f"{session.title}   ({steps} step{'s' if steps != 1 else ''})"
-        return session.title
+    # -- experiment analysis (Phase 2B, read-only: aggregates, never derives) --
+
+    def compare_measurements(self, indices: list[int]) -> None:
+        """Show the selected measurements side by side (shared channel, synced view).
+
+        Reuses the existing comparison viewer: each pane is rendered by its own
+        measurement's model, so no second comparison system is introduced. Nothing
+        is created or modified - this is a read-only view across measurements.
+        """
+        chosen = [i for i in indices if 0 <= i < len(self._sessions)]
+        if len(chosen) < 2:
+            return
+        self._experiment.set_sessions(self._sessions)
+        shared = self._experiment.shared_channels(chosen)
+        if not shared:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Compare measurements",
+                "The selected measurements share no common channel to compare.",
+            )
+            return
+        # Anchor the comparison on the first selected measurement: it becomes active,
+        # so the channel browser drives the *shared* channel/representation consistently.
+        if self._active_index != chosen[0]:
+            self._capture_active_session()
+            self._active_index = chosen[0]
+            self._bind_active_session()  # binds widgets to the anchor (resets compare mode)
+        current = self._model.current_channel
+        self._experiment_compare = tuple(chosen)
+        self._experiment_compare_channel = current if current in shared else shared[0]
+        self._show_experiment_comparison()
+
+    def _show_experiment_comparison(self) -> None:
+        """Render the active cross-measurement comparison into the shared viewer."""
+        if self._experiment_compare is None:
+            return
+        panes = self._experiment.comparison_panes(
+            list(self._experiment_compare),
+            self._experiment_compare_channel,
+            self._model.current_representation,
+        )
+        specs = [p.spec for p in panes]
+        renders = {p.spec: p.render for p in panes}
+        self._comparison.set_panes(specs, renders.__getitem__)
+        self._stack.setCurrentWidget(self._comparison)
+        self._active.setText(
+            "Comparing measurements:   " + "      |      ".join(s.title for s in specs)
+        )
+
+    def _on_inspect_tab_changed(self, _index: int) -> None:
+        """Populate the experiment diagnostics lazily, only when its tab is opened."""
+        if self._inspect_tabs.currentWidget() is self._experiment_panel:
+            self._refresh_experiment_diagnostics()
+
+    def _refresh_experiment_diagnostics(self) -> None:
+        self._experiment.set_sessions(self._sessions)
+        self._experiment_panel.set_diagnostics(self._experiment.diagnostics_table())
+
+    def _compare_overlay(self) -> None:
+        """Evaluate the active measurement's overlay across every measurement (Part 5).
+
+        The same nm geometry and the active channel/representation are measured on
+        each measurement via the existing measurement engine; whether the region is
+        scientifically meaningful across these scans is the researcher's call.
+        """
+        geometry = self._measure.active_geometry()
+        if geometry is None:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Cross-measurement statistics",
+                "Place a line / rectangle / polygon on the active measurement (Measure tab) first.",
+            )
+            return
+        kind, geom = geometry
+        channel = self._model.current_channel
+        representation = self._model.current_representation
+        indices = list(range(len(self._sessions)))
+        self._experiment.set_sessions(self._sessions)
+        if kind == "line":
+            p0, p1 = geom["points"]
+            table = self._experiment.compare_profile(
+                indices,
+                (float(p0[0]), float(p0[1])),
+                (float(p1[0]), float(p1[1])),
+                channel,
+                representation,
+            )
+        elif kind == "rectangle":
+            x, y = geom["pos"]
+            w, h = geom["size"]
+            table = self._experiment.compare_region(
+                indices,
+                "rectangle",
+                (float(x), float(y), float(x) + float(w), float(y) + float(h)),
+                channel,
+                representation,
+            )
+        else:  # polygon
+            vertices = [(float(px), float(py)) for px, py in geom["points"]]
+            table = self._experiment.compare_region(
+                indices, "polygon", vertices, channel, representation
+            )
+        self._experiment_stats = table
+        self._experiment_panel.set_statistics(table)
+
+    def _export_experiment_stats(self) -> None:
+        if self._experiment_stats is None:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Export comparison",
+                "Compare an overlay across measurements first, then export it.",
+            )
+            return
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export cross-measurement comparison",
+            f"{self._project_title}_comparison.csv",
+            "CSV (*.csv)",
+        )
+        if not path:
+            return
+        text = experiment_table_to_csv(self._experiment_stats, self._experiment_export_context())
+        Path(path).write_text(text, encoding="utf-8")
+
+    def _copy_experiment_stats(self) -> None:
+        if self._experiment_stats is None:
+            return
+        text = experiment_table_to_csv(
+            self._experiment_stats, self._experiment_export_context(), delimiter="\t"
+        )
+        QtWidgets.QApplication.clipboard().setText(text)
+
+    def _experiment_export_context(self) -> ExperimentExportContext:
+        return ExperimentExportContext(
+            project=self._project_title,
+            measurement_count=len(self._sessions),
+            conventions=self._model.conventions_summary(),
+            snomniman_version=current_software().get("snomniman", ""),
+            created_at=datetime.now(UTC).isoformat(),
+        )
 
     def load_explorer_model(self, model: ExplorerModel) -> None:
         """Reset the window to a single fresh measurement (New / Open Measurement)."""
@@ -799,6 +967,12 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
     def _figure_inputs(self) -> tuple[str, list[tuple[PaneSpec, tuple[float, float]]], list[Any]]:
         """Gather (kind, panels-with-levels, overlays) for the current view."""
+        if self._experiment_compare is not None:
+            # Cross-measurement compare is not a single-dataset figure source (each
+            # pane is a different measurement); export the active measurement's
+            # current channel instead rather than render every pane from one model.
+            spec = PaneSpec(self._model.current_channel, self._model.current_representation)
+            return "single", [(spec, self._image.levels)], []
         current = self._stack.currentWidget()
         if current is self._comparison and self._comparison.specs:
             panels = [
@@ -867,7 +1041,15 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         )
 
     def _on_comparison_cursor(self, x_nm: float, y_nm: float, in_bounds: bool) -> None:
-        if in_bounds:
+        if in_bounds and self._experiment_compare is not None:
+            readout = self._experiment.comparison_readout(
+                list(self._experiment_compare),
+                self._experiment_compare_channel,
+                self._model.current_representation,
+                x_nm,
+                y_nm,
+            )
+        elif in_bounds:
             readout = self._model.values_at(self._comparison.specs, x_nm, y_nm)
         else:
             readout = None

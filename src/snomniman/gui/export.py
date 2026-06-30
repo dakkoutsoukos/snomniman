@@ -21,6 +21,7 @@ from io import StringIO
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # avoid an import cycle: model imports ExportContext from here
+    from .experiment import ExperimentTable
     from .model import ProfileSet, RegionReport
 
 
@@ -33,6 +34,17 @@ class ExportContext:
     source_sha256: str | None
     conventions: str
     provenance: tuple[str, ...]  # step ids, oldest first
+    snomniman_version: str
+    created_at: str
+
+
+@dataclass(frozen=True)
+class ExperimentExportContext:
+    """Project-level identity facts for an experiment-comparison export (header lines)."""
+
+    project: str
+    measurement_count: int
+    conventions: str
     snomniman_version: str
     created_at: str
 
@@ -71,6 +83,37 @@ def region_to_csv(report: RegionReport, context: ExportContext, *, delimiter: st
     return buffer.getvalue()
 
 
+def experiment_table_to_csv(
+    table: ExperimentTable, context: ExperimentExportContext, *, delimiter: str = ","
+) -> str:
+    """Render an experiment comparison table as CSV: header, then one row per measurement.
+
+    Rows are measurements and columns are the compared quantities (diagnostics or
+    cross-measurement statistics). Numeric cells are written at full precision (from
+    the cell's sort value), not the rounded display text, so the export is faithful.
+    """
+    buffer = StringIO()
+    lines: list[tuple[str, str]] = [
+        ("", f"SNOMNIMAN experiment export - {table.title}"),
+        ("Project", context.project),
+        ("Measurements", str(context.measurement_count)),
+        ("Conventions", context.conventions),
+        ("", f"SNOMNIMAN {context.snomniman_version}; exported {context.created_at}"),
+    ]
+    for label, value in lines:
+        buffer.write(f"# {label}: {value}\n" if label else f"# {value}\n")
+
+    writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
+    header = ["measurement"]
+    header.extend(f"{c.label} [{c.unit}]" if c.unit else c.label for c in table.columns)
+    writer.writerow(header)
+    for row in table.rows:
+        # The cell text is the value as shown in the table (csv quotes any commas,
+        # e.g. a "O2, O3" harmonics cell); the numeric sort key is GUI-only.
+        writer.writerow([row.title, *(cell.text for cell in row.cells)])
+    return buffer.getvalue()
+
+
 def _write_header(
     buffer: StringIO, what: str, context: ExportContext, *, extra: list[tuple[str, str]]
 ) -> None:
@@ -97,4 +140,10 @@ def _fmt(value: float) -> str:
     return format(v, ".10g")
 
 
-__all__ = ["ExportContext", "profile_to_csv", "region_to_csv"]
+__all__ = [
+    "ExperimentExportContext",
+    "ExportContext",
+    "experiment_table_to_csv",
+    "profile_to_csv",
+    "region_to_csv",
+]

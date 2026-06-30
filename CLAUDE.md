@@ -64,12 +64,19 @@ rather than repeating them.
 > immutability intact. The Explorer surfaces this through a **Measurement Manager** dock; the GUI
 > holds a Qt-free `MeasurementSession` per measurement and switches between them (preserving each
 > one's history/view/overlays) with no disk reload.
+> On top of this, **read-only experiment analysis** (Phase 2B, ADR-0029): a second Qt-free presenter
+> `ExperimentModel` *aggregates* the existing per-measurement models + the Diagnostics Engine into
+> experiment-wide views - the Manager doubles as an experiment **browser** (summary + multi-select +
+> Compare), measurements compare side by side by **reusing the comparison viewer**, and an
+> **Experiment** tab tabulates project-wide diagnostics and cross-measurement ROI/line statistics
+> (CSV export). It creates no datasets/provenance/operations; **difference datasets are the planned
+> Phase 2C** (a multi-input write path, designed separately).
 > A **Knowledge Center** (`snomniman.knowledge`, ADR-0024) teaches the science in-app:
 > a browsable/searchable base of curated, interconnected articles (concepts, every
 > operation, diagnostics, the AI's philosophy), with "Learn more" deep-links from
 > operations and recommendations - the same curated content a future AI narrator grounds
 > its explanations in.
-> 458 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> 478 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future

@@ -257,6 +257,14 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
   active one - switching preserves each measurement's history, view, and overlays
   with no disk reload (File: New/Close Project, Add/Close Measurement). A
   one-measurement project is indistinguishable from the prior single-measurement app.
+  It adds **read-only experiment analysis** (ADR-0029): a second Qt-free presenter,
+  `ExperimentModel`, *aggregates* the existing per-measurement models + the
+  Diagnostics Engine into experiment-wide views - the Manager becomes an experiment
+  **browser** (summary + multi-select + Compare), measurements compare side by side
+  by **reusing the comparison viewer** (each pane rendered by its own model), and an
+  **Experiment** tab tabulates project-wide diagnostics and cross-measurement
+  statistics (the same ROI/line across measurements, exportable). It creates no
+  datasets / provenance / operations (difference datasets are the future Phase 2C).
   Scientific logic stays in the Qt-free presenter/backend (Rule 4); the package
   `__init__` does not import Qt, so the presenter and backend import without the
   `gui` extra.

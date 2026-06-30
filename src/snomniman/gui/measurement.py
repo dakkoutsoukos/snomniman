@@ -171,6 +171,18 @@ class MeasurementController(QtCore.QObject):
             for item in self._items
         ]
 
+    def active_geometry(self) -> tuple[str, dict[str, Any]] | None:
+        """The active overlay's ``(kind, nm-geometry)``, or ``None`` if there is none.
+
+        Geometry is the same canonical-nm dict :meth:`to_records` records, so the
+        experiment presenter can evaluate the *same* ROI/line on every measurement
+        (cross-measurement statistics) without the controller knowing about them.
+        """
+        item = self._active
+        if item is None:
+            return None
+        return item.kind, _geometry_of(item, self._image.view_box)
+
     def load_records(self, records: Sequence[Mapping[str, Any]]) -> None:
         """Recreate measurements from :meth:`to_records` output (replaces any current)."""
         self.clear()

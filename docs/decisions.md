@@ -627,6 +627,53 @@ and experiment-wide scientific workflows (later phases).
 
 ---
 
+## ADR-0029 - Phase 2B experiment analysis: a read-only `ExperimentModel`; difference views -> 2C  [ACCEPTED]
+**Context.** Phase 2A (ADR-0028) made a project a collection of measurements. The next product
+question is *how a researcher analyses an **experiment** (many measurements) rather than one* -
+compare them, rank them, measure across them. The risk is that "experiment analysis" becomes a
+feature dump. The constraint (and the scope the user approved): build **on** the 2A architecture
+**read-only**, without introducing multi-input processing or new provenance semantics.
+**Decision.** (1) **One new thin, Qt-free presenter, `ExperimentModel`** (`gui/experiment.py`) - the
+experiment-level sibling of `ExplorerModel`. It **aggregates only existing capabilities** over the
+project's sessions: each measurement's `ExplorerModel` (render / per-pixel values / `viz.measure`
+region+line) and the Diagnostics Engine (`diagnose`). It produces experiment-wide view objects - a
+browser overview, cross-measurement comparison panes + a combined cursor readout, an experiment
+**diagnostics table**, and **cross-measurement statistics** (the same ROI/line evaluated on every
+measurement). It **computes no new science and creates nothing** - no datasets, no provenance nodes,
+no operations. `diagnose` is cached per dataset (datasets are immutable, so the cache is always
+valid). (2) **Reuse, not parallel systems.** The existing `ComparisonView` renders cross-measurement
+panes - each pane is rendered by its *own* measurement's model and passed through the viewer's
+dict-renderer contract, and the viewer already synchronises zoom/pan/cursor - so **no second
+comparison system**. `diagnose` powers the diagnostics table; `viz.measure` powers the stats;
+`gui/export.py` gains one `experiment_table_to_csv` builder reusing the existing header style. The
+**Measurement Manager becomes the experiment browser** (a summary table + multi-select + Compare),
+and a new **Experiment** inspector tab holds the sortable diagnostics + statistics tables. (3)
+**Read-only is the guardrail:** Phase 2B creates no datasets, provenance nodes, or processing
+operations; if a feature needs the write path it moves to 2C. (4) **Difference Views (the original
+Part 2) are deferred to Phase 2C.** They are the one write-path part: they need the first
+**multi-input** `ProcessingStep`, new GUI surface to pick a second-measurement input, grid /
+coordinate compatibility (refuse on mismatch - resampling/registration is out of scope), **and** they
+raise an unresolved provenance-topology question - a difference has **two parents**, but a
+`Measurement`'s history is **linear**, so where a two-parent derived dataset lives needs its own
+design cycle.
+**Alternatives.** (a) Put the aggregation in a backend module (`snomniman.experiment`) - rejected
+for now (Rule 7): it has exactly one present consumer (the GUI views); promote it if `batch` later
+needs it. (b) A second comparison / diagnostics implementation - rejected: reuse `ComparisonView` +
+`diagnose`. (c) Include difference views in 2B - rejected (the split above; user-approved) to keep
+the milestone a coherent, releasable read-only layer and not a 5,000-line mega-feature. (d) Compute
+`diagnose` eagerly for the browser - rejected: the browser shows only cheap metadata facts; the
+diagnose-backed table is lazy (computed when the Experiment tab opens) and cached.
+**Consequences.** A researcher can open a multi-measurement project and, entirely read-only, browse
+it at a glance, compare measurements side by side with a synchronised view + combined readout, rank
+scans by project-wide diagnostics, and evaluate one ROI/line across the whole experiment and export
+it (CSV / clipboard). **No backend change, no new cross-layer edge, no provenance / processing
+change**; `ExperimentModel` is Qt-free and unit-tested headlessly; raw immutability and the
+"one-measurement project feels like the prior app" principle both hold. 478 tests pass; `ruff`,
+`mypy --strict`, and the Qt-free invariant green. **Difference datasets / multi-input operations are
+Phase 2C** (the two-parent provenance topology resolved there).
+
+---
+
 ## Decision Closure (OHD-1..9 resolved)
 
 | OHD | Topic | Resolution | ADR |

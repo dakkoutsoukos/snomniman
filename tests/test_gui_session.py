@@ -261,9 +261,14 @@ def test_rename_measurement_updates_title_and_manager(
     window.add_measurement_model(ExplorerModel(synthetic_dataset, title="CdO-B"))
     window.rename_measurement(0, "First scan")
     assert window._sessions[0].title == "First scan"
-    # The Manager list reflects the new name.
-    labels = {window._manager._list.item(i).text() for i in range(window._manager._list.count())}
-    assert any(label.startswith("First scan") for label in labels)
+    # The Manager table's Measurement column reflects the new name.
+    table = window._manager._table
+    names = set()
+    for r in range(table.rowCount()):
+        item = table.item(r, 0)
+        if item is not None:
+            names.add(item.text())
+    assert "First scan" in names
 
 
 def test_multi_measurement_save_and_reopen(

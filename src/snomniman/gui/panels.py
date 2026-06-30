@@ -15,6 +15,7 @@ from PySide6 import QtCore, QtWidgets
 
 from snomniman.viz import AMPLITUDE, PHASE
 
+from .experiment import ExperimentRow
 from .model import ChannelGroup, MetadataSection, ProvenanceStep
 
 _CHANNEL_ROLE = QtCore.Qt.ItemDataRole.UserRole
@@ -101,29 +102,48 @@ class ChannelBrowser(QtWidgets.QWidget):
 
 
 class MeasurementManager(QtWidgets.QWidget):
-    """The project's measurements: a list with the active one selected, plus actions.
+    """The project's measurements as an experiment overview: a summary table + actions.
 
-    Pure presentation - it lists the measurement labels the window builds, marks the
-    active one, and emits intent signals (activate / add / remove / rename). It holds
-    no session state and never touches a Dataset (Rule 4). Scales from one
-    measurement (a single quiet row, so the app feels unchanged) to many.
+    Pure presentation - it renders the per-measurement summary rows the window builds
+    (title, time, processing, harmonics, reference), marks the active one, and emits
+    intent signals (activate / add / remove / rename / compare). It holds no session
+    state and never touches a Dataset (Rule 4). A **single** row is selected to work
+    on one measurement (activate); selecting **several** enables a cross-measurement
+    Compare without switching the active one. Scales from one quiet row (so the app
+    feels unchanged) to a 100-row experiment.
     """
 
-    measurementActivated = QtCore.Signal(int)  # the user picked a measurement to work on
+    measurementActivated = QtCore.Signal(int)  # exactly one row selected -> work on it
+    compareRequested = QtCore.Signal(list)  # >= 2 rows selected -> compare these indices
     addRequested = QtCore.Signal()  # "Add Measurement..."
     removeRequested = QtCore.Signal(int)  # close the measurement at this row
     renameRequested = QtCore.Signal(int)  # rename the measurement at this row
+
+    _COLUMNS = ("Measurement", "Time", "Processing", "Harmonics", "Ref")
 
     def __init__(self) -> None:
         super().__init__()
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
 
-        self._list = QtWidgets.QListWidget()
-        self._list.itemSelectionChanged.connect(self._on_selection)
-        layout.addWidget(self._list, 1)
+        self._table = QtWidgets.QTableWidget(0, len(self._COLUMNS))
+        self._table.setHorizontalHeaderLabels(list(self._COLUMNS))
+        self._table.verticalHeader().setVisible(False)
+        self._table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self._table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
+        )
+        self._table.itemSelectionChanged.connect(self._on_selection)
+        layout.addWidget(self._table, 1)
 
         tools = QtWidgets.QHBoxLayout()
+        self._compare_btn = QtWidgets.QPushButton("Compare")
+        self._compare_btn.setToolTip("Select two or more measurements to compare them side by side")
+        self._compare_btn.setEnabled(False)
+        self._compare_btn.clicked.connect(self._emit_compare)
         for label, slot in (
             ("Add...", lambda: self.addRequested.emit()),
             ("Rename", self._emit_rename),
@@ -132,33 +152,57 @@ class MeasurementManager(QtWidgets.QWidget):
             button = QtWidgets.QPushButton(label)
             button.clicked.connect(slot)
             tools.addWidget(button)
+        tools.addWidget(self._compare_btn)
         tools.addStretch(1)
         layout.addLayout(tools)
 
-    def set_measurements(self, labels: Sequence[str], active: int) -> None:
-        """Replace the list; select ``active`` (signals are suppressed during refresh)."""
-        self._list.blockSignals(True)
-        self._list.clear()
-        for label in labels:
-            self._list.addItem(label)
-        if 0 <= active < len(labels):
-            self._list.setCurrentRow(active)
-        self._list.blockSignals(False)
+    def set_rows(self, rows: Sequence[ExperimentRow], active: int) -> None:
+        """Replace the table; select ``active`` (signals suppressed during refresh)."""
+        self._table.blockSignals(True)
+        self._table.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            cells = (
+                row.title,
+                row.datetime or "-",
+                row.processing,
+                row.harmonics,
+                "yes" if row.has_reference else "no",
+            )
+            for c, text in enumerate(cells):
+                self._table.setItem(r, c, QtWidgets.QTableWidgetItem(text))
+        self._table.resizeColumnsToContents()
+        if 0 <= active < len(rows):
+            self._table.selectRow(active)
+        self._table.blockSignals(False)
+        self._update_compare_enabled()
+
+    def selected_rows(self) -> list[int]:
+        """The currently selected measurement indices (ascending)."""
+        return sorted({index.row() for index in self._table.selectedIndexes()})
 
     def _on_selection(self) -> None:
-        row = self._list.currentRow()
-        if row >= 0:
-            self.measurementActivated.emit(row)
+        rows = self.selected_rows()
+        self._update_compare_enabled()
+        if len(rows) == 1:  # a single selection means "work on this measurement"
+            self.measurementActivated.emit(rows[0])
+
+    def _update_compare_enabled(self) -> None:
+        self._compare_btn.setEnabled(len(self.selected_rows()) >= 2)
+
+    def _emit_compare(self) -> None:
+        rows = self.selected_rows()
+        if len(rows) >= 2:
+            self.compareRequested.emit(rows)
 
     def _emit_rename(self) -> None:
-        row = self._list.currentRow()
-        if row >= 0:
-            self.renameRequested.emit(row)
+        rows = self.selected_rows()
+        if rows:
+            self.renameRequested.emit(rows[0])
 
     def _emit_remove(self) -> None:
-        row = self._list.currentRow()
-        if row >= 0:
-            self.removeRequested.emit(row)
+        rows = self.selected_rows()
+        if rows:
+            self.removeRequested.emit(rows[0])
 
 
 class MetadataInspector(QtWidgets.QTreeWidget):

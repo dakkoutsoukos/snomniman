@@ -2635,3 +2635,71 @@ above it as a collection of measurements.
 - **Later phases now have a home:** cross-measurement comparison, batch (`snomniman.batch`),
   and experiment-wide statistics build on the `Project`/`Measurement` foundation.
 - **Science:** unchanged - the open Validation Queue items await suitable golden measurements.
+
+---
+
+## 2026-06-29c - Experiment analysis (Phase 2B, ADR-0029)
+
+Built experiment-level analysis on the 2A multi-measurement foundation, after a written design
+proposal the user reviewed and approved. The proposal's headline call - **defer Difference Views to
+a separate Phase 2C** - was accepted: 2B is a coherent, releasable, **read-only** experiment-analysis
+layer; the one write-path part (multi-input difference datasets + the two-parent provenance topology)
+gets its own milestone. The whole phase adds **one Qt-free presenter and reuses every existing
+system** (Rule 7); no backend, provenance, or processing change.
+
+### Completed
+- **`ExperimentModel` (`gui/experiment.py`, Qt-free, NEW):** a thin experiment-level presenter that
+  *aggregates* existing per-measurement capabilities over the project's sessions - never new science.
+  `browser_rows()` (cheap, metadata-only); `shared_channels` / `comparison_panes` / `comparison_readout`
+  (cross-measurement compare, reusing each model's `render_spec` / `values_at`); `diagnostics_table()`
+  (reuses `diagnose`, **cached per dataset**); `compare_region` / `compare_profile` (reuse
+  `viz.measure` via each `ExplorerModel`). Value objects: `ExperimentRow`, `ComparisonPane`,
+  `ExperimentTable`/`Column`/`Cell`/`Row`. Creates nothing.
+- **Export (`gui/export.py`):** `experiment_table_to_csv` + `ExperimentExportContext` reusing the
+  existing provenance-header + CSV style (cell text is exported; the numeric `value` is a GUI sort key).
+- **Widgets / wiring:** the **Measurement Manager became the experiment browser** (a summary
+  `QTableWidget` - Measurement / Time / Processing / Harmonics / Ref - with multi-select; one row
+  selected = activate, several = enable **Compare**). Cross-measurement compare **reuses
+  `ComparisonView`** (panes pre-rendered each from its own model + a dict renderer; the viewer already
+  syncs zoom/pan/cursor); the compare anchors on the first selected measurement so the channel browser
+  drives the shared channel/representation; the cursor readout routes through `ExperimentModel`. A new
+  **Experiment** inspector tab (`gui/experiment_view.py`, `ExperimentPanel`) shows a **sortable**
+  diagnostics table (lazy + cached) and the cross-measurement statistics for the active overlay, with
+  Export CSV / Copy. `MeasurementController.active_geometry()` exposes the active overlay's nm geometry
+  so the same ROI/line is evaluated on every measurement. Figure export is guarded in compare mode
+  (it is not a single-dataset source).
+
+### Decisions
+- **ADR-0029.** Read-only experiment analysis via one Qt-free `ExperimentModel` that aggregates
+  existing systems (no `snomniman.experiment` backend module yet - one present consumer, Rule 7; no
+  second comparison/diagnostics system). **Difference Views deferred to Phase 2C** (multi-input op +
+  GUI multi-input surface + grid compatibility + the unresolved two-parent-vs-linear-history
+  provenance question). The browser stays cheap (metadata only); diagnose is lazy + cached.
+
+### Issues Found
+- mypy `--strict` caught the loose `geometry: object` (untyped unpacking) -> typed it
+  `tuple[float,float,float,float] | Sequence[tuple[float,float]]` with a `cast` per branch; and the
+  `QTableWidgetItem | None` returns in tests -> a small `_text` guard. No scientific-logic leak into
+  Qt: the aggregation is in the Qt-free presenter and unit-tested headlessly.
+
+### Tests / gates
+- 478 tests (up from 458). `test_experiment_model.py` (11, **headless/no-qapp**: browser, shared
+  channels, compare panes + readout, diagnostics table + cache, region/profile compare),
+  `test_gui_experiment.py` (7: browser summary, single-measurement quiet row, enter/exit compare
+  mode, lazy diagnostics tab, overlay stats + export), `test_gui_export.py` (+2). `ruff` clean;
+  `mypy --strict` clean (102 files); Qt-free invariant green (`gui/experiment.py` imports no Qt; the
+  Qt widgets live in `gui/experiment_view.py` + `panels.py`).
+
+### Documentation Updated
+- `docs/decisions.md` (ADR-0029), `docs/architecture.md` (gui experiment presenter + browser +
+  Experiment tab). No `data-model.md` change (read-only; no new datasets/format/provenance). `LOG.md`
+  (this entry), `NEXT.md`, `CLAUDE.md` status, project memory.
+
+### Next Recommended Actions
+- **Phase 2C (planned):** Difference Views as derived datasets - the first multi-input
+  `ProcessingStep`, the GUI surface to choose a second-measurement input, grid/coordinate
+  compatibility (refuse on mismatch), and the design decision for where a two-parent derived dataset
+  lives (a derived measurement vs. a results concept). Its own design proposal first.
+- **Product (Beta Readiness):** run the user-testing protocol (the experiment workflow is now
+  testable end-to-end), then the High tier (H2-H5).
+- **Science:** unchanged - the open Validation Queue items await suitable golden measurements.
