@@ -35,7 +35,14 @@ import xarray as xr
 
 from snomniman.core import DataKind, Dataset, Metadata, deserialize_dag, serialize_dag
 from snomniman.core.exceptions import ProcessingError
-from snomniman.processing import ParameterSpec, ProcessingStep, get_step, list_steps, register
+from snomniman.processing import (
+    InputSpec,
+    ParameterSpec,
+    ProcessingStep,
+    get_step,
+    list_steps,
+    register,
+)
 from snomniman.processing import registry as _reg_module
 
 # ---------------------------------------------------------------------------
@@ -124,6 +131,10 @@ class _CombineAdd(ProcessingStep):
     version = 1
     description = "Add corresponding channels of two datasets (testing only)."
     deterministic = True
+
+    @classmethod
+    def input_specs(cls) -> list[InputSpec]:
+        return [InputSpec("a", "First addend."), InputSpec("b", "Second addend.")]
 
     def _execute(
         self, inputs: Mapping[str, Dataset]
@@ -397,6 +408,38 @@ def test_multi_input_both_nodes_referenced(synthetic_dataset: Dataset) -> None:
 def test_multi_input_provenance_step_id(synthetic_dataset: Dataset) -> None:
     result = _CombineAdd().apply({"a": synthetic_dataset, "b": synthetic_dataset})
     assert result.provenance.record.step_id == "test.combine_add"
+
+
+def test_default_input_spec_is_single_primary() -> None:
+    specs = _AddConstant.input_specs()
+    assert [s.name for s in specs] == ["primary"]
+
+
+def test_multi_input_step_declares_its_slots() -> None:
+    assert [s.name for s in _CombineAdd.input_specs()] == ["a", "b"]
+
+
+def test_apply_rejects_inputs_that_do_not_match_declared_slots(
+    synthetic_dataset: Dataset,
+) -> None:
+    # _CombineAdd declares slots {"a", "b"}; passing the single-input convention fails.
+    with pytest.raises(ProcessingError, match=r"expected input\(s\) \['a', 'b'\]"):
+        _CombineAdd().apply({"primary": synthetic_dataset})
+
+
+def test_apply_enforces_check_compatibility(synthetic_dataset: Dataset) -> None:
+    class _PickyCombine(_CombineAdd):
+        step_id = "test.picky_combine"
+
+        def check_compatibility(self, inputs: Mapping[str, Dataset]) -> tuple[str, ...]:
+            return ("inputs are never compatible (test).",)
+
+    with pytest.raises(ProcessingError, match="incompatible inputs - inputs are never"):
+        _PickyCombine().apply({"a": synthetic_dataset, "b": synthetic_dataset})
+
+
+def test_check_compatibility_default_is_empty(synthetic_dataset: Dataset) -> None:
+    assert _AddConstant(constant=1.0).check_compatibility({"primary": synthetic_dataset}) == ()
 
 
 def test_chained_steps_build_dag(synthetic_dataset: Dataset) -> None:

@@ -22,7 +22,7 @@ from typing import Any
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from snomniman import viz
-from snomniman.core import current_software
+from snomniman.core import Dataset, current_software
 from snomniman.core.exceptions import DatasetError, ProcessingError, ReaderError
 from snomniman.io import export_channel_gsf, write_zarr
 from snomniman.knowledge import article_for_operation
@@ -47,8 +47,10 @@ from .measurement import MeasurementController, MeasurementPanel
 from .model import (
     PRESET_LABELS,
     ExplorerModel,
+    InputCandidate,
     MeasurementIdentity,
     MeasurementSession,
+    OperationOption,
     OperationPreview,
     PaneSpec,
 )
@@ -88,6 +90,9 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._experiment_compare: tuple[int, ...] | None = None
         self._experiment_compare_channel = ""
         self._experiment_stats: ExperimentTable | None = None
+        # Candidate datasets for a multi-input operation's extra slots (key -> Dataset),
+        # rebuilt whenever an operation is shown in the workspace (ADR-0030).
+        self._input_candidate_map: dict[str, Dataset] = {}
 
         self._title = QtWidgets.QLabel()
         self._facts = QtWidgets.QLabel()
@@ -392,8 +397,54 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
     # -- processing (generic: any registered operation, no per-op wiring) ------
 
     def _on_operation_selected(self, step_id: str) -> None:
-        """Show the selected operation's description + parameter form."""
-        self._process.show_operation(self._model.operation_option(step_id))
+        """Show the selected operation's description, input pickers, and parameter form."""
+        self._present_operation(step_id)
+
+    def _present_operation(self, step_id: str) -> None:
+        """Render an operation in the workspace with its project-wide input candidates."""
+        option = self._model.operation_option(step_id)
+        self._process.show_operation(option, self._build_input_candidates(option))
+
+    def _build_input_candidates(
+        self, option: OperationOption
+    ) -> dict[str, list[InputCandidate]]:
+        """Candidate datasets for each non-primary input slot (project datasets but the active).
+
+        Also rebuilds ``_input_candidate_map`` so a chosen key resolves back to a
+        Dataset at Preview time. The same pool is offered to every extra slot.
+        """
+        self._input_candidate_map = {}
+        if not option.inputs:
+            return {}
+        candidates: list[InputCandidate] = []
+        index = 0
+        for session in self._sessions:
+            for model in [*session.history, session.model]:
+                if model.dataset is self._model.dataset:
+                    continue  # the active dataset is the "primary" input
+                key = str(index)
+                self._input_candidate_map[key] = model.dataset
+                candidates.append(InputCandidate(key=key, label=f"{session.title} / {model.title}"))
+                index += 1
+        return {slot.name: candidates for slot in option.inputs}
+
+    def _resolve_inputs(self) -> dict[str, Dataset] | None:
+        """Map the workspace's chosen input keys back to Datasets (extra slots only).
+
+        Returns ``None`` for a single-input operation. Raises
+        :class:`~snomniman.core.exceptions.ProcessingError` if a slot was left
+        unfilled (surfaced by the caller's preview-failure handling).
+        """
+        keys = self._process.current_input_keys()
+        if not keys:
+            return None
+        inputs: dict[str, Dataset] = {}
+        for slot, key in keys.items():
+            dataset = self._input_candidate_map.get(key)
+            if dataset is None:
+                raise ProcessingError(f"no dataset chosen for input {slot!r}")
+            inputs[slot] = dataset
+        return inputs
 
     def _on_recommendation_preview(self, step_id: str, params: dict[str, Any]) -> None:
         """A suggested next step (from the AI Scientist) opens, pre-configured, in the Workspace.
@@ -404,7 +455,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         """
         self._inspect_tabs.setCurrentWidget(self._process)
         self._process.highlight_operation(step_id)
-        self._process.show_operation(self._model.operation_option(step_id))
+        self._present_operation(step_id)
         self._process.apply_params(params)
         self._on_preview_requested(step_id, params)
 
@@ -424,7 +475,8 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         committed - the derived dataset rides on the preview until Accept.
         """
         try:
-            preview = self._model.preview_operation(step_id, params)
+            inputs = self._resolve_inputs()
+            preview = self._model.preview_operation(step_id, params, inputs)
         except ProcessingError as exc:
             QtWidgets.QMessageBox.warning(self, "Preview failed", str(exc))
             return

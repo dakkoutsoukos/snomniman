@@ -2703,3 +2703,70 @@ system** (Rule 7); no backend, provenance, or processing change.
 - **Product (Beta Readiness):** run the user-testing protocol (the experiment workflow is now
   testable end-to-end), then the High tier (H2-H5).
 - **Science:** unchanged - the open Validation Queue items await suitable golden measurements.
+
+---
+
+## 2026-06-29d - Multi-input processing & difference datasets (Phase 2C, ADR-0030)
+
+Generalized the processing framework from single-input to **multi-input**, validated by the first
+two-input operation. The design proposal's decisive finding - **the engine and the provenance DAG
+were already multi-input** (OHD-2) - turned 2C from a redesign into a generalization of existing
+seams, with **zero** changes to `core/provenance` or the persistence format. The user approved with
+one refinement (a general `image.arithmetic`, not a hardcoded "difference"), which was adopted.
+
+### Completed
+- **Framework (`processing/step.py`):** new `InputSpec` (the dataset counterpart of
+  `ParameterSpec`); `ProcessingStep.input_specs()` defaulting to a single `"primary"` slot (so every
+  existing step is unchanged); `check_compatibility(inputs) -> tuple[str, ...]` (default empty);
+  `apply` now validates that provided inputs match the declared slots and **enforces** compatibility
+  (raises `ProcessingError`; incompatible inputs are refused, never resampled). Exported `InputSpec`.
+- **First multi-input op (`processing/image/arithmetic.py`):** a **general** two-input
+  `image.arithmetic` (modes `a_minus_b` / `b_minus_a` / `absolute_difference`; extensible to
+  sum/ratio/normalized difference), inputs `primary` (A) + `secondary` (B). Operates on the channel's
+  real value view (amplitude for complex; no phase differencing), result a single real `{channel}_diff`
+  channel; `required_capabilities=(SPATIAL_2D,)`. `check_compatibility` requires same kind / dims /
+  coordinates / channel presence + complex-ness. A Knowledge Center article was added (no-drift).
+- **`describe`:** `OperationInputSlot` + `OperationDescription.inputs` (projected from `input_specs()`);
+  single-input ops project one `primary` slot (backward compatible).
+- **GUI:** `ExplorerModel.preview_operation(step_id, params, inputs=None)` generalized;
+  `OperationOption` gained the non-primary input slots; the Processing Workspace renders a dataset
+  **picker per extra slot** (candidates supplied by the window from the whole project), gates Preview
+  when no second dataset exists, and runs the **same** Preview -> Accept flow; the two-parent result
+  appends to the **active (primary) measurement's** history. Incompatible picks surface through the
+  existing preview-error path. Single-input operations render exactly as before.
+
+### Decisions
+- **ADR-0030.** Declare inputs with `InputSpec`; enforce a per-op `check_compatibility`; a multi-parent
+  derived dataset is owned by the **primary** measurement's history (Measurement.datasets is an ordered
+  snapshot list, not a single-parent chain) while its DAG records both parents - so provenance,
+  persistence, and the inspector need no changes. The first op is a general arithmetic (mode enum), not
+  a special "difference" (user refinement). Declarative compatibility deferred (Rule 7). No silent
+  resample/align (OHD-6).
+
+### Issues Found
+- A pre-existing `_CombineAdd` test step exercised multi-input `apply` but did not declare its slots;
+  the new slot-validation correctly flagged it - fixed by giving it `input_specs()` (it now validates
+  the new API). The Knowledge no-drift test caught the missing `image.arithmetic` article (added). Both
+  are the guardrails working as intended.
+
+### Tests / gates
+- 500 tests (up from 478, +22): `test_processing.py` (+5 framework: default/declared slots,
+  slot-mismatch, compatibility enforcement + default), `test_processing_image_arithmetic.py` (11:
+  known-answer A-B/B-A/|A-B| on real + complex-amplitude, non-mutation, two-parent provenance + both
+  sources, compatibility refusals), `test_describe.py` (+2 slot projection), `test_project_store.py`
+  (+1 two-parent dataset round-trips with full DAG), `test_gui_arithmetic.py` (3: picker + gating,
+  preview/accept appends a two-parent dataset, incompatible refusal). `ruff` clean; `mypy --strict`
+  clean (105 files); Qt-free invariant green.
+
+### Documentation Updated
+- `docs/decisions.md` (ADR-0030), `docs/architecture.md` (processing multi-input), `docs/processing-
+  engine.md` (multi-input example + `InputSpec`/`check_compatibility` extension steps). `LOG.md` (this
+  entry), `NEXT.md`, `CLAUDE.md` status, project memory.
+
+### Next Recommended Actions
+- **The processing foundation is now complete** (single + multi-input). Future processing operations
+  - including more arithmetic modes (sum / ratio / normalized difference) and any other two-input
+  combination - extend `image.arithmetic`'s mode enum or add a step with `input_specs()`; no further
+  framework work is required.
+- **Product (Beta Readiness):** run the user-testing protocol; then the High tier (H2-H5).
+- **Science:** unchanged - the open Validation Queue items await suitable golden measurements.

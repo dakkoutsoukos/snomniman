@@ -16,7 +16,7 @@ control back into a value. The window runs the computation and owns dataset/hist
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from PySide6 import QtCore, QtWidgets
@@ -27,6 +27,7 @@ from .model import (
     FIELD_ENUM,
     FIELD_FLOAT,
     FIELD_INT,
+    InputCandidate,
     OperationField,
     OperationOption,
     OperationPreview,
@@ -65,6 +66,9 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         super().__init__()
         self._step_id: str | None = None
         self._fields: dict[str, tuple[OperationField, QtWidgets.QWidget]] = {}
+        # slot name -> (combobox, candidate keys aligned with combo items)
+        self._input_combos: dict[str, tuple[QtWidgets.QComboBox, list[str]]] = {}
+        self._inputs_ready = True  # every declared input slot has a chosen dataset
 
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(6, 6, 6, 6)
@@ -115,6 +119,16 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._learn_btn.setVisible(False)
         self._learn_btn.clicked.connect(self._on_learn_clicked)
         self._body.addWidget(self._learn_btn, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
+
+        # Multi-input operations: a dataset picker per non-primary input slot. Hidden
+        # for single-input operations, so their workspace looks exactly as before.
+        self._inputs_box = QtWidgets.QGroupBox("Inputs")
+        self._inputs_form = QtWidgets.QFormLayout(self._inputs_box)
+        self._inputs_form.setFieldGrowthPolicy(
+            QtWidgets.QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
+        )
+        self._inputs_box.setVisible(False)
+        self._body.addWidget(self._inputs_box)
 
         self._form_box = QtWidgets.QGroupBox("Parameters")
         self._form = QtWidgets.QFormLayout(self._form_box)
@@ -190,17 +204,27 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._tree.blockSignals(False)
         self._show_placeholder()
 
-    def show_operation(self, option: OperationOption) -> None:
-        """Render an operation's description, availability, and parameter form."""
+    def show_operation(
+        self,
+        option: OperationOption,
+        input_candidates: Mapping[str, Sequence[InputCandidate]] | None = None,
+    ) -> None:
+        """Render an operation's description, availability, input pickers, and form.
+
+        ``input_candidates`` maps each non-primary input slot to the datasets the
+        user may choose (supplied by the window, which owns the project). Single-input
+        operations pass nothing and render exactly as before.
+        """
         self._step_id = option.step_id
         self._title.setText(option.title)
         self._detail.setText(_detail_text(option))
+        self._build_inputs(option, input_candidates or {})
         self._build_form(option)
         self._learn_btn.setVisible(True)
         self._preview_box.setVisible(False)
         self._preview_info.clear()
         self._set_buttons_preview(active=False)
-        self._preview_btn.setEnabled(option.available)
+        self._preview_btn.setEnabled(option.available and self._inputs_ready)
 
     def current_params(self) -> dict[str, Any]:
         """Read the parameter form back into a JSON-scalar dict for the engine."""
@@ -208,6 +232,15 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         for name, (field, widget) in self._fields.items():
             params[name] = _read_widget(field, widget)
         return params
+
+    def current_input_keys(self) -> dict[str, str]:
+        """The chosen candidate key for each non-primary input slot (window resolves them)."""
+        keys: dict[str, str] = {}
+        for name, (combo, candidate_keys) in self._input_combos.items():
+            idx = combo.currentIndex()
+            if 0 <= idx < len(candidate_keys):
+                keys[name] = candidate_keys[idx]
+        return keys
 
     def apply_params(self, params: Mapping[str, Any]) -> None:
         """Set the parameter form from *params* (used by a pre-configured preview)."""
@@ -247,28 +280,75 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._set_buttons_preview(active)
         self._tree.setEnabled(not active)
         self._form_box.setEnabled(not active)
+        self._inputs_box.setEnabled(not active)
         if not active:
             self._preview_box.setVisible(False)
             self._preview_info.clear()
-            self._preview_btn.setEnabled(self._step_id is not None)
+            self._preview_btn.setEnabled(self._step_id is not None and self._inputs_ready)
 
     # -- internals ------------------------------------------------------------
 
     def _set_buttons_preview(self, active: bool) -> None:
-        self._preview_btn.setEnabled(not active and self._step_id is not None)
+        can_preview = not active and self._step_id is not None and self._inputs_ready
+        self._preview_btn.setEnabled(can_preview)
         self._apply_btn.setVisible(active)
         self._cancel_btn.setVisible(active)
 
     def _show_placeholder(self) -> None:
         self._step_id = None
+        self._inputs_ready = True
         self._clear_form()
+        self._clear_inputs()
         self._title.setText("No operation selected")
         self._detail.setText("Select an operation above to see what it does and configure it.")
         self._learn_btn.setVisible(False)
+        self._inputs_box.setVisible(False)
         self._form_box.setVisible(False)
         self._preview_box.setVisible(False)
         self._set_buttons_preview(active=False)
         self._preview_btn.setEnabled(False)
+
+    def _build_inputs(
+        self, option: OperationOption, candidates: Mapping[str, Sequence[InputCandidate]]
+    ) -> None:
+        """Build a dataset picker per non-primary input slot; track readiness."""
+        self._clear_inputs()
+        self._inputs_ready = True
+        if not option.inputs:
+            self._inputs_box.setVisible(False)
+            return
+        for slot in option.inputs:
+            options = list(candidates.get(slot.name, ()))
+            if options:
+                combo = QtWidgets.QComboBox()
+                for cand in options:
+                    combo.addItem(cand.label)
+                combo.setToolTip(slot.description)
+                self._input_combos[slot.name] = (combo, [c.key for c in options])
+                row = QtWidgets.QLabel(f"{slot.name} *")
+                row.setToolTip(slot.description)
+                self._inputs_form.addRow(row, combo)
+            else:
+                # No dataset to fill this slot - explain and block Preview.
+                self._inputs_ready = False
+                hint = QtWidgets.QLabel(
+                    "no other dataset available - open or add another measurement"
+                )
+                hint.setStyleSheet(_MUTED)
+                hint.setWordWrap(True)
+                self._inputs_form.addRow(QtWidgets.QLabel(f"{slot.name} *"), hint)
+        self._inputs_box.setVisible(True)
+
+    def _clear_inputs(self) -> None:
+        self._input_combos.clear()
+        while self._inputs_form.count():
+            item = self._inputs_form.takeAt(0)
+            if item is None:
+                continue
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
 
     def _build_form(self, option: OperationOption) -> None:
         self._clear_form()

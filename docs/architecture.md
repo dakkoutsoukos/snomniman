@@ -138,15 +138,24 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
 
 ### `snomniman.processing` - operations (depends on `core`)
 - `ProcessingStep` (ABC): the command pattern. A step has a stable `step_id`, a
-  `version`, JSON-serializable `params`, named `inputs` (for multi-input ops), a
-  `deterministic` flag, declared capability requirements, and
-  `apply(...) -> Dataset`. Steps never mutate; they return a new `Dataset` whose
-  provenance node appends one `StepRecord`.
+  `version`, JSON-serializable `params`, a `deterministic` flag, declared capability
+  requirements, and `apply(inputs) -> Dataset`. Steps never mutate; they return a new
+  `Dataset` whose provenance node appends one `StepRecord`.
+- **Multi-input operations (ADR-0030):** a step declares its dataset inputs with
+  `input_specs()` (an `InputSpec` per slot - the dataset counterpart of
+  `ParameterSpec`); the default is a single `"primary"` slot, so single-input steps
+  are unchanged. `apply` takes a `{slot: Dataset}` mapping and records every input as
+  a parent in the provenance DAG (multi-parent from the start, OHD-2 - no schema
+  change). A step's `check_compatibility(inputs)` lists reasons inputs cannot be
+  combined; `apply` enforces it (incompatible inputs are refused, never resampled).
+  The first multi-input op is the general two-input `image.arithmetic` (A - B / B - A
+  / |A - B|, extensible to sum/ratio); its result lives in the primary measurement's
+  history yet references both parents.
 - `registry`: `step_id -> ProcessingStep class`, populated by registration.
 - Concrete operations by domain:
   - `image/`: crop, rotate, plane/polynomial leveling, line-by-line correction,
     phase offset/unwrap (explicit; produces a first-class unwrapped-phase channel),
-    amplitude normalization, self-referencing.
+    amplitude normalization, self-referencing, two-input arithmetic (difference).
   - `spectrum/`: apodization, zero-fill, phase correction, FFT, reference
     normalization, baseline, atmospheric correction, averaging.
   - `common/`: masking, unit conversion (recorded), statistics/ROI reduction.

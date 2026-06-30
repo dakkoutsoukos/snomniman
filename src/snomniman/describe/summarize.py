@@ -15,7 +15,7 @@ from pathlib import Path
 
 from snomniman.core import Dataset, Metadata, ProvenanceNode, RawSource
 from snomniman.processing import get_step, list_steps
-from snomniman.processing.step import ParameterSpec, ProcessingStep
+from snomniman.processing.step import InputSpec, ParameterSpec, ProcessingStep
 
 from .descriptors import (
     ChannelDescription,
@@ -25,6 +25,7 @@ from .descriptors import (
     MeasurementDescription,
     MetadataSummary,
     OperationDescription,
+    OperationInputSlot,
     OperationParameter,
     ProvenanceSummary,
     SourceDescription,
@@ -184,7 +185,12 @@ def _describe_step_class(cls: type[ProcessingStep]) -> OperationDescription:
         description=cls.description,
         deterministic=cls.deterministic,
         parameters=tuple(_describe_parameter(s) for s in cls.param_specs()),
+        inputs=tuple(_describe_input(s) for s in cls.input_specs()),
     )
+
+
+def _describe_input(spec: InputSpec) -> OperationInputSlot:
+    return OperationInputSlot(name=spec.name, description=spec.description)
 
 
 def _describe_parameter(spec: ParameterSpec) -> OperationParameter:

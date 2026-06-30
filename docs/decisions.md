@@ -674,6 +674,58 @@ Phase 2C** (the two-parent provenance topology resolved there).
 
 ---
 
+## ADR-0030 - Multi-input processing: `InputSpec` + compatibility; arithmetic as the first two-input op  [ACCEPTED]
+**Context.** Phase 2C. Researchers need to combine multiple datasets deterministically (difference
+images now; sum / ratio / normalized difference later) while preserving provenance and the existing
+processing framework. The decisive discovery: the engine and the provenance DAG were **already
+multi-input** by original design (OHD-2). ``ProcessingStep.apply`` already takes a ``{name: Dataset}``
+mapping and builds ``ProvenanceNode(inputs={name: parent})``; ``serialize_dag``/``deserialize_dag``
+already persist multiple **named** parents; ``LineageStep.inputs`` already projects them. So 2C
+**generalizes existing seams** rather than building a parallel processing system - and the two-parent
+provenance/persistence question that deferred this from 2B simply does not require core changes.
+**Decision.** (1) **Declare inputs with `InputSpec`** - the dataset counterpart of ``ParameterSpec``.
+``ProcessingStep.input_specs()`` defaults to a single ``"primary"`` slot (so every existing
+single-input step is unchanged); a multi-input step overrides it. ``apply`` validates that the
+provided inputs exactly match the declared slots. (2) **Compatibility is explicit and enforced.**
+``ProcessingStep.check_compatibility(inputs) -> tuple[str, ...]`` (default empty) lists human-readable
+reasons two inputs cannot be combined; ``apply`` raises ``ProcessingError`` if non-empty (Rule 4), and
+the GUI surfaces the reasons and disables Preview. Incompatible inputs are **refused, never silently
+resampled or aligned** - registration/resampling are separate, explicit, future operations
+(out of scope). (3) **Ownership: a multi-parent derived dataset lives in the primary (active)
+measurement's history.** ``Measurement.datasets`` is an ordered list of derivation snapshots, not a
+single-parent chain, so appending a two-parent dataset needs no model change; the dataset carries its
+**full** DAG (both parents + both ``RawSource``s) and so persists/reopens with complete provenance via
+the existing Zarr store (no persistence change). The secondary input is referenced by provenance, not
+owned. (4) **`describe` gains an input-slot projection** (``OperationInputSlot`` on
+``OperationDescription``) so a generic consumer builds the right dataset picker per slot. (5) **The
+first multi-input operation is a general two-input ``image.arithmetic``** (modes ``a_minus_b`` /
+``b_minus_a`` / ``absolute_difference``; extensible to sum/ratio/normalized difference via the same
+enum), **not** a hardcoded "difference" - it operates on a channel's real value view (amplitude for a
+complex channel; phase differencing is excluded as cyclic/re-referencing). (6) **GUI:** the Processing
+Workspace renders a dataset picker per non-primary slot (candidates supplied by the window, which owns
+the project), through the **same** Preview -> Accept flow; the result appends to the active measurement.
+Single-input operations render exactly as before (no picker).
+**Alternatives.** (a) A parallel multi-input engine - rejected: the engine + DAG were already
+multi-input; generalize, don't duplicate. (b) A new "results" collection or a derived *measurement*
+for two-parent datasets - rejected: a parallel ownership abstraction; the primary measurement's
+history plus the dataset's own DAG already suffice. (c) Hardcode a ``difference`` operation - rejected
+(user refinement): a general arithmetic op + mode enum lets future combinations extend one operation
+rather than spawning new step types. (d) Declarative compatibility (a ``must_match`` field on
+``InputSpec``) - deferred (Rule 7): a per-op method is enough for the first op; extract it when a
+second multi-input op shares the rules. (e) Silently resample/align to force matching grids - rejected
+(scientific honesty, OHD-6): refuse with a clear reason instead.
+**Consequences.** A researcher can open a project, pick two compatible datasets, create a deterministic
+difference, inspect its two-parent provenance, save and reopen it with provenance intact, continue
+processing it, and export it - all through the existing Workspace, provenance, persistence, and export,
+with no parallel system. Single-input operations and previously-saved projects are unaffected (the
+defaults). The change adds one declarative type (``InputSpec``), one method (``check_compatibility``),
+one ``describe`` projection, the GUI pickers, and the ``image.arithmetic`` operation (with a Knowledge
+article, so the no-drift invariant holds). 500 tests pass; ``ruff``, ``mypy --strict``, and the Qt-free
+invariant green. This establishes the long-term foundation for every future multi-input operation
+without another redesign.
+
+---
+
 ## Decision Closure (OHD-1..9 resolved)
 
 | OHD | Topic | Resolution | ADR |

@@ -152,23 +152,25 @@ The resulting provenance DAG is serializable with `serialize_dag()` /
 `deserialize_dag()` (from `snomniman.core`) and is stored in the canonical
 Zarr project store alongside the data.
 
-**Multi-input example** (e.g. background subtraction across two measurements,
-future - no registered operation is multi-input yet; `image.reference_normalize`
-is single-input because signal and reference share one measurement):
+**Multi-input example.** The first registered multi-input operation is
+`image.arithmetic` (ADR-0030), which combines one channel of two measurements
+(`image.reference_normalize` is single-input because signal and reference share one
+measurement):
 
 ```python
-step = SubtractBackground()
-result = step.apply({
-    "sample":     dataset_sample,
-    "background": dataset_background,
-})
+step = get_step("image.arithmetic")(channel="Z", mode="a_minus_b")
+result = step.apply({"primary": dataset_a, "secondary": dataset_b})
 # result.provenance.inputs == {
-#     "sample":     dataset_sample.provenance,
-#     "background": dataset_background.provenance,
+#     "primary":   dataset_a.provenance,
+#     "secondary": dataset_b.provenance,
 # }
 ```
 
-The DAG serializes this multi-input structure without losing any edge.
+The DAG serializes this multi-input structure without losing any edge - it was a
+multi-parent DAG from the start (OHD-2), so no schema change was needed; a derived
+two-parent dataset reopens with both parents and both raw sources intact. The result
+lives in the *primary* measurement's history (the secondary input is referenced by
+provenance, not owned).
 
 ---
 
@@ -274,6 +276,26 @@ To add a new operation:
    - A known-answer test validating the computation (Rule 6).
    - A non-mutation test confirming the input Dataset is unchanged after apply.
    - A provenance test confirming the step_id and params are recorded.
+
+7. **Add a Knowledge Center article** for the operation (the no-drift invariant,
+   ADR-0024, requires one article per registered operation).
+
+**Multi-input operations (ADR-0030).** A single-input step needs none of this - it
+inherits the default `"primary"` slot. To consume **more than one** Dataset:
+
+- **Declare the input slots** via `input_specs()` (an `InputSpec(name, description)`
+  per slot - the dataset counterpart of `ParameterSpec`). The slot names are the keys
+  of the `inputs` mapping. By convention `"primary"` is the active measurement; extra
+  slots become dataset pickers in the Workspace (candidates supplied by the window).
+- **Declare compatibility** via `check_compatibility(inputs) -> tuple[str, ...]` -
+  return one human-readable reason per problem (e.g. mismatched dimensions / units /
+  missing channel), or `()` if the inputs combine. `apply` enforces it (raises
+  `ProcessingError`); the GUI surfaces the reasons and disables Preview. **Never
+  silently resample or align** - refuse instead (registration is a separate, explicit
+  operation). See `image.arithmetic` for the worked example.
+- A multi-parent result is appended to the **primary** measurement's history but
+  records every input in its provenance DAG; persistence and the provenance inspector
+  need no special handling (the DAG was multi-input from the start).
 
 **Template:**
 

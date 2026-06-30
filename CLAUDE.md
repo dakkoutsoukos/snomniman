@@ -23,9 +23,11 @@ rather than repeating them.
 > GSF channel export with a provenance sidecar);
 > `snomniman.viz` (display-ready render data, quantitative line/ROI measurement,
 > provenance-bearing publication figures); `snomniman.processing` (the
-> `ProcessingStep` engine + a growing operation vocabulary - `image.plane_level`,
-> `image.reference_normalize`, `image.phase_unwrap`, `image.crop` - with steps
-> declaring `required_capabilities`); `snomniman.describe` (the **Scientific
+> `ProcessingStep` engine - now **multi-input** (ADR-0030: steps declare inputs via `InputSpec`
+> + a `check_compatibility` gate; single-input is the default) - and a growing operation
+> vocabulary - `image.plane_level`, `image.line_flatten`, `image.reference_normalize`,
+> `image.phase_unwrap`, `image.crop`, and the first two-input op `image.arithmetic`
+> (A-B / B-A / |A-B|, extensible) - with steps declaring `required_capabilities`); `snomniman.describe` (the **Scientific
 > Description API**: structured descriptors *projecting* a measurement);
 > `snomniman.diagnostics` (the **Scientific Diagnostics Engine**: deterministic
 > *computed* facts - tilt, roughness, statistics, amplitude decay, operation
@@ -76,7 +78,7 @@ rather than repeating them.
 > operation, diagnostics, the AI's philosophy), with "Learn more" deep-links from
 > operations and recommendations - the same curated content a future AI narrator grounds
 > its explanations in.
-> 478 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> 500 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
@@ -194,7 +196,9 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
 - `snomniman.io` - import/export; reader *registry* (not a plugin system); readers
   (neaSNOM imaging first); Zarr writers; GSF channel export (+ provenance sidecar);
   h5py for vendor HDF5.
-- `snomniman.processing` - operations as `ProcessingStep`s (command pattern) + registry.
+- `snomniman.processing` - operations as `ProcessingStep`s (command pattern) + registry;
+  **multi-input** (ADR-0030): steps declare inputs via `InputSpec` (default single `primary`)
+  and a `check_compatibility` gate; `image.arithmetic` is the first two-input op.
 - `snomniman.pipeline` - the reproducibility engine: provenance **DAG**, replay,
   (de)serialization, environment/operation-version capture, and the `Project` (a
   collection of `Measurement`s, ADR-0028) + `save_project`/`load_project` bundle with

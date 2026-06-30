@@ -175,14 +175,32 @@ class OperationParameter:
 
 
 @dataclass(frozen=True)
+class OperationInputSlot:
+    """One Dataset input an operation consumes (the projection of an ``InputSpec``).
+
+    Mirrors :class:`OperationParameter` for *datasets* rather than scalar params: a
+    single-input operation projects one ``"primary"`` slot; a multi-input operation
+    projects one slot per input, so a generic consumer can build the right dataset
+    picker per slot without operation-specific code.
+    """
+
+    name: str
+    description: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: _jsonify(v) for k, v in asdict(self).items()}
+
+
+@dataclass(frozen=True)
 class OperationDescription:
-    """A registered processing operation and its parameter schema."""
+    """A registered processing operation: its input slots and parameter schema."""
 
     step_id: str
     version: int
     description: str
     deterministic: bool
     parameters: tuple[OperationParameter, ...]
+    inputs: tuple[OperationInputSlot, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {k: _jsonify(v) for k, v in asdict(self).items()}
@@ -228,6 +246,7 @@ __all__ = [
     "MeasurementDescription",
     "MetadataSummary",
     "OperationDescription",
+    "OperationInputSlot",
     "OperationParameter",
     "ProvenanceSummary",
     "SourceDescription",

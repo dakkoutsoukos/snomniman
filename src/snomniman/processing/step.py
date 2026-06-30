@@ -102,6 +102,24 @@ class ParameterSpec:
             )
 
 
+@dataclass(frozen=True)
+class InputSpec:
+    """Declares one Dataset input a :class:`ProcessingStep` consumes.
+
+    The dataset counterpart of :class:`ParameterSpec`. It names a slot in the
+    ``{name: Dataset}`` mapping passed to :meth:`ProcessingStep.apply`. Single-input
+    steps use the default single ``"primary"`` slot (so they need not declare
+    anything); a multi-input step (e.g. a two-input arithmetic combination) declares
+    one :class:`InputSpec` per input, so a generic consumer (the Processing
+    Workspace) can build the right dataset picker per slot without operation-specific
+    code (Rule 4). ``name`` is the mapping key the step's ``_execute`` reads (e.g.
+    ``inputs["secondary"]``); ``description`` labels the slot for the UI/provenance.
+    """
+
+    name: str
+    description: str
+
+
 class ProcessingStep(ABC):
     """Abstract base class for all SNOMNIMAN processing operations.
 
@@ -159,6 +177,29 @@ class ProcessingStep(ABC):
     def param_specs(cls) -> Sequence[ParameterSpec]:
         """Declare the parameters this step accepts. Empty = no parameters."""
         return []
+
+    @classmethod
+    def input_specs(cls) -> Sequence[InputSpec]:
+        """Declare the Dataset inputs this step consumes.
+
+        Defaults to a single ``"primary"`` input, so every existing single-input
+        step works unchanged. Multi-input steps override this to declare one
+        :class:`InputSpec` per input (the names become the keys of the ``inputs``
+        mapping passed to :meth:`apply` / read in :meth:`_execute`).
+        """
+        return (InputSpec("primary", "The measurement to process."),)
+
+    def check_compatibility(self, inputs: Mapping[str, Dataset]) -> tuple[str, ...]:
+        """Reasons *inputs* cannot be combined (human-readable), or ``()`` if they can.
+
+        The default is no cross-input constraints - single-input steps need none.
+        Multi-input steps override this to require, e.g., matching dimensions,
+        coordinates, or units. The reasons are surfaced by the GUI (to explain an
+        unavailable combination and disable Preview) and **enforced** by
+        :meth:`apply`; incompatible inputs are refused, never silently reconciled
+        (no resampling/alignment - those are separate, explicit operations).
+        """
+        return ()
 
     @classmethod
     def validate(cls, params: Mapping[str, Any]) -> dict[str, Any]:
@@ -228,6 +269,25 @@ class ProcessingStep(ABC):
                 f"{type(self).step_id}: inputs must not be empty"
             )
 
+        # The provided inputs must match the step's declared slots exactly - this
+        # makes the multi-input contract explicit (and keeps single-input callers,
+        # which pass {"primary": ds}, working against the default slot).
+        declared = {spec.name for spec in type(self).input_specs()}
+        provided = set(inputs)
+        if provided != declared:
+            raise ProcessingError(
+                f"{type(self).step_id}: expected input(s) {sorted(declared)}, "
+                f"got {sorted(provided)}"
+            )
+
+        # Compatibility is enforced here, not just in the GUI (Rule 4): incompatible
+        # inputs are refused, never silently reconciled.
+        problems = self.check_compatibility(inputs)
+        if problems:
+            raise ProcessingError(
+                f"{type(self).step_id}: incompatible inputs - " + "; ".join(problems)
+            )
+
         result_data, result_kind, result_metadata = self._execute(inputs)
 
         input_nodes: dict[str, ProvenanceNode] = {
@@ -270,6 +330,7 @@ __all__ = [
     "CHANNEL_ANY",
     "CHANNEL_COMPLEX",
     "CHANNEL_REAL",
+    "InputSpec",
     "ParameterSpec",
     "ProcessingStep",
 ]

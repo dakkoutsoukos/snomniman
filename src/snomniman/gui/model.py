@@ -239,6 +239,27 @@ class OperationField:
 
 
 @dataclass(frozen=True)
+class OperationInput:
+    """One non-primary dataset input a multi-input operation needs the user to choose.
+
+    Projected from the operation's declared input slots (the ``primary`` slot is the
+    active measurement and needs no picker). The candidate datasets are supplied by
+    the window (which owns the project), not the per-measurement model.
+    """
+
+    name: str
+    description: str
+
+
+@dataclass(frozen=True)
+class InputCandidate:
+    """A dataset the user can pick for an operation input: a stable key + a label."""
+
+    key: str
+    label: str
+
+
+@dataclass(frozen=True)
 class OperationOption:
     """A registered operation projected for the Processing Workspace.
 
@@ -261,6 +282,7 @@ class OperationOption:
     missing: tuple[str, ...]  # human-readable missing capabilities (why unavailable)
     fields: tuple[OperationField, ...]
     blocked_reason: str | None  # set if capability-applicable but a required field can't be filled
+    inputs: tuple[OperationInput, ...] = ()  # non-primary dataset inputs (multi-input ops)
 
     @property
     def available(self) -> bool:
@@ -786,21 +808,28 @@ class ExplorerModel:
         return self._operation_option(describe_operation(step_id), apps.get(step_id))
 
     def preview_operation(
-        self, step_id: str, params: Mapping[str, object]
+        self,
+        step_id: str,
+        params: Mapping[str, object],
+        inputs: Mapping[str, Dataset] | None = None,
     ) -> OperationPreview:
         """Apply ``step_id`` with ``params`` to a *copy* and describe the result.
 
-        Builds the step from the registry, applies it to ``{"primary": dataset}``
-        (the single-input convention every current operation uses), and returns an
+        Builds the step from the registry and applies it to this measurement as the
+        ``"primary"`` input, plus any extra named ``inputs`` for a multi-input
+        operation (e.g. ``{"secondary": other_dataset}`` for arithmetic). Returns an
         :class:`OperationPreview` describing the derivation - before/after panes, a
-        change summary, and the provenance node that will be recorded. The active
-        Dataset is **not** modified; the derived Dataset is carried on the preview
-        and committed verbatim only if the user accepts. Raises
-        :exc:`~snomniman.core.ProcessingError` for invalid params or preconditions
-        (the caller surfaces it; nothing is committed).
+        change summary, and the provenance node that will be recorded (it references
+        every input). The active Dataset is **not** modified; the derived Dataset is
+        carried on the preview and committed verbatim only if the user accepts. Raises
+        :exc:`~snomniman.core.ProcessingError` for invalid params, incompatible
+        inputs, or unmet preconditions (the caller surfaces it; nothing is committed).
         """
         step = get_step(step_id)(**params)
-        derived = step.apply({"primary": self._ds})
+        all_inputs: dict[str, Dataset] = {"primary": self._ds}
+        if inputs:
+            all_inputs.update(inputs)
+        derived = step.apply(all_inputs)
         changes, unchanged, focus = self._diff_summary(self._ds, derived)
         panes = self._preview_panes(self._ds, derived, focus)
         lineage = summarize_provenance(derived.provenance).steps
@@ -827,6 +856,13 @@ class ExplorerModel:
             _capability_phrase(c) for c in (app.missing_capabilities if app else ())
         )
         blocked = self._blocked_reason(fields) if applicable else None
+        # Non-primary input slots become dataset pickers; the window supplies the
+        # candidate datasets (it owns the project), so candidates are not built here.
+        op_inputs = tuple(
+            OperationInput(slot.name, slot.description)
+            for slot in desc.inputs
+            if slot.name != "primary"
+        )
         return OperationOption(
             step_id=desc.step_id,
             title=_operation_title(desc.step_id),
@@ -840,6 +876,7 @@ class ExplorerModel:
             missing=missing,
             fields=fields,
             blocked_reason=blocked,
+            inputs=op_inputs,
         )
 
     def _operation_field(self, p: OperationParameter) -> OperationField:
@@ -1306,11 +1343,13 @@ __all__ = [
     "CursorReadout",
     "CursorValue",
     "ExplorerModel",
+    "InputCandidate",
     "MeasurementIdentity",
     "MeasurementSession",
     "MetadataItem",
     "MetadataSection",
     "OperationField",
+    "OperationInput",
     "OperationOption",
     "OperationPreview",
     "PaneSpec",

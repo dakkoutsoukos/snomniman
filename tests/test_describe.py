@@ -173,6 +173,19 @@ def test_describe_operation_real_plane_level() -> None:
     assert by_name["order"].default == 1
 
 
+def test_describe_projects_single_input_slot_by_default() -> None:
+    # A single-input operation projects exactly one "primary" slot (the default).
+    op = describe_operation("image.plane_level")
+    assert [s.name for s in op.inputs] == ["primary"]
+
+
+def test_describe_projects_multi_input_slots() -> None:
+    # The two-input arithmetic operation projects both its declared input slots.
+    op = describe_operation("image.arithmetic")
+    assert [s.name for s in op.inputs] == ["primary", "secondary"]
+    assert all(slot.description for slot in op.inputs)  # each slot is labelled
+
+
 # --------------------------------------------------------------------------- #
 # Aggregate + JSON + invariants
 # --------------------------------------------------------------------------- #

@@ -3,14 +3,15 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-29 (shipped **Phase 2B - experiment analysis**, ADR-0029: a read-only,
-Qt-free `ExperimentModel` that *aggregates* existing systems into experiment-wide views - an
-experiment browser, cross-measurement comparison reusing the comparison viewer, a project-wide
-diagnostics table, and cross-measurement ROI/line statistics with CSV export. No backend/provenance/
-processing change. **Difference Views deferred to Phase 2C** - planned next. Earlier this date: Phase
-2A multi-measurement projects, ADR-0028 (C3 done -> Critical cluster C1-C4 + H1 closed); and the
-complete research workflow, ADR-0027 (C1/C2/H1). Governance: the Scientific Validation Phase + Beta
-Readiness Review remain the planning systems)
+**Last updated:** 2026-06-29 (shipped **Phase 2C - multi-input processing & difference datasets**,
+ADR-0030: generalized the processing framework to multiple inputs via `InputSpec` +
+`check_compatibility` - the engine + provenance DAG were *already* multi-input (OHD-2), so no core/
+persistence change - and added the first multi-input op, a general two-input `image.arithmetic`
+(A-B / B-A / |A-B|). The result is a normal two-parent derived dataset in the primary measurement's
+history; single-input ops and old projects are unchanged. **The processing foundation is now
+complete.** Earlier this date: Phase 2B experiment analysis (ADR-0029); Phase 2A multi-measurement
+projects (ADR-0028, Critical cluster C1-C4 + H1 closed); the complete research workflow (ADR-0027).
+Governance: the Scientific Validation Phase + Beta Readiness Review remain the planning systems)
 
 ---
 
@@ -130,13 +131,13 @@ The canonical queue lives in `docs/scientific-validation.md` Section 7.
 
 ## Also pending (pulled in only when the loop calls for it)
 
-- **Phase 2C - Difference Views (planned next; deferred from 2B, ADR-0029).** Difference
-  datasets (B - A, |B - A|, ratio) as *derived, provenance-bearing* datasets. This is the
-  write-path work 2B excluded: the **first multi-input `ProcessingStep`**, GUI surface to choose
-  a second-measurement input, **grid/coordinate compatibility** (refuse on mismatch -
-  resampling/registration stays out of scope), and the open **design decision** for where a
-  **two-parent** derived dataset lives (a derived measurement vs. a results concept) given a
-  `Measurement`'s history is linear. **Write a design proposal first** (same discipline as 2A/2B).
+- **Phase 2C - Multi-input processing & difference datasets. DONE (2026-06-29, ADR-0030).** The
+  processing framework now supports multiple inputs (`InputSpec` + `check_compatibility`); the first
+  multi-input op is the general two-input `image.arithmetic` (A-B / B-A / |A-B|). A two-parent
+  derived dataset lives in the **primary** measurement's history while recording both parents in its
+  DAG; no core/provenance/persistence change was needed (multi-input from the start). Further
+  arithmetic modes (sum / ratio / normalized difference) extend the existing op's mode enum - no new
+  framework work. **The processing foundation is complete.**
 - **Concrete AI narrative provider** - ONE real provider behind the existing
   `NarrativeProvider` seam as an optional extra (`uv sync --extra ai`), lazy-imported,
   never required for backend/CI; tests mock it, CI never calls a network. A major

@@ -186,7 +186,11 @@ Provenance is a **DAG** (OHD-2): a step may take multiple named inputs, each
 resolving to another `(RawSource + sub-graph)` - this represents sample/reference
 normalization, background subtraction, calibration inputs, and stitched scans.
 For full traceability (OHD-5) the graph records data sources, steps, parameters,
-and software + operation versions.
+and software + operation versions. This multi-parent capability is realized by the
+first multi-input operation, `image.arithmetic` (ADR-0030): its result node
+references both parents, and because each dataset's Zarr store serializes its full
+DAG, a two-parent derived dataset persists and reopens with both parents and both
+raw sources intact - no schema change was needed.
 
 ```json
 {

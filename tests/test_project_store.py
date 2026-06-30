@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 
 import snomniman.processing.image  # noqa: F401  (registers image ops)
-from snomniman.core import Dataset, serialize_dag
+from snomniman.core import Dataset, ProvenanceNode, RawSource, StepRecord, serialize_dag
 from snomniman.core.exceptions import ReaderError
 from snomniman.io import write_zarr
 from snomniman.pipeline import (
@@ -143,6 +143,53 @@ def test_derived_dataset_keeps_its_provenance(project: Project, tmp_path: Path) 
     derived = loaded.measurements[0].datasets[1]
     step_ids = [n.record.step_id for n in derived.provenance.iter_nodes()]
     assert step_ids == ["io.read", "image.plane_level"]
+
+
+def test_two_parent_arithmetic_dataset_round_trips(
+    synthetic_dataset: Dataset, tmp_path: Path
+) -> None:
+    """A multi-input (two-parent) difference dataset persists with its full DAG (ADR-0030).
+
+    The derived dataset lives in the primary measurement's history but its provenance
+    references both parents and both raw sources; saving stores its complete DAG, so it
+    reopens with full provenance even though B's measurement is not in the project.
+    """
+    def _raw(node_id: str, src: RawSource) -> ProvenanceNode:
+        return ProvenanceNode(
+            node_id=node_id,
+            record=StepRecord(step_id="io.read", step_version=1, deterministic=True),
+            sources={"measurement": src},
+        )
+
+    src_a = RawSource(path="/data/A", sha256="a" * 64, reader="test", bytes=1, is_directory=True)
+    src_b = RawSource(path="/data/B", sha256="b" * 64, reader="test", bytes=1, is_directory=True)
+    a = Dataset(
+        synthetic_dataset.data,
+        kind=synthetic_dataset.kind,
+        metadata=synthetic_dataset.metadata,
+        provenance=_raw("raw_a", src_a),
+    )
+    b_data = synthetic_dataset.data.copy(deep=True)
+    b_data["Z"] = b_data["Z"] + 10.0
+    b = Dataset(
+        b_data, kind=synthetic_dataset.kind, metadata=synthetic_dataset.metadata,
+        provenance=_raw("raw_b", src_b),
+    )
+    difference = get_step("image.arithmetic")(channel="Z", mode="a_minus_b").apply(
+        {"primary": a, "secondary": b}
+    )
+    # The difference lives in measurement A's history (raw A, then the difference).
+    measurement = Measurement(
+        measurement_id="measurement-0001", title="A - B", datasets=(a, difference), current_index=1
+    )
+    project = Project(title="difference project", measurements=(measurement,))
+
+    loaded = load_project(save_project(project, tmp_path / "diff.snomproj"))
+    restored = loaded.current_measurement.current
+    assert restored.provenance.record.step_id == "image.arithmetic"
+    assert set(restored.provenance.inputs) == {"primary", "secondary"}  # both parents
+    assert {s.path for s in restored.provenance.iter_sources()} == {"/data/A", "/data/B"}
+    np.testing.assert_allclose(restored.channel("Z_diff").values, -10.0)  # values survive
 
 
 # --------------------------------------------------------------------------- #

@@ -24,6 +24,7 @@ from .step import (
     CHANNEL_ANY,
     CHANNEL_COMPLEX,
     CHANNEL_REAL,
+    InputSpec,
     ParameterSpec,
     ProcessingStep,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "CHANNEL_ANY",
     "CHANNEL_COMPLEX",
     "CHANNEL_REAL",
+    "InputSpec",
     "ParameterSpec",
     "ProcessingStep",
     "get_step",

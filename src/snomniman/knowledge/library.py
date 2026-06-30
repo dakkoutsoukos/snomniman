@@ -301,6 +301,58 @@ _OPERATIONS = (
         references=(_GWYDDION, _WSXM),
     ),
     Article(
+        article_id="operation.image.arithmetic",
+        category=OPERATION,
+        title="Arithmetic (two-measurement)",
+        summary=(
+            "Combines one channel of two compatible measurements pixel-by-pixel - currently the "
+            "difference forms A - B, B - A, and |A - B| - producing a new derived dataset."
+        ),
+        explanation=(
+            "This is the first operation that takes two measurements as input. It evaluates one "
+            "channel of measurement A and the same channel of measurement B on each pixel and "
+            "combines them, recording both measurements as parents in the result's provenance. "
+            "It works on the channel's real value view - the values of a real channel (e.g. Z) "
+            "or the amplitude of a complex channel - and produces a single real-valued result "
+            "channel. The two measurements must share the same grid (dimensions, pixel spacing, "
+            "and extent) and the chosen channel; mismatches are refused rather than reconciled, "
+            "because aligning or resampling data is a separate, explicit operation."
+        ),
+        scientific_background=(
+            "Comparing two scans - before vs. after a stimulus, two tip conditions, two "
+            "harmonics on a shared grid - is a routine analysis. A difference image makes the "
+            "spatial change explicit; the absolute difference highlights where two scans differ "
+            "regardless of sign. The operation is intentionally general (a two-input "
+            "combination) so further modes (sum, ratio, normalized difference) extend it rather "
+            "than spawning new operation types."
+        ),
+        mathematical_background=(
+            "For the chosen channel with value views a(x,y) and b(x,y): A - B = a - b; "
+            "B - A = b - a; |A - B| = abs(a - b). For a complex channel the value view is the "
+            "amplitude |.|; phase differencing is cyclic and re-referencing and is deliberately "
+            "not performed here. The result inherits A's coordinates and is real-valued."
+        ),
+        practical_guidance=(
+            "Open or add both measurements to the project, make A the active measurement, then "
+            "choose Arithmetic and pick B as the second input. Preview shows A versus the "
+            "result before you accept; the difference is then a normal derived dataset in A's "
+            "history that you can measure, process further, save, and export. If the two scans "
+            "are not on the same grid, register/crop them to a common grid first (a separate "
+            "step) - SNOMNIMAN never silently resamples."
+        ),
+        common_mistakes=(
+            "Differencing two scans of different regions or sampling - a meaningful difference "
+            "requires the same physical grid; the operation refuses mismatched grids.",
+            "Reading a phase difference into the amplitude difference of a complex channel - "
+            "this combines amplitudes, not phase.",
+            "Expecting alignment: drift between two scans is not corrected here; align first.",
+        ),
+        related_concepts=("concept.provenance",),
+        related_operations=("image.reference_normalize",),
+        related_diagnostics=(),
+        references=(_GWYDDION,),
+    ),
+    Article(
         article_id="operation.image.reference_normalize",
         category=OPERATION,
         title="Reference Normalize",
