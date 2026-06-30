@@ -653,6 +653,132 @@ _OPERATIONS = (
         references=(_GHIGLIA,),
     ),
     Article(
+        article_id="operation.image.region_phase_reference",
+        category=OPERATION,
+        title="Region Phase Reference",
+        summary=(
+            "Re-references a complex channel's phase to the circular mean of a user-selected "
+            "rectangular region (substrate or known material); the amplitude is preserved exactly."
+        ),
+        explanation=(
+            "The absolute optical phase in s-SNOM is arbitrary - it depends on interferometer "
+            "path length, the demodulation reference, and drift - so only phase *contrast* "
+            "relative to a chosen datum is physically interpretable. This operation subtracts the "
+            "circular mean of a reference region from every pixel: phi_result = phi - phi_ref, "
+            "where phi_ref = circular_mean(phi over the region). After the operation the reference "
+            "region has mean phase ≈ 0, and every other pixel shows its phase contrast relative "
+            "to that material. The amplitude is unchanged; the new reference is recorded in the "
+            "dataset's conventions."
+        ),
+        scientific_background=(
+            "The reference region is typically a substrate (SiO2, gold, CdO substrate area) or a "
+            "known-material patch visible in the field of view. Referencing to a substrate region "
+            "converts the arbitrary absolute phase into a publication-standard quantity: the "
+            "optical phase contrast relative to that material. This is the form reported in "
+            "essentially all quantitative nano-FTIR and IR s-SNOM figures (Huth et al., Nano "
+            "Lett. 2012; Basov et al., Science 2016; Huber et al., Nano Lett. 2008). The "
+            "global-mean form (image.phase_offset reference='mean') removes a global offset but "
+            "mixes substrate and sample contributions; a substrate-region datum is clean, "
+            "reproducible, and directly comparable across measurements on the same substrate."
+        ),
+        mathematical_background=(
+            "phi_ref = angle(mean(O_region)), the circular mean: the angle of the mean complex "
+            "vector over the reference region. This is the correct average of a cyclic quantity - "
+            "an arithmetic mean of wrapped angles is wrong near the ±pi branch cut (e.g. +179° "
+            "and -179° should average to 180°, not 0°). The output is O * exp(-i * phi_ref); "
+            "amplitude |O| is unchanged; phase becomes angle(O) - phi_ref."
+        ),
+        practical_guidance=(
+            "Draw an ROI on a clean substrate or reference material area (avoid features, "
+            "domain walls, or defects). Apply this operation before comparing phase across "
+            "measurements: each measurement referenced to the same substrate type gives "
+            "cross-measurement phase contrast. Use image.phase_offset for a quick global "
+            "offset removal when a clean substrate region is not available."
+        ),
+        common_mistakes=(
+            "Placing the reference region on a feature or domain boundary rather than a clean "
+            "substrate - the region's mean then reflects sample contrast, not a neutral datum.",
+            "Reading absolute phase from the output as a calibrated quantity - it is phase "
+            "contrast relative to the reference region, not an absolute phase.",
+            "Comparing measurements referenced to different substrates without correcting for "
+            "the differing dielectric backgrounds.",
+        ),
+        related_concepts=(
+            "concept.phase", "concept.complex_signals", "concept.near_field_microscopy"
+        ),
+        related_operations=(
+            "image.phase_offset", "image.reference_normalize", "image.phase_unwrap"
+        ),
+        related_diagnostics=(),
+        references=(
+            "Huth et al., Nano Lett. 12, 3973 (2012) - nano-FTIR phase referencing.",
+            "Basov et al., Science 354, aag1992 (2016) - polariton phase maps.",
+            _KEILMANN,
+            _OCELIC,
+        ),
+    ),
+    Article(
+        article_id="operation.image.region_amplitude_reference",
+        category=OPERATION,
+        title="Region Amplitude Reference",
+        summary=(
+            "Normalizes a complex channel's amplitude to the mean amplitude of a user-selected "
+            "rectangular region (substrate or known material); the phase is preserved exactly."
+        ),
+        explanation=(
+            "s-SNOM amplitude is reported in arbitrary units that depend on detector gain, "
+            "demodulation, and alignment, so raw amplitude values are not comparable across "
+            "harmonics, sessions, or instruments. This operation divides every pixel by the mean "
+            "amplitude of a reference region: A_result = |O| / A_ref, where A_ref is the mean "
+            "of |O| over the reference region. After the operation the reference region has mean "
+            "amplitude ≈ 1.0 by construction; every other pixel shows its amplitude contrast "
+            "relative to that material. The phase is unchanged."
+        ),
+        scientific_background=(
+            "Self-normalization to a substrate or reference-material region converts s-SNOM "
+            "amplitude from arbitrary instrument units to a dimensionless ratio relative to a "
+            "known material - making amplitudes comparable across harmonics, measurements, and "
+            "instruments (Dai et al., Science 2014; Woessner et al., Nature Materials 2015). "
+            "The whole-image normalizations (image.normalize_amplitude peak/mean) are useful for "
+            "display, but they mix substrate and sample contributions; a substrate-region datum "
+            "is quantitatively cleaner and reproduces the ratio reported in published polariton "
+            "and chemical-contrast studies."
+        ),
+        mathematical_background=(
+            "A_ref = mean(|O_region|) over finite pixels in the reference region. "
+            "Output: O_result = O / A_ref. Amplitude |O_result| = |O| / A_ref (dimensionless "
+            "ratio relative to the reference material); phase angle(O_result) = angle(O) "
+            "(unchanged). A_ref must be positive; a zero-amplitude reference region is rejected."
+        ),
+        practical_guidance=(
+            "Choose a reference region on a substrate or material whose response is a known, "
+            "stable baseline (e.g. SiO2, gold, or a large flat area of the dominant material). "
+            "Avoid bright features in the region - they pull the mean amplitude up and "
+            "over-suppress the rest of the image. Apply the same region bounds consistently "
+            "across a dataset for cross-measurement comparison. The normalized amplitude is "
+            "dimensionless; do not compare it to uncalibrated amplitudes from other sessions "
+            "unless both are referenced to the same material."
+        ),
+        common_mistakes=(
+            "Choosing a reference region that contains a feature or bright spot - the inflated "
+            "mean amplitude then suppresses the rest of the image.",
+            "Treating the result as a calibrated absolute amplitude - it is a ratio relative to "
+            "the chosen reference region, not an SI-calibrated quantity.",
+            "Referencing different measurements to different substrates, then comparing the "
+            "resulting amplitude maps as if they share a common scale.",
+        ),
+        related_concepts=(
+            "concept.complex_signals", "concept.near_field_microscopy", "concept.harmonics"
+        ),
+        related_operations=("image.normalize_amplitude", "image.reference_normalize"),
+        related_diagnostics=(),
+        references=(
+            "Dai et al., Science 343, 1125 (2014) - hBN phonon polaritons.",
+            "Woessner et al., Nature Materials 14, 421 (2015) - graphene polaritons.",
+            _KEILMANN,
+        ),
+    ),
+    Article(
         article_id="operation.image.crop",
         category=OPERATION,
         title="Crop",

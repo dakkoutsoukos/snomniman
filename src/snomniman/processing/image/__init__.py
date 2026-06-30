@@ -13,6 +13,8 @@ from .phase_offset import PhaseOffset
 from .phase_unwrap import PhaseUnwrap
 from .plane_level import PlaneLevel
 from .reference_normalize import ReferenceNormalize
+from .region_amplitude_reference import RegionAmplitudeReference
+from .region_phase_reference import RegionPhaseReference
 
 __all__ = [
     "Arithmetic",
@@ -24,4 +26,6 @@ __all__ = [
     "PhaseUnwrap",
     "PlaneLevel",
     "ReferenceNormalize",
+    "RegionAmplitudeReference",
+    "RegionPhaseReference",
 ]

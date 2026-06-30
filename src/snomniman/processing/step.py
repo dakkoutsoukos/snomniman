@@ -58,6 +58,15 @@ CHANNEL_COMPLEX: Final = "complex"  #: complex channels only (e.g. optical O{n})
 
 _CHANNEL_ROLES: Final = frozenset({CHANNEL_ANY, CHANNEL_REAL, CHANNEL_COMPLEX})
 
+#: ``region_role`` value: a group of four ``str``/``float`` parameters (named
+#: ``x_min``, ``x_max``, ``y_min``, ``y_max``) that together define a rectangular
+#: ROI in canonical nm. A generic consumer (e.g. the Processing Workspace) can
+#: detect this role on all four parameters and render a single ROI picker instead
+#: of four separate numeric fields. Analogous to :data:`CHANNEL_ANY` for channels.
+ROI_RECTANGLE: Final = "roi_rectangle"
+
+_ROI_ROLES: Final = frozenset({ROI_RECTANGLE})
+
 
 @dataclass(frozen=True)
 class ParameterSpec:
@@ -93,12 +102,18 @@ class ParameterSpec:
     default: Any = None
     choices: tuple[Any, ...] | None = None
     channel_role: str | None = None
+    region_role: str | None = None
 
     def __post_init__(self) -> None:
         if self.channel_role is not None and self.channel_role not in _CHANNEL_ROLES:
             raise ValueError(
                 f"ParameterSpec {self.name!r}: channel_role must be one of "
                 f"{sorted(_CHANNEL_ROLES)} or None, got {self.channel_role!r}"
+            )
+        if self.region_role is not None and self.region_role not in _ROI_ROLES:
+            raise ValueError(
+                f"ParameterSpec {self.name!r}: region_role must be one of "
+                f"{sorted(_ROI_ROLES)} or None, got {self.region_role!r}"
             )
 
 
@@ -330,6 +345,7 @@ __all__ = [
     "CHANNEL_ANY",
     "CHANNEL_COMPLEX",
     "CHANNEL_REAL",
+    "ROI_RECTANGLE",
     "InputSpec",
     "ParameterSpec",
     "ProcessingStep",

@@ -2895,3 +2895,99 @@ underlying stats, and reusable value objects the experiment layer can consume la
 - **Product (Beta Readiness):** run the user-testing protocol - it will confirm/reorder the next
   analysis tools (frequency analysis only if real users need it) and the High tier (H2-H5).
 - **Science:** unchanged - the open Validation Queue items await suitable golden measurements.
+
+---
+
+## 2026-06-30 - Phase 3C: Region-Aware Scientific Operations
+
+Phase 3C completes the SNOM-specific scientific toolbox with two first-class
+region-aware processing operations and the minimal framework addition they require.
+
+### Completed
+
+**`ParameterSpec.region_role` (framework addition - step.py, processing/__init__.py):**
+- Added `ROI_RECTANGLE = "roi_rectangle"` constant (the one declarative ROI type so far).
+- Added `region_role: str | None = None` field to `ParameterSpec` with validation in
+  `__post_init__` (mirroring the existing `channel_role` pattern).
+- Exported from `snomniman.processing` so consumers access it without reaching into `step`.
+- A generic consumer (the Processing Workspace) can detect `region_role=ROI_RECTANGLE` on four
+  parameters (x_min/x_max/y_min/y_max) and render a single ROI picker pre-filled from the
+  canvas ROI, leaving no operation-specific GUI code.
+
+**`processing/image/_region.py` (private utility):**
+- `_rect_mask`: boolean mask of pixels whose centers fall in a rectangle (canonical nm).
+- `region_complex_values`: finite complex values in the rectangle; raises `ProcessingError`
+  when the region selects no pixels or contains no finite values.
+- `circular_mean_phase`: `angle(mean(sel))` - the amplitude-weighted circular mean, the
+  correct average for cyclic phase (avoids the +/-pi arithmetic-mean trap).
+- `mean_amplitude`: `mean(|sel|)`, raises when the reference region has zero amplitude.
+- Private (`_region.py`, not exported); avoids duplicating the mask logic across both ops.
+
+**`image.region_phase_reference` (region_phase_reference.py):**
+- Re-references a complex channel's phase to the circular mean of a user-selected rectangular
+  region (substrate / known material).
+- Published standard for quantitative s-SNOM phase maps: dphi = circular_mean(O_region);
+  every pixel rotated by exp(-i*dphi). Amplitude preserved exactly.
+- params: `channel` (channel_role=CHANNEL_COMPLEX), `x_min/x_max/y_min/y_max`
+  (region_role=ROI_RECTANGLE).
+- Metadata: channel `state="referenced"`; `conventions.phase_reference` updated to record the
+  region bounds and the step id.
+- `required_capabilities = (Capability.COMPLEX_OPTICAL,)`.
+
+**`image.region_amplitude_reference` (region_amplitude_reference.py):**
+- Divides a complex channel by the mean amplitude of a user-selected rectangular region
+  (self-normalization to a known material).
+- Published standard for quantitative SNOM amplitude contrast: A_ref = mean(|O_region|);
+  every pixel divided by A_ref. Phase preserved exactly.
+- params: `channel` (channel_role=CHANNEL_COMPLEX), `x_min/x_max/y_min/y_max`
+  (region_role=ROI_RECTANGLE).
+- Metadata: channel `state="normalized"`, `amplitude_unit=""` (dimensionless).
+- `required_capabilities = (Capability.COMPLEX_OPTICAL,)`.
+
+**Registration:** both ops added to `processing/image/__init__.py`; auto-surface in the
+Processing Workspace and Diagnostics with no GUI code.
+
+**Knowledge articles (library.py):**
+- `operation.image.region_phase_reference` - explains circular mean (why, not arithmetic mean),
+  substrate-region choice, comparison across measurements. References: Huth 2012, Basov 2016.
+- `operation.image.region_amplitude_reference` - explains self-normalization as a dimensionless
+  ratio to a known material, common mistakes (bright spots in region, cross-session comparison).
+  References: Dai 2014, Woessner 2015.
+
+### Decisions
+
+- **No ADR, no architecture change.** The two operations are settled science (Category A);
+  they extend `phase_offset` and `normalize_amplitude` with a region constraint. The only
+  framework addition is a declarative `region_role` field on `ParameterSpec` (anticipated in
+  NEXT.md as "a small region-parameter framework addition, the one place new architecture is
+  justified"). No changes to `ProcessingStep.apply`, `InputSpec`, `Metadata`, `Capability`,
+  `pipeline`, `io`, `viz`, `ai`, `diagnostics`, or `describe`.
+- **Deferred to a later refinement phase:** `image.region_plane_level` and
+  `image.region_fix_zero` (topography ops). Correct decision: Phase 3C is SNOM-specific;
+  the two shipped ops are the publication-critical ones that could not be achieved through any
+  existing operation combination.
+- **Region templates deferred.** The region bounds are in the step params (JSON-serializable,
+  in the provenance DAG), which already serves the provenance purpose. A GUI convenience layer
+  for named regions is a future GUI feature, not a backend need.
+- **`ROI_RECTANGLE` naming** (over `REGION_RECT`) at user's direction, so the abstraction
+  naturally extends to future ROI types (`ROI_POLYGON`, etc.) if needed.
+
+### Issues Found
+- `replace_all` on `type: ignore` comments accidentally corrupted function signatures;
+  caught immediately by mypy. Resolved by rewriting `_region.py` with `npt.NDArray[Any]`
+  (mypy's strict mode accepts this cleanly; no `type: ignore` needed).
+
+### Tests / gates
+- 560 tests (up from 534, +26): `test_processing_image_region_ops.py` (26 new tests):
+  - 3 `ParameterSpec.region_role` tests (accepts ROI_RECTANGLE, accepts None, rejects unknown)
+  - 11 `image.region_phase_reference` tests (known-answer circular mean, amplitude preserved,
+    non-mutation, provenance, metadata, other channels unchanged, out-of-bounds region, inverted
+    x/y bounds, real channel rejected, missing channel rejected)
+  - 12 `image.region_amplitude_reference` tests (known-answer mean amplitude -> 1.0, phase
+    preserved, non-mutation, provenance, metadata, other channels unchanged, out-of-bounds region,
+    inverted x/y bounds, zero-amplitude region rejected, real channel rejected, missing channel
+    rejected)
+  - `ruff` clean; `mypy --strict` clean (115 files); Qt-free invariant green.
+
+### Documentation Updated
+- `LOG.md` (this entry), `NEXT.md` (Phase 3C shipped; deferred items updated).
