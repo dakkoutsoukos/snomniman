@@ -1078,6 +1078,10 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._active.setText(f"Showing   {render.title}      state: {state}")
         # Measurements survive channel changes: recompute them for the new channel.
         self._measure.refresh()
+        # The Diagnostics distribution follows the channel/representation on screen.
+        self._diagnostics.set_histogram(
+            self._model.channel_histogram(), render.vmin, render.vmax, render.title
+        )
 
     def _on_cursor_moved(self, x_nm: float, y_nm: float, in_bounds: bool) -> None:
         if not in_bounds:

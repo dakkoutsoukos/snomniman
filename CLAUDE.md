@@ -32,7 +32,8 @@ rather than repeating them.
 > Description API**: structured descriptors *projecting* a measurement);
 > `snomniman.diagnostics` (the **Scientific Diagnostics Engine**: deterministic
 > *computed* facts - tilt, roughness, statistics, amplitude decay, operation
-> applicability - a sibling of `describe`); and `snomniman.ai` (the **AI Scientist**:
+> applicability, and the value-distribution **histogram** (Phase 3B) - a sibling of
+> `describe`); and `snomniman.ai` (the **AI Scientist**:
 > a Scientific Briefing that composes `describe` + `diagnostics` into a deterministic
 > measurement orientation, plus **Suggested Next Steps** produced by a deterministic
 > **Scientific Reasoning Rule Engine** - registered `ReasoningRule`s that turn
@@ -43,7 +44,9 @@ rather than repeating them.
 > The user-facing experience is the **Measurement Explorer** (`snomniman.gui`,
 > PySide6 + PyQtGraph; `python -m snomniman.gui <dir>`): open a measurement,
 > browse/compare channels, inspect metadata/provenance/diagnostics, read a Scientific
-> Briefing **with grounded Suggested Next Steps**, measure profiles/ROI stats, export
+> Briefing **with grounded Suggested Next Steps**, measure profiles/ROI stats (with
+> Phase 3B **analysis** - line-profile peak/width/spacing features, region-vs-region
+> comparison, and a value-distribution histogram in Diagnostics), export
 > publication figures, and apply **any** registered operation through one generic,
 > registry-driven **Processing Workspace** (ADR-0021): it lists every step (grouped,
 > with availability + a plain reason when an operation does not apply), builds each
@@ -79,7 +82,7 @@ rather than repeating them.
 > operation, diagnostics, the AI's philosophy), with "Learn more" deep-links from
 > operations and recommendations - the same curated content a future AI narrator grounds
 > its explanations in.
-> 517 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> 534 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
@@ -209,8 +212,8 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
   descriptors (consumed by `gui`/`batch`/future `ai`; not `viz`).
 - `snomniman.diagnostics` - the Scientific Diagnostics Engine: a Qt-free layer that
   *computes* deterministic facts about a dataset (statistics, tilt/roughness,
-  amplitude decay, operation applicability). Sibling of `describe` (computation vs
-  projection); consumed by `gui`/`batch`/`ai`.
+  amplitude decay, operation applicability, value-distribution `histogram`). Sibling
+  of `describe` (computation vs projection); consumed by `gui`/`batch`/`ai`.
 - `snomniman.ai` - the AI Scientist: composes `describe` + `diagnostics` into a
   deterministic measurement-orientation Briefing **and deterministic Suggested Next
   Steps** via a **Scientific Reasoning Rule Engine** (`reasoning.py`: registered

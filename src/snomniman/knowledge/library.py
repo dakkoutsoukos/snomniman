@@ -213,6 +213,113 @@ _CONCEPTS = (
         ),
         related_concepts=("concept.immutable_measurements",),
     ),
+    Article(
+        article_id="concept.histogram",
+        category=CONCEPT,
+        title="Value distribution (histogram)",
+        summary=(
+            "The distribution of a channel's values - how often each value occurs - revealing "
+            "populations, spread, outliers, and the dynamic range, with robust percentiles."
+        ),
+        explanation=(
+            "A histogram bins the values currently on screen and counts how many pixels fall in "
+            "each bin. Its shape is informative: a single hump is one population; two humps "
+            "(bimodal) usually mean two materials or phases. The percentiles (P5/P25/median/"
+            "P75/P95) give a robust range that ignores a few extreme pixels, and showing the "
+            "current contrast limits over the distribution makes clear how much of the data the "
+            "colour scale actually spans (the dynamic range). It is a read-only analysis, not a "
+            "display control: it describes the data, it does not change it."
+        ),
+        scientific_background=(
+            "Height/amplitude/phase distributions and 'statistical quantities' are a staple of "
+            "SPM analysis (Gwyddion, bearing analysis). SNOMNIMAN bins by the Freedman-Diaconis "
+            "rule (robust to outliers) by default and reports the descriptive variability set "
+            "(mean, median, std, RMS, count) alongside the percentiles."
+        ),
+        practical_guidance=(
+            "Read the Distribution section of the Diagnostics tab for the channel on screen. A "
+            "bimodal distribution suggests setting contrast or a threshold between the two "
+            "populations; use the percentiles for a robust display range rather than min/max."
+        ),
+        common_mistakes=(
+            "Interpreting the histogram of wrapped phase as if it were linear - phase is cyclic, "
+            "so a split peak at +/-pi is one population, not two.",
+            "Reading fine structure into a histogram with too few samples or bins.",
+        ),
+        related_concepts=("concept.topography", "concept.complex_signals"),
+        references=(_GWYDDION,),
+    ),
+    Article(
+        article_id="concept.profile_analysis",
+        category=CONCEPT,
+        title="Line-profile feature analysis",
+        summary=(
+            "Quantitative features extracted from a line profile: peak/step heights, peak width "
+            "(FWHM), peak spacing (a feature period), and the profile's descriptive statistics."
+        ),
+        explanation=(
+            "A line profile turns a path across the image into a 1-D curve; feature analysis "
+            "then reads the science off it. Peak height gives a feature's amplitude or a step "
+            "height; the full width at half maximum (FWHM) gives a feature's size and, on a "
+            "sharp edge, the spatial resolution; the spacing between successive peaks is a "
+            "period - for s-SNOM polariton/plasmon imaging that period is the fringe spacing, "
+            "which sets the polariton wavevector. The descriptive statistics (mean, median, "
+            "std, RMS, count) summarize the whole profile."
+        ),
+        scientific_background=(
+            "Peak detection by prominence and width-at-half-maximum is standard profilometry "
+            "(Gwyddion/Origin profile tools; SciPy find_peaks/peak_widths). Fringe-period -> "
+            "wavevector is the basis of near-field polariton interferometry (Keilmann & "
+            "Hillenbrand)."
+        ),
+        practical_guidance=(
+            "Draw a line across the features of interest in the Measure tab; the panel marks "
+            "detected peaks and reports spacing and FWHM. For polariton fringes, read the mean "
+            "peak spacing as the fringe period; for resolution, read the FWHM of a sharp edge."
+        ),
+        common_mistakes=(
+            "Confusing FWHM with the full feature width - FWHM is measured at half height.",
+            "Reading peak spacing from a noisy profile without enough prominence to separate "
+            "real peaks from noise.",
+        ),
+        related_concepts=("concept.phase", "concept.near_field_microscopy"),
+        references=(_KEILMANN,),
+    ),
+    Article(
+        article_id="concept.region_comparison",
+        category=CONCEPT,
+        title="Region comparison (contrast)",
+        summary=(
+            "Comparing two regions' statistics - the difference and ratio of their means, with "
+            "the underlying descriptive statistics - to quantify contrast between materials."
+        ),
+        explanation=(
+            "s-SNOM contrast is inherently relative: the meaningful quantity is how one region "
+            "differs from another (e.g. a feature versus its substrate), not a single absolute "
+            "value. Region comparison reports the difference (additive contrast) and the ratio "
+            "(multiplicative contrast) of two regions' mean values, and exposes the mean, "
+            "standard deviation, and pixel count of each region so the contrast number is "
+            "auditable - a large difference between two noisy or tiny regions means less than "
+            "the same difference between two clean, well-sampled ones."
+        ),
+        scientific_background=(
+            "Quantifying near-field contrast as a region-to-region ratio/difference is standard "
+            "s-SNOM practice (Keilmann & Hillenbrand). Reporting variability (std) and sample "
+            "count alongside the contrast follows ordinary measurement-uncertainty practice."
+        ),
+        practical_guidance=(
+            "Place a region on each material (e.g. feature and substrate) in the Measure tab, "
+            "then Compare regions. Report the ratio or difference together with each region's "
+            "mean +/- std and pixel count."
+        ),
+        common_mistakes=(
+            "Quoting a contrast ratio without its regions' spread and sample count.",
+            "Taking a ratio when the reference region's mean is ~0 (it is undefined; use the "
+            "difference instead).",
+        ),
+        related_concepts=("concept.complex_signals", "concept.near_field_microscopy"),
+        references=(_KEILMANN,),
+    ),
 )
 
 

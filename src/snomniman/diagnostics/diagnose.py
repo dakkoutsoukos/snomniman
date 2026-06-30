@@ -31,6 +31,7 @@ from .descriptors import (
     ChannelStatistics,
     HarmonicAmplitude,
     HarmonicDiagnostics,
+    HistogramData,
     MeasurementDiagnostics,
     OperationApplicability,
     TopographyDiagnostics,
@@ -38,6 +39,65 @@ from .descriptors import (
 
 #: nanometres per micrometre (slopes are reported per micrometre).
 _NM_PER_UM = 1000.0
+
+#: Percentiles reported with every histogram (robust range + quartiles + median).
+_PERCENTILES = (5.0, 25.0, 50.0, 75.0, 95.0)
+
+#: Upper bound on automatic bin count (keeps the distribution readable).
+_MAX_BINS = 256
+
+
+def histogram(
+    values: npt.NDArray[np.floating], *, unit: str | None = None, bins: int | str = "fd"
+) -> HistogramData:
+    """The value distribution of ``values`` (read-only) - the histogram analysis fact.
+
+    Operates on the real value view a researcher is looking at (e.g. amplitude,
+    phase, or topography). Non-finite samples are ignored. ``bins`` is an explicit
+    bin count or ``"fd"`` (Freedman-Diaconis, the robust default used by SPM
+    statistics tools; capped at 256). Returns the binned counts plus the descriptive
+    variability set and robust percentiles, all unit-bearing.
+    """
+    finite = np.asarray(values, dtype=np.float64).ravel()
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return HistogramData(unit, 0, (), (), None, None, None, None, None, None, {})
+
+    nbins = bins if isinstance(bins, int) and bins > 0 else _fd_bin_count(finite)
+    counts, edges = np.histogram(finite, bins=nbins)
+    pct = {
+        f"p{int(p)}": float(v)
+        for p, v in zip(_PERCENTILES, np.percentile(finite, _PERCENTILES), strict=True)
+    }
+    return HistogramData(
+        unit=unit,
+        count=int(finite.size),
+        bin_edges=tuple(float(e) for e in edges),
+        counts=tuple(int(c) for c in counts),
+        mean=float(np.mean(finite)),
+        median=float(np.median(finite)),
+        std=float(np.std(finite)),
+        rms=float(np.sqrt(np.mean(np.square(finite)))),
+        minimum=float(np.min(finite)),
+        maximum=float(np.max(finite)),
+        percentiles=pct,
+    )
+
+
+def _fd_bin_count(data: npt.NDArray[np.float64]) -> int:
+    """Freedman-Diaconis bin count (robust to outliers), clamped to [1, 256]."""
+    n = int(data.size)
+    if n < 2:
+        return 1
+    q25, q75 = np.percentile(data, (25.0, 75.0))
+    iqr = float(q75 - q25)
+    value_range = float(np.max(data) - np.min(data))
+    if value_range <= 0:
+        return 1
+    if iqr <= 0:  # degenerate spread: fall back to a sqrt rule
+        return int(np.clip(round(math.sqrt(n)), 1, _MAX_BINS))
+    width = 2.0 * iqr * n ** (-1.0 / 3.0)
+    return int(np.clip(math.ceil(value_range / width), 1, _MAX_BINS))
 
 #: Minimum per-axis pixel count for a meaningful coherence / noise estimate; below
 #: this the classification is reported as "unknown" rather than guessed.

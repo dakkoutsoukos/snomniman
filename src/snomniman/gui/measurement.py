@@ -24,9 +24,14 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6 import QtCore, QtWidgets
 
-from snomniman.viz import OverlaySpec
+from snomniman.viz import OverlaySpec, ProfileFeatures, RegionComparison
 
-from .export import ExportContext, profile_to_csv, region_to_csv
+from .export import (
+    ExportContext,
+    comparison_to_csv,
+    profile_to_csv,
+    region_to_csv,
+)
 from .imageview import ChannelImageView
 from .model import ExplorerModel, PaneSpec, ProfileSet, RegionReport
 
@@ -194,6 +199,29 @@ class MeasurementController(QtCore.QObject):
         """Identity + provenance facts for a measurement CSV export (from the model)."""
         return self._model.export_context()
 
+    # -- analysis of the active / placed measurements (read-only) --------------
+
+    def profile_features(self) -> ProfileFeatures | None:
+        """Peak/width/spacing + descriptive stats of the active line profile, if any."""
+        item = self._active
+        if item is None or not isinstance(item.result, ProfileSet):
+            return None
+        return self._model.profile_features(item.result)
+
+    def compare_recent_regions(self) -> RegionComparison | None:
+        """Compare the two most recently placed regions (most recent A vs previous B)."""
+        reports: list[tuple[str, RegionReport]] = []
+        for item in self._items:
+            result = item.result
+            if isinstance(result, RegionReport):
+                reports.append((item.name, result))
+        if len(reports) < 2:
+            return None
+        (name_a, report_a), (name_b, report_b) = reports[-1], reports[-2]
+        return self._model.region_comparison(
+            report_a, report_b, label_a=name_a, label_b=name_b
+        )
+
     # -- internals ------------------------------------------------------------
 
     def _add(self, kind: str) -> None:
@@ -309,7 +337,10 @@ def _poly_vertices(roi: Any, view_box: Any) -> list[tuple[float, float]]:
 # Panel
 # --------------------------------------------------------------------------- #
 
-_STAT_COLUMNS = ("Channel", "Mean", "Median", "Min", "Max", "Std", "Unit")
+_STAT_COLUMNS = ("Channel", "Mean", "Median", "Min", "Max", "Std", "RMS", "P25", "P75", "Unit")
+
+#: Peak markers use a distinct dashed pen so they never read as data.
+_PEAK_PEN = pg.mkPen("#ff7b72", width=1, style=QtCore.Qt.PenStyle.DashLine)
 
 
 class MeasurementPanel(QtWidgets.QWidget):
@@ -343,6 +374,8 @@ class MeasurementPanel(QtWidgets.QWidget):
         self._profile.setLabel("bottom", "distance", units="nm")
         self._profile.setLabel("left", "normalized value")
         self._curves: list[Any] = []
+        self._peak_markers: list[Any] = []
+        self._comparison: RegionComparison | None = None
         self._table = QtWidgets.QTableWidget(0, len(_STAT_COLUMNS))
         self._table.setHorizontalHeaderLabels(list(_STAT_COLUMNS))
         self._table.verticalHeader().setVisible(False)
@@ -350,6 +383,26 @@ class MeasurementPanel(QtWidgets.QWidget):
         self._result_stack.addWidget(self._profile)
         self._result_stack.addWidget(self._table)
         layout.addWidget(self._result_stack, 1)
+
+        # Quantitative analysis output: profile features (peaks/width/spacing) for a
+        # line, or a region-vs-region comparison. Read-only; reuses the viz backend.
+        self._analysis = QtWidgets.QLabel("")
+        self._analysis.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        self._analysis.setWordWrap(True)
+        self._analysis.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self._analysis)
+
+        analysis_row = QtWidgets.QHBoxLayout()
+        compare_btn = QtWidgets.QPushButton("Compare regions")
+        compare_btn.setToolTip("Compare the two most recently placed regions (A = most recent)")
+        compare_btn.clicked.connect(self._compare_regions)
+        copy_cmp_btn = QtWidgets.QPushButton("Copy comparison")
+        copy_cmp_btn.setToolTip("Copy the region comparison (tab-separated) for paste")
+        copy_cmp_btn.clicked.connect(self._copy_comparison)
+        analysis_row.addWidget(compare_btn)
+        analysis_row.addWidget(copy_cmp_btn)
+        analysis_row.addStretch(1)
+        layout.addLayout(analysis_row)
 
         export_row = QtWidgets.QHBoxLayout()
         copy_btn = QtWidgets.QPushButton("Copy")
@@ -443,6 +496,7 @@ class MeasurementPanel(QtWidgets.QWidget):
         for curve in self._curves:
             self._profile.removeItem(curve)
         self._curves = []
+        self._clear_peak_markers()
         legend: list[str] = []
         for index, curve in enumerate(profile.curves):
             samples = curve.samples
@@ -460,9 +514,38 @@ class MeasurementPanel(QtWidgets.QWidget):
             f"Length: {profile.distance_nm:.1f} nm     &Delta;x: {profile.dx_nm:.1f} nm     "
             f"&Delta;y: {profile.dy_nm:.1f} nm<br>{'   '.join(legend)}"
         )
+        self._show_profile_features()
+
+    def _show_profile_features(self) -> None:
+        """Mark detected peaks on the primary curve and summarize the profile."""
+        features = self._c.profile_features()
+        if features is None:
+            self._analysis.setText("")
+            return
+        for peak in features.peaks:
+            marker = pg.InfiniteLine(pos=peak.position_nm, angle=90, pen=_PEAK_PEN)
+            self._profile.addItem(marker)
+            self._peak_markers.append(marker)
+        unit = features.unit or ""
+        text = (
+            f"<b>Profile</b>: n = {features.count}   mean {features.mean:.4g}   "
+            f"median {features.median:.4g}   std {features.std:.4g}   "
+            f"RMS {features.rms:.4g} {unit}"
+        )
+        if features.peaks:
+            widths = [p.fwhm_nm for p in features.peaks if p.fwhm_nm is not None]
+            fwhm = f"; FWHM ~{np.mean(widths):.3g} nm" if widths else ""
+            spacing = (
+                f"; spacing {features.mean_spacing_nm:.3g} nm"
+                if features.mean_spacing_nm is not None
+                else ""
+            )
+            text += f"   |   <b>{len(features.peaks)} peak(s)</b>{spacing}{fwhm}"
+        self._analysis.setText(text)
 
     def _show_statistics(self, report: RegionReport) -> None:
         self._result_stack.setCurrentWidget(self._table)
+        self._clear_peak_markers()
         self._table.setRowCount(len(report.rows))
         for row, stat_row in enumerate(report.rows):
             stats = stat_row.stats
@@ -473,6 +556,9 @@ class MeasurementPanel(QtWidgets.QWidget):
                 f"{stats.minimum:.4g}",
                 f"{stats.maximum:.4g}",
                 f"{stats.std:.4g}",
+                f"{stats.rms:.4g}",
+                f"{stats.p25:.4g}",
+                f"{stats.p75:.4g}",
                 stat_row.unit,
             )
             for column, text in enumerate(cells):
@@ -482,6 +568,39 @@ class MeasurementPanel(QtWidgets.QWidget):
             f"{report.kind.capitalize()} region:   {report.count} pixels   "
             f"area {report.area_nm2:.0f} nm&sup2;"
         )
+        self._analysis.setText("")
+
+    def _clear_peak_markers(self) -> None:
+        for marker in self._peak_markers:
+            self._profile.removeItem(marker)
+        self._peak_markers = []
+
+    # -- region comparison (read-only) ----------------------------------------
+
+    def _compare_regions(self) -> None:
+        comparison = self._c.compare_recent_regions()
+        self._comparison = comparison
+        if comparison is None:
+            self._analysis.setText(
+                "Place two regions (rectangle / polygon), then Compare regions."
+            )
+            return
+        unit = comparison.unit or ""
+        a, b = comparison.stats_a, comparison.stats_b
+        ratio = "n/a" if comparison.ratio is None else f"{comparison.ratio:.4g}"
+        self._analysis.setText(
+            f"<b>{comparison.label_a} vs {comparison.label_b}</b> "
+            f"(current channel): difference {comparison.difference:.4g} {unit}   "
+            f"ratio {ratio}<br>"
+            f"{comparison.label_a}: mean {a.mean:.4g} &plusmn; {a.std:.4g} (n={a.count})   "
+            f"{comparison.label_b}: mean {b.mean:.4g} &plusmn; {b.std:.4g} (n={b.count}) {unit}"
+        )
+
+    def _copy_comparison(self) -> None:
+        if self._comparison is None:
+            return
+        text = comparison_to_csv(self._comparison, self._c.export_context(), delimiter="\t")
+        QtWidgets.QApplication.clipboard().setText(text)
 
     # -- export (CSV / clipboard) ---------------------------------------------
 

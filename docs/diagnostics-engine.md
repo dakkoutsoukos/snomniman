@@ -62,6 +62,7 @@ All are frozen, typed, and JSON-serializable via `to_dict` (mirroring `describe`
 | `TopographyDiagnostics` | Plane slope (x/y and magnitude, per micrometre), height range, and RMS roughness after plane removal, for the real topography channel. |
 | `HarmonicDiagnostics` / `HarmonicAmplitude` | Optical signal harmonics present; per order the mean amplitude, decay ratio vs the next-lower order, **spatial coherence**, **single-image SNR estimate**, and a **signal-vs-noise classification** (`signal`/`weak`/`noise`/`empty`/`unknown`). See `docs/harmonic-ranking-analysis.md` (ADR-0026). |
 | `OperationApplicability` | Per registered step: whether it structurally applies (declared capabilities ⊆ dataset capabilities), which capabilities are missing, and whether it already appears in the provenance DAG. |
+| `HistogramData` | The value **distribution** of a channel view (Phase 3B): binned counts + edges, the descriptive variability set (count / mean / median / std / RMS), robust percentiles (P5/P25/P50/P75/P95), and the unit. Computed over the view a researcher is looking at; surfaced in the Explorer's Diagnostics tab. |
 | `MeasurementDiagnostics` | The aggregate: minimal identity (`title`, `is_raw`) plus all of the above. Deliberately does **not** repeat the structural summary - that is `describe`'s job. |
 
 ## Functions (entry points)
@@ -70,6 +71,7 @@ All are frozen, typed, and JSON-serializable via `to_dict` (mirroring `describe`
 - `topography_diagnostics(dataset)` - `None` if there is no real topography channel or no 2-D scan
 - `harmonic_diagnostics(dataset)` - `None` if no optical signal harmonic is present
 - `operation_applicability(dataset)` - reads the registry; caller imports the op sub-packages
+- `histogram(values, *, unit=None, bins="fd")` - the value distribution (Freedman-Diaconis bins by default)
 - `diagnose(dataset, *, title=None)` - the full report
 
 ## Scientific choices and honest limitations

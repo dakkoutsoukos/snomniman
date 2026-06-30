@@ -21,6 +21,8 @@ from io import StringIO
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # avoid an import cycle: model imports ExportContext from here
+    from snomniman.viz import RegionComparison
+
     from .experiment import ExperimentTable
     from .model import ProfileSet, RegionReport
 
@@ -72,14 +74,44 @@ def region_to_csv(report: RegionReport, context: ExportContext, *, delimiter: st
     _write_header(buffer, f"{report.kind} region statistics", context, extra=[("Region", region)])
 
     writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
-    writer.writerow(["channel", "unit", "mean", "median", "min", "max", "std", "count", "area_nm2"])
+    writer.writerow(
+        ["channel", "unit", "mean", "median", "min", "max", "std", "rms",
+         "p25", "p75", "count", "area_nm2"]
+    )
     for row in report.rows:
         s = row.stats
         writer.writerow([
             row.label, row.unit,
             _fmt(s.mean), _fmt(s.median), _fmt(s.minimum), _fmt(s.maximum), _fmt(s.std),
+            _fmt(s.rms), _fmt(s.p25), _fmt(s.p75),
             str(s.count), _fmt(s.area_nm2),
         ])
+    return buffer.getvalue()
+
+
+def comparison_to_csv(
+    comparison: RegionComparison, context: ExportContext, *, delimiter: str = ","
+) -> str:
+    """Render a region-vs-region comparison as CSV: each statistic for A, B, and A-B/A/B.
+
+    The difference and ratio (the contrast numbers) sit on the ``mean`` row; the other
+    rows give the underlying descriptive statistics that produced them.
+    """
+    buffer = StringIO()
+    a, b = comparison.stats_a, comparison.stats_b
+    region = f"A = {comparison.label_a}; B = {comparison.label_b}"
+    _write_header(buffer, "region comparison", context, extra=[("Regions", region)])
+
+    writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
+    writer.writerow(["quantity", "A", "B", "A - B", "A / B", "unit"])
+    ratio = "" if comparison.ratio is None else _fmt(comparison.ratio)
+    writer.writerow(
+        ["mean", _fmt(a.mean), _fmt(b.mean), _fmt(comparison.difference), ratio, comparison.unit]
+    )
+    writer.writerow(["median", _fmt(a.median), _fmt(b.median), "", "", comparison.unit])
+    writer.writerow(["std", _fmt(a.std), _fmt(b.std), "", "", comparison.unit])
+    writer.writerow(["rms", _fmt(a.rms), _fmt(b.rms), "", "", comparison.unit])
+    writer.writerow(["count", str(a.count), str(b.count), "", "", ""])
     return buffer.getvalue()
 
 
@@ -143,6 +175,7 @@ def _fmt(value: float) -> str:
 __all__ = [
     "ExperimentExportContext",
     "ExportContext",
+    "comparison_to_csv",
     "experiment_table_to_csv",
     "profile_to_csv",
     "region_to_csv",

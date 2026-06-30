@@ -45,6 +45,35 @@ class ChannelStatistics:
 
 
 @dataclass(frozen=True)
+class HistogramData:
+    """The value distribution of a channel view (a read-only computed fact).
+
+    A reusable, JSON-serializable analysis descriptor: the binned distribution
+    (``bin_edges`` has one more entry than ``counts``) plus the descriptive
+    variability set (``count`` / ``mean`` / ``median`` / ``std`` / ``rms``) and
+    robust ``percentiles`` (p5/p25/p50/p75/p95). ``unit`` is the value unit of the
+    view summarized (e.g. nm, a.u., rad). All numeric fields are ``None`` for an
+    empty (all-non-finite) channel. Experiment-level comparison can consume this
+    directly without redesign.
+    """
+
+    unit: str | None
+    count: int
+    bin_edges: tuple[float, ...]
+    counts: tuple[int, ...]
+    mean: float | None
+    median: float | None
+    std: float | None
+    rms: float | None
+    minimum: float | None
+    maximum: float | None
+    percentiles: dict[str, float]  # {"p5","p25","p50","p75","p95"}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: _jsonify(v) for k, v in asdict(self).items()}
+
+
+@dataclass(frozen=True)
 class TopographyDiagnostics:
     """Deterministic facts about the topography (height) channel.
 
@@ -193,6 +222,7 @@ __all__ = [
     "ChannelStatistics",
     "HarmonicAmplitude",
     "HarmonicDiagnostics",
+    "HistogramData",
     "MeasurementDiagnostics",
     "OperationApplicability",
     "TopographyDiagnostics",

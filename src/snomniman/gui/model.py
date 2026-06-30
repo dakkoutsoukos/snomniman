@@ -38,7 +38,13 @@ from snomniman.describe import (
     describe_operations,
     summarize_provenance,
 )
-from snomniman.diagnostics import OperationApplicability, diagnose, operation_applicability
+from snomniman.diagnostics import (
+    HistogramData,
+    OperationApplicability,
+    diagnose,
+    histogram,
+    operation_applicability,
+)
 from snomniman.io import read
 from snomniman.processing import CHANNEL_COMPLEX, CHANNEL_REAL, get_step
 from snomniman.viz import AMPLITUDE, PHASE, REAL, FigureSpec, OverlaySpec, RegionStats, RenderData
@@ -616,6 +622,36 @@ class ExplorerModel:
             rows.append(RegionStatRow(label=spec.title, unit=rd.unit, stats=stats))
             count, area = stats.count, stats.area_nm2
         return RegionReport(kind, count, area, tuple(rows))
+
+    # -- analysis of measurements (read-only; reuses the validated viz backend) --
+
+    def profile_features(self, profile: ProfileSet) -> viz.ProfileFeatures:
+        """Detect peaks + summarize the *primary* curve of a line profile (read-only).
+
+        The primary curve is the active channel (the first visible spec); peak
+        positions/widths/spacing and the descriptive variability set come from the
+        validated ``viz.measure`` backend.
+        """
+        curve = profile.curves[0]
+        return viz.analyze_profile(profile.positions_nm, curve.samples, unit=curve.unit)
+
+    def region_comparison(
+        self, a: RegionReport, b: RegionReport, *, label_a: str, label_b: str
+    ) -> viz.RegionComparison:
+        """Compare two regions' primary-channel statistics (difference + ratio + both).
+
+        Compares the first (active-channel) row of each report, so the contrast number
+        always carries the descriptive statistics that produced it.
+        """
+        row_a, row_b = a.rows[0], b.rows[0]
+        return viz.compare_regions(
+            row_a.stats, row_b.stats, label_a=label_a, label_b=label_b, unit=row_a.unit
+        )
+
+    def channel_histogram(self) -> HistogramData:
+        """The value distribution of the channel/representation currently displayed."""
+        render = self.render()
+        return histogram(np.asarray(render.values, dtype=np.float64), unit=render.unit)
 
     # -- publication figure (read-only) ---------------------------------------
 

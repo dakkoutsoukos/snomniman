@@ -3,15 +3,15 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-06-30 (shipped **Phase 3A - core scientific operations**: the first toolbox
-expansion on the complete processing framework - `image.fix_zero` (height datum), `image.phase_offset`
-(circular-mean phase re-reference), `image.normalize_amplitude` (peak/mean) - one universal AFM op +
-one SNOM phase op + one SNOM amplitude op, chosen by a reviewed research+design proposal. No
-architecture change (settled-science operations, Category A); each auto-surfaces in the Workspace with
-a Knowledge article. Earlier: Phase 2C multi-input processing & `image.arithmetic` (ADR-0030); Phase
-2B experiment analysis (ADR-0029); Phase 2A multi-measurement projects (ADR-0028); the complete
-research workflow (ADR-0027). Governance: the Scientific Validation Phase + Beta Readiness Review
-remain the planning systems)
+**Last updated:** 2026-06-30 (shipped **Phase 3B - scientific analysis toolbox**: read-only analysis
+in the existing Diagnostics + Measurements surfaces - line-profile feature analysis (peaks/FWHM/
+spacing + stats), region-vs-region comparison (difference/ratio + underlying stats), and a value-
+distribution histogram in Diagnostics; descriptive variability metrics on every result; reusable
+value objects for future experiment-level comparison. No architecture change. Earlier: Phase 3A core
+operations (fix_zero / phase_offset / normalize_amplitude); Phase 2C multi-input processing &
+`image.arithmetic` (ADR-0030); Phase 2B experiment analysis (ADR-0029); Phase 2A multi-measurement
+projects (ADR-0028); the complete research workflow (ADR-0027). Governance: the Scientific Validation
+Phase + Beta Readiness Review remain the planning systems)
 
 ---
 
@@ -139,12 +139,15 @@ The canonical queue lives in `docs/scientific-validation.md` Section 7.
   arithmetic modes (sum / ratio / normalized difference) extend the existing op's mode enum - no new
   framework work. **The processing foundation is complete.**
 - **Scientific toolbox (Phase 3+, ongoing).** Phase 3A shipped `image.fix_zero` /
-  `image.phase_offset` / `image.normalize_amplitude` (2026-06-30). Candidates for the next
-  increments, **ordered by real-user feedback** (run the Beta Readiness user-testing protocol first):
-  **region-based** phase/amplitude referencing to a substrate region (Phase 3B - needs a small
-  region-parameter framework addition, the one place new architecture is justified); despike / scar
-  removal; further `image.arithmetic` modes. Analysis-only views (histogram, power spectrum) belong
-  in **Diagnostics**, not the Processing Workspace - keep that boundary.
+  `image.phase_offset` / `image.normalize_amplitude`; Phase 3B shipped the read-only analysis tools
+  (line-profile features, region comparison, histogram) in Diagnostics + Measurements (2026-06-30).
+  Candidates for the next increments, **ordered by real-user feedback** (run the Beta Readiness
+  user-testing protocol first): **region-based** phase/amplitude referencing to a substrate region
+  (needs a small region-parameter framework addition, the one place new architecture is justified);
+  despike / scar removal; further `image.arithmetic` modes; **frequency analysis** (2-D FFT / power
+  spectrum / radial PSD) only if users need it (would add a spectral display surface); experiment-
+  level comparison of the new analyses (the Phase 3B value objects are reusable for it). Histogram is
+  now in **Diagnostics**; other analysis-only views belong there too, not the Processing Workspace.
 - **Concrete AI narrative provider** - ONE real provider behind the existing
   `NarrativeProvider` seam as an optional extra (`uv sync --extra ai`), lazy-imported,
   never required for backend/CI; tests mock it, CI never calls a network. A major

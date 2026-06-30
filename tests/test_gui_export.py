@@ -18,6 +18,7 @@ from snomniman.gui.experiment import (
 from snomniman.gui.export import (
     ExperimentExportContext,
     ExportContext,
+    comparison_to_csv,
     experiment_table_to_csv,
     profile_to_csv,
     region_to_csv,
@@ -56,7 +57,8 @@ def _profile() -> ProfileSet:
 
 def _region() -> RegionReport:
     stats = RegionStats(
-        count=12, area_nm2=24000.0, mean=1.5, median=1.4, minimum=0.5, maximum=2.5, std=0.3
+        count=12, area_nm2=24000.0, mean=1.5, median=1.4, minimum=0.5, maximum=2.5, std=0.3,
+        rms=1.6, p25=1.2, p75=1.8,
     )
     return RegionReport("rectangle", 12, 24000.0, (RegionStatRow("O2 amplitude", "a.u.", stats),))
 
@@ -98,8 +100,33 @@ def test_region_header_and_table() -> None:
     assert "# SNOMNIMAN rectangle region statistics export" in text
     assert "# Region: 12 pixels; area 24000 nm^2" in text
     rows = [line for line in text.splitlines() if not line.startswith("#")]
-    assert rows[0] == "channel,unit,mean,median,min,max,std,count,area_nm2"
-    assert rows[1] == "O2 amplitude,a.u.,1.5,1.4,0.5,2.5,0.3,12,24000"
+    assert rows[0] == "channel,unit,mean,median,min,max,std,rms,p25,p75,count,area_nm2"
+    assert rows[1] == "O2 amplitude,a.u.,1.5,1.4,0.5,2.5,0.3,1.6,1.2,1.8,12,24000"
+
+
+# -- region comparison (Phase 3B) -------------------------------------------- #
+
+
+def test_comparison_csv_carries_difference_ratio_and_stats() -> None:
+    from snomniman.viz import RegionComparison
+    from snomniman.viz import RegionStats as VRegionStats
+
+    a = VRegionStats(count=10, area_nm2=40.0, mean=2.0, median=2.0, minimum=1.0,
+                     maximum=3.0, std=0.5, rms=2.1)
+    b = VRegionStats(count=12, area_nm2=48.0, mean=1.0, median=1.0, minimum=0.5,
+                     maximum=1.5, std=0.25, rms=1.05)
+    comp = RegionComparison(
+        label_a="Particle", label_b="Substrate", stats_a=a, stats_b=b,
+        difference=1.0, ratio=2.0, unit="a.u.",
+    )
+    text = comparison_to_csv(comp, _CONTEXT)
+    assert "# SNOMNIMAN region comparison export" in text
+    assert "# Regions: A = Particle; B = Substrate" in text
+    rows = [line for line in text.splitlines() if not line.startswith("#")]
+    assert rows[0] == "quantity,A,B,A - B,A / B,unit"
+    assert rows[1] == "mean,2,1,1,2,a.u."  # difference + ratio on the mean row
+    assert rows[2] == "median,2,1,,,a.u."  # underlying stats follow
+    assert any(r.startswith("count,10,12") for r in rows)
 
 
 # -- experiment comparison table (Phase 2B) ---------------------------------- #

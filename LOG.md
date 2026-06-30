@@ -2832,3 +2832,66 @@ belong in Diagnostics, not the Processing Workspace); 2-D polynomial background 
   despike/scar removal; further `image.arithmetic` modes (sum / ratio / normalized
   difference) - each extends the existing framework with no new architecture.
 - **Science:** unchanged - the open Validation Queue items await suitable golden measurements.
+
+---
+
+## 2026-06-30b - Scientific analysis toolbox (Phase 3B)
+
+Added high-value, **read-only** analysis capabilities (extract quantitative information without
+modifying data), chosen by a reviewed research+design proposal and placed in the **existing**
+Diagnostics and Measurements surfaces - no new "Analysis framework" (the architectural conclusion
+the user approved). User enhancement adopted: descriptive variability metrics (mean/median/std/RMS/
+count) on every quantitative result, ROI comparison exposing both the difference/ratio **and** the
+underlying stats, and reusable value objects the experiment layer can consume later.
+
+### Completed
+- **Backend (Qt-free, reusable value objects):** `viz.measure` gained `analyze_profile`
+  (`ProfileFeatures`: peak detection via SciPy `find_peaks` prominence, FWHM via `peak_widths`, mean
+  peak spacing = feature period, + profile descriptive stats) and `compare_regions`
+  (`RegionComparison`: difference + ratio + **both** underlying `RegionStats`); `RegionStats` gained
+  `rms` / `p25` / `p75` (defaults keep old construction valid). `diagnostics` gained `histogram` +
+  `HistogramData` (binned counts, descriptive stats, P5/P25/P50/P75/P95; Freedman-Diaconis default).
+- **Measurements (Measure panel):** a line profile now marks detected peaks on the plot and reports
+  peak count / spacing / FWHM + profile stats; the region table gained RMS / P25 / P75 columns; a
+  **Compare regions** action compares the two most-recent regions for the active channel (difference,
+  ratio, and each region's mean +/- std + count), copyable as TSV. Model methods `profile_features`,
+  `region_comparison`, `channel_histogram` are thin wrappers over the validated backend.
+- **Diagnostics (Diagnostics tab):** a **Distribution** section draws the histogram of the channel/
+  representation on screen, with median + current-contrast-range markers and a stats line; refreshes
+  on channel change (window wiring in `_refresh_image`).
+- **Export:** `region_to_csv` gained the new columns; new `comparison_to_csv` (per-statistic A / B /
+  A-B / A/B). Knowledge Center: three new **concept** articles (histogram, profile analysis, region
+  comparison) - concepts, not operations, so additive (the no-drift test only requires per-operation
+  articles); integrity (no dangling links) green.
+
+### Decisions
+- **No ADR, no architecture change.** Phase 3B is read-only analysis that reuses Diagnostics
+  (per-channel computed facts) and Measurements (overlay-driven). Deferred (reviewed): full 2-D FFT /
+  power spectrum / radial PSD (would need a new spectral *display* surface; the s-SNOM-valuable
+  fringe period is delivered by profile peak spacing), and experiment-level integration of the new
+  analyses (the cross-measurement tables already provide scalar comparison; the new value objects
+  feed them later without redesign).
+
+### Issues Found
+- The cyclic-phase trap: averaging wrapped phase angles arithmetically is wrong near +/-pi. The
+  histogram simply bins the viewed values and the profile/region stats operate on the rendered (real)
+  view, so no cyclic averaging is done implicitly; documented in the histogram concept article.
+
+### Tests / gates
+- 534 tests (up from 517, +17): `test_analysis.py` (10, Qt-free known-answer: histogram percentiles/
+  bins/empty, two-Gaussian peak detection + FWHM + spacing, flat/NaN profiles, region rms/quartiles,
+  comparison difference/ratio + zero-denominator), `test_gui_analysis.py` (6, headless: histogram
+  reflects + updates with channel, profile features in the panel, region table variability columns,
+  region comparison exposes difference/ratio + stats, no-op without two regions), `test_gui_export.py`
+  (+1 comparison CSV; region CSV columns updated). `ruff` clean; `mypy --strict` clean (111 files);
+  Qt-free invariant green.
+
+### Documentation Updated
+- `CLAUDE.md` (status + 534 + diagnostics module line), `docs/diagnostics-engine.md` (`HistogramData`
+  + `histogram`). Three Knowledge articles. `LOG.md` (this entry), `NEXT.md`, project memory. No
+  architecture-doc change (none needed).
+
+### Next Recommended Actions
+- **Product (Beta Readiness):** run the user-testing protocol - it will confirm/reorder the next
+  analysis tools (frequency analysis only if real users need it) and the High tier (H2-H5).
+- **Science:** unchanged - the open Validation Queue items await suitable golden measurements.
