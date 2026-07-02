@@ -29,6 +29,7 @@ from .descriptors import (
     OperationParameter,
     ProvenanceSummary,
     SourceDescription,
+    SpectralGeometryDescription,
 )
 
 
@@ -84,6 +85,16 @@ def summarize_metadata(metadata: Metadata) -> MetadataSummary:
             offset_nm=m.scan.offset_nm,
             center_nm=m.scan.center_nm,
             rotation_deg=m.scan.rotation_deg,
+        ),
+        spectral=(
+            None
+            if m.spectral is None
+            else SpectralGeometryDescription(
+                wavenumber_min_cm1=m.spectral.wavenumber_min_cm1,
+                wavenumber_max_cm1=m.spectral.wavenumber_max_cm1,
+                n_points=m.spectral.n_points,
+                sampling_cm1=m.spectral.sampling_cm1,
+            )
         ),
         conventions=ConventionsDescription(
             spatial_unit=m.conventions.spatial_unit,

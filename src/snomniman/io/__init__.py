@@ -13,11 +13,18 @@ from __future__ import annotations
 from .export import GSF_EXPORT_FORMAT, export_channel_gsf
 from .gsf import GsfFile, parse_gsf, read_gsf, write_gsf
 from .neasnom import READER_ID, read_neasnom_measurement
+from .neasnom_spectrum import (
+    READER_ID as NEASNOM_SPECTRUM_READER_ID,
+)
+from .neasnom_spectrum import (
+    read_neasnom_spectrum_measurement,
+)
 from .registry import available_readers, get_reader, read, register, sniff
 from .zarrstore import STORE_FORMAT, STORE_SCHEMA_VERSION, read_zarr, write_zarr
 
 __all__ = [
     "GSF_EXPORT_FORMAT",
+    "NEASNOM_SPECTRUM_READER_ID",
     "READER_ID",
     "STORE_FORMAT",
     "STORE_SCHEMA_VERSION",
@@ -29,6 +36,7 @@ __all__ = [
     "read",
     "read_gsf",
     "read_neasnom_measurement",
+    "read_neasnom_spectrum_measurement",
     "read_zarr",
     "register",
     "sniff",

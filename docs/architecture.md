@@ -126,7 +126,14 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
   file; the reader assembles all channels into a single `Dataset`. `h5py` is retained
   for future HDF5-based vendor formats. Each reader returns a `Dataset` with correct
   dims, coords, canonical units, channels, and a populated `Metadata` + `RawSource`;
-  unknown header fields preserved verbatim.
+  unknown header fields preserved verbatim. **Second modality (point spectroscopy,
+  `docs/point-spectrum-discovery.md`):** `neasnom_spectrum` reads a
+  `<measurement> Spectra.txt` table into `DataKind.SPECTRUM` (`(wavenumber,)`, one
+  position) or `LINE_SCAN` (`(s, wavenumber)`, several) - both pre-existing
+  `DataKind`/`Capability` members (data-model.md sec 2), so no core change was
+  needed; `registry.sniff()` content-checks for it (a "Point Spectroscopy" header)
+  *before* the imaging GSF check. The two readers share their `#`-header parsing
+  grammar via `_neasnom_header`.
 - `writers/`: persistence to the **canonical Zarr store** (OHD-3,
   `write_zarr`/`read_zarr`) and **export** of derived data - a channel to a
   Gwyddion Simple Field grid with a provenance sidecar (`export_channel_gsf`,

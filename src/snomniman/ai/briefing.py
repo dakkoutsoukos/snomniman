@@ -88,7 +88,20 @@ def _summary_section(desc: MeasurementDescription) -> BriefingSection:
         statements.append(_fact(f"Sampling {px} x {py} pixels.", "description"))
     if desc.metadata.detection:
         statements.append(_fact(f"Detection method: {desc.metadata.detection}.", "description"))
-    if desc.metadata.wavenumber_cm1 is not None:
+    spec = desc.metadata.spectral
+    has_range = (
+        spec is not None
+        and spec.wavenumber_min_cm1 is not None
+        and spec.wavenumber_max_cm1 is not None
+    )
+    if has_range and spec is not None:
+        span = f"Spectral range {spec.wavenumber_min_cm1:.0f}-{spec.wavenumber_max_cm1:.0f} cm^-1"
+        if spec.n_points is not None:
+            span += f", {spec.n_points} points"
+        if spec.sampling_cm1 is not None:
+            span += f" ({spec.sampling_cm1:.3g} cm^-1 sampling)"
+        statements.append(_fact(span + ".", "description"))
+    elif desc.metadata.wavenumber_cm1 is not None:
         statements.append(_fact(
             f"Excitation at {desc.metadata.wavenumber_cm1:.0f} cm^-1.", "description"
         ))
@@ -166,9 +179,16 @@ def _enables_section(
 ) -> BriefingSection:
     statements: list[BriefingStatement] = []
     caps = set(desc.capabilities)
-    if "topography" in caps:
+    if "topography" in caps and "spatial_2d" in caps:
         statements.append(_fact(
             "Quantitative topography analysis (height, roughness, profiles).", "description"
+        ))
+    elif "topography" in caps:
+        # Roughness/profile analysis needs a 2-D spatial grid; a height channel on a
+        # spectrum/line-scan dataset is still recorded, just not yet analyzable that way.
+        statements.append(_fact(
+            "Height (topography) values are recorded alongside the optical channels.",
+            "description",
         ))
     if "multi_harmonic" in caps:
         statements.append(_fact("Harmonic comparison across optical orders.", "description"))

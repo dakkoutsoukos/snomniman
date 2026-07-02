@@ -75,6 +75,17 @@ class ScanInfo:
 
 
 @dataclass(frozen=True)
+class SpectralInfo:
+    """Spectral-axis geometry for ``SPECTRUM`` / ``LINE_SCAN`` datasets with a
+    ``wavenumber`` dimension - the spectral analogue of :class:`ScanInfo`."""
+
+    wavenumber_min_cm1: float | None = None
+    wavenumber_max_cm1: float | None = None
+    n_points: int | None = None
+    sampling_cm1: float | None = None  # mean step between consecutive samples
+
+
+@dataclass(frozen=True)
 class Acquisition:
     """Per-acquisition parameters."""
 
@@ -118,6 +129,7 @@ class Metadata:
     excitation: Excitation = field(default_factory=Excitation)
     demodulation: Demodulation = field(default_factory=Demodulation)
     scan: ScanInfo = field(default_factory=ScanInfo)
+    spectral: SpectralInfo | None = None
     acquisition: Acquisition = field(default_factory=Acquisition)
     channels: tuple[ChannelInfo, ...] = ()
     original_units: dict[str, str] = field(default_factory=dict)
@@ -150,6 +162,7 @@ class Metadata:
                 harmonics=tuple(data.get("demodulation", {}).get("harmonics", ())),
             ),
             scan=_scan_from_dict(data.get("scan", {})),
+            spectral=_spectral_from_dict(data.get("spectral")),
             acquisition=Acquisition(**data.get("acquisition", {})),
             channels=tuple(
                 ChannelInfo(
@@ -188,6 +201,10 @@ def _scan_from_dict(d: dict[str, Any]) -> ScanInfo:
     )
 
 
+def _spectral_from_dict(d: dict[str, Any] | None) -> SpectralInfo | None:
+    return None if d is None else SpectralInfo(**d)
+
+
 def _jsonify(obj: Any) -> Any:
     """Recursively convert tuples to lists so the result is JSON-round-trippable."""
     if isinstance(obj, dict):
@@ -207,4 +224,5 @@ __all__ = [
     "Instrument",
     "Metadata",
     "ScanInfo",
+    "SpectralInfo",
 ]

@@ -103,6 +103,32 @@ def test_summarize_metadata(synthetic_dataset: Dataset) -> None:
     assert s.geometry.pixels == (4, 3)
     assert s.geometry.size_nm == (200.0, 150.0)
     assert s.original_units == {"x": "m", "y": "m", "Z": "m"}
+    assert s.spectral is None  # additive field; imaging metadata never sets it
+
+
+def test_summarize_metadata_spectral(synthetic_dataset: Dataset) -> None:
+    from snomniman.core import SpectralInfo
+
+    md = synthetic_dataset.metadata
+    spectral_md = Metadata(
+        data_kind=DataKind.LINE_SCAN,
+        spectral=SpectralInfo(
+            wavenumber_min_cm1=5920.0, wavenumber_max_cm1=6120.0, n_points=201, sampling_cm1=1.0
+        ),
+        instrument=md.instrument,
+    )
+    s = summarize_metadata(spectral_md)
+    assert s.spectral is not None
+    assert s.spectral.wavenumber_min_cm1 == 5920.0
+    assert s.spectral.wavenumber_max_cm1 == 6120.0
+    assert s.spectral.n_points == 201
+    assert s.spectral.sampling_cm1 == 1.0
+    assert s.spectral.to_dict() == {
+        "wavenumber_min_cm1": 5920.0,
+        "wavenumber_max_cm1": 6120.0,
+        "n_points": 201,
+        "sampling_cm1": 1.0,
+    }
 
 
 # --------------------------------------------------------------------------- #

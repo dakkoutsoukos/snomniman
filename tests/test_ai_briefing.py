@@ -20,7 +20,15 @@ from snomniman.ai import (
     build_briefing,
     build_orientation_prompt,
 )
-from snomniman.core import Dataset
+from snomniman.core import (
+    ChannelInfo,
+    DataKind,
+    Dataset,
+    Metadata,
+    ProvenanceNode,
+    SpectralInfo,
+    StepRecord,
+)
 from snomniman.processing.image.plane_level import PlaneLevel
 
 _FACT_SECTIONS = {
@@ -182,3 +190,64 @@ def test_briefing_does_not_mutate_dataset(synthetic_dataset: Dataset) -> None:
     build_briefing(synthetic_dataset, provider=MockNarrativeProvider())
     for name, values in before.items():
         np.testing.assert_array_equal(synthetic_dataset.channel(name).values, values)
+
+
+# --------------------------------------------------------------------------- #
+# Point spectroscopy (a LINE_SCAN with a wavenumber axis, no 2-D spatial grid)
+# --------------------------------------------------------------------------- #
+
+
+def _line_scan_spectrum_dataset() -> Dataset:
+    import numpy as np
+    import xarray as xr
+
+    n_pos, n_wn = 12, 40
+    s = (np.arange(n_pos, dtype=np.float64) + 0.5) * 20.0
+    wn = 5920.0 + np.arange(n_wn, dtype=np.float64)
+    o2 = np.ones((n_pos, n_wn), dtype=np.complex128) * (2.0 + 1j)
+    z = np.full((n_pos, n_wn), 800.0, dtype=np.float64)
+    data = xr.Dataset(
+        {"O2": (("s", "wavenumber"), o2), "Z": (("s", "wavenumber"), z)},
+        coords={
+            "s": ("s", s, {"unit": "nm", "axis": "s"}),
+            "wavenumber": ("wavenumber", wn, {"unit": "cm-1", "axis": "wavenumber"}),
+        },
+    )
+    channels = (
+        ChannelInfo("O2", "optical", "signal", "complex128", harmonic=2),
+        ChannelInfo("Z", "topography", "signal", "float64", value_unit="nm"),
+    )
+    meta = Metadata(
+        data_kind=DataKind.LINE_SCAN,
+        channels=channels,
+        spectral=SpectralInfo(
+            wavenumber_min_cm1=5920.0, wavenumber_max_cm1=5959.0, n_points=40, sampling_cm1=1.0
+        ),
+    )
+    node = ProvenanceNode(
+        node_id="n0", record=StepRecord(step_id="io.read", step_version=1, deterministic=True)
+    )
+    return Dataset(data, kind=DataKind.LINE_SCAN, metadata=meta, provenance=node)
+
+
+def test_summary_reports_spectral_range_not_single_excitation() -> None:
+    briefing = build_briefing(_line_scan_spectrum_dataset())
+    summary = " ".join(s.text for s in briefing.sections[0].statements)
+    assert "Spectral range 5920-5959 cm^-1, 40 points (1 cm^-1 sampling)." in summary
+    assert "Excitation at" not in summary  # superseded by the fuller spectral-range fact
+
+
+def test_enables_reports_height_recorded_not_full_topography_toolset() -> None:
+    briefing = build_briefing(_line_scan_spectrum_dataset())
+    enables = " ".join(s.text for s in briefing.sections[2].statements)
+    assert "Height (topography) values are recorded alongside the optical channels." in enables
+    assert "roughness, profiles" not in enables  # those need a 2-D spatial grid
+
+
+def test_briefing_does_not_crash_without_spatial_2d(synthetic_dataset: Dataset) -> None:
+    # A regression guard for the vertical-slice generalization: every section must
+    # build without raising for a dataset that has no (y, x) grid at all.
+    briefing = build_briefing(_line_scan_spectrum_dataset())
+    assert len(briefing.sections) == 3
+    for section in briefing.sections:
+        assert section.statements  # never an empty, silently-broken section

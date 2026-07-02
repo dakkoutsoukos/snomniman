@@ -320,6 +320,86 @@ _CONCEPTS = (
         related_concepts=("concept.complex_signals", "concept.near_field_microscopy"),
         references=(_KEILMANN,),
     ),
+    Article(
+        article_id="concept.point_spectrum",
+        category=CONCEPT,
+        title="Point spectra and point-spectroscopy line scans",
+        summary=(
+            "Instead of imaging one wavenumber over many (x, y) pixels, point spectroscopy "
+            "fixes the tip at one or more spatial positions and sweeps the excitation "
+            "wavenumber, recording a full optical spectrum at each position."
+        ),
+        explanation=(
+            "An s-SNOM image holds one value per (x, y) pixel at a fixed excitation "
+            "wavenumber; point spectroscopy holds one full spectrum - amplitude and phase "
+            "versus wavenumber, for every optical harmonic - at each of one or more fixed "
+            "spatial positions. A single position produces a `SPECTRUM` dataset (dims "
+            "`(wavenumber,)`); several positions along a line produce a `LINE_SCAN` dataset "
+            "with a spectral axis (dims `(s, wavenumber)`) - a spectrum at every point along "
+            "the line, not a reduction to one number per position. The height channel `Z` is "
+            "recorded at every spectral sample too, since AFM feedback stays active through "
+            "the sweep, so it can vary slightly across a sweep even at one position."
+        ),
+        scientific_background=(
+            "This is a direct-detection wavenumber sweep (e.g. a tunable QCL/"
+            "\"Piano\" source demodulated with PsHet, ADR concept.pseudoheterodyne) - each "
+            "wavenumber is measured directly, one at a time. That is scientifically distinct "
+            "from interferometric nano-FTIR, which records one interferogram (signal vs. "
+            "optical path difference, `INTERFEROGRAM`, dims `(opd,)`) and recovers the full "
+            "spectrum by Fourier transform. Both eventually describe the same physical "
+            "quantity - a complex near-field response versus wavenumber - and share the same "
+            "`SPECTRUM`/`LINE_SCAN`/`HYPERSPECTRAL` representation once in the frequency "
+            "domain, but SNOMNIMAN does not yet read or FFT an interferogram; do not assume a "
+            "point spectrum in the application was acquired interferometrically."
+        ),
+        practical_guidance=(
+            "Use a point spectrum to identify a vibrational resonance (a peak/dip in "
+            "amplitude or phase versus wavenumber) at a location of interest before deciding "
+            "which harmonic and wavenumber to image at scale; a line of point spectra lets "
+            "you compare that resonance across a small set of positions (e.g. on and off a "
+            "nanostructure) without a full hyperspectral image acquisition."
+        ),
+        common_mistakes=(
+            "Assuming a point-spectroscopy line scan is a spatial image - its second axis is "
+            "wavenumber, not a second spatial coordinate, so 2-D image operations (plane "
+            "leveling, spatial harmonic signal/noise classification, line/ROI profiles) do "
+            "not apply to it.",
+            "Calling this acquisition \"nano-FTIR\" - it is a direct wavenumber sweep, not an "
+            "interferogram.",
+        ),
+        related_concepts=(
+            "concept.spectral_axis",
+            "concept.pseudoheterodyne",
+            "concept.harmonics",
+            "concept.near_field_microscopy",
+        ),
+        references=(_HUTH,),
+    ),
+    Article(
+        article_id="concept.spectral_axis",
+        category=CONCEPT,
+        title="The spectral (wavenumber) axis",
+        summary=(
+            "Spectral datasets are indexed by wavenumber (cm^-1), not by a spatial "
+            "coordinate - the canonical spectral unit, distinct from and never auto-converted "
+            "to the canonical spatial unit (nm)."
+        ),
+        explanation=(
+            "A spectral axis records where in the excitation range each sample was taken - "
+            "its range (minimum/maximum wavenumber), its point count, and its mean sampling "
+            "step (the spacing between consecutive wavenumbers), which together set the "
+            "spectral resolution actually achieved during acquisition. Wavenumber (cm^-1, "
+            "proportional to photon energy) is the standard vibrational-spectroscopy unit; "
+            "it is nonlinearly related to wavelength, so SNOMNIMAN keeps a dedicated "
+            "wavenumber unit rather than folding it into the nm length-unit converter."
+        ),
+        practical_guidance=(
+            "Read the reported spectral range and sampling as what the instrument actually "
+            "swept, not as a guarantee of resolving a feature narrower than the sampling "
+            "step - a 1 cm^-1 step cannot resolve structure finer than that."
+        ),
+        related_concepts=("concept.point_spectrum",),
+    ),
 )
 
 

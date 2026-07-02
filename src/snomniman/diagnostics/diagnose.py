@@ -215,6 +215,7 @@ def harmonic_diagnostics(dataset: Dataset) -> HarmonicDiagnostics | None:
         return None
     pairs.sort()
 
+    is_spatial = Capability.SPATIAL_2D in dataset.capabilities
     amplitudes: list[HarmonicAmplitude] = []
     prev_mean: float | None = None
     for order, name in pairs:
@@ -224,7 +225,7 @@ def harmonic_diagnostics(dataset: Dataset) -> HarmonicDiagnostics | None:
             vals = np.abs(np.asarray(dataset.channel(name).values, dtype=np.float64))
         mean = float(np.nanmean(vals))
         ratio = (mean / prev_mean) if (prev_mean is not None and prev_mean != 0.0) else None
-        coherence, snr, classification = _classify_harmonic(vals)
+        coherence, snr, classification = _classify_harmonic(vals, is_spatial=is_spatial)
         amplitudes.append(
             HarmonicAmplitude(
                 order=order,
@@ -243,21 +244,26 @@ def harmonic_diagnostics(dataset: Dataset) -> HarmonicDiagnostics | None:
 
 
 def _classify_harmonic(
-    amplitude: npt.NDArray[np.float64],
+    amplitude: npt.NDArray[np.float64], *, is_spatial: bool
 ) -> tuple[float | None, float | None, str]:
     """Spatial coherence, single-image SNR, and the signal/noise class of an image.
 
     See docs/harmonic-ranking-analysis.md (Outcome 1). "empty" = ~zero variance;
-    "unknown" = no 2-D image or too few pixels; otherwise the spatial coherence is
-    thresholded at the SNR-calibrated bands. The classification is driven by coherence
-    (the cleanest null); the SNR estimate is reported as corroborating evidence.
+    "unknown" = not a genuine 2-D *spatial* image (``Capability.SPATIAL_2D``) or too
+    few pixels; otherwise the spatial coherence is thresholded at the SNR-calibrated
+    bands. The classification is driven by coherence (the cleanest null); the SNR
+    estimate is reported as corroborating evidence. ``is_spatial`` guards against a
+    non-spatial 2-D array (e.g. a ``(position, wavenumber)`` line-scan-with-spectrum
+    grid) being misread as a spatial image: the coherence/SNR method was validated
+    only for true ``(y, x)`` amplitude images, so a non-spatial array is always
+    reported "unknown" rather than silently misclassified.
     """
     finite = np.isfinite(amplitude)
     if not finite.any():
         return None, None, HARMONIC_EMPTY
     if float(np.nanstd(amplitude)) < _EMPTY_STD_EPS:
         return None, None, HARMONIC_EMPTY
-    if amplitude.ndim != 2 or min(amplitude.shape) < _MIN_DIM_FOR_COHERENCE:
+    if not is_spatial or amplitude.ndim != 2 or min(amplitude.shape) < _MIN_DIM_FOR_COHERENCE:
         return None, None, HARMONIC_UNKNOWN
 
     coherence = _spatial_coherence(amplitude)

@@ -268,6 +268,44 @@ def test_small_image_classification_is_unknown(synthetic_dataset: Dataset) -> No
         assert a.spatial_coherence is None and a.snr_estimate is None
 
 
+def _line_scan_spectrum_dataset(amplitude: npt.NDArray[np.float64]) -> Dataset:
+    """A ``(s, wavenumber)`` LINE_SCAN Dataset - a genuine 2-D array with no spatial grid."""
+    n_pos, n_wn = amplitude.shape
+    s = (np.arange(n_pos, dtype=np.float64) + 0.5) * 20.0
+    wn = 5920.0 + np.arange(n_wn, dtype=np.float64)
+    data = xr.Dataset(
+        {"O2": (("s", "wavenumber"), amplitude.astype(np.complex128))},
+        coords={
+            "s": ("s", s, {"unit": "nm", "axis": "s"}),
+            "wavenumber": ("wavenumber", wn, {"unit": "cm-1", "axis": "wavenumber"}),
+        },
+    )
+    channels = (ChannelInfo("O2", "optical", "signal", "complex128", harmonic=2),)
+    meta = Metadata(data_kind=DataKind.LINE_SCAN, channels=channels)
+    node = ProvenanceNode(
+        node_id="n0", record=StepRecord(step_id="io.read", step_version=1, deterministic=True)
+    )
+    return Dataset(data, kind=DataKind.LINE_SCAN, metadata=meta, provenance=node)
+
+
+def test_line_scan_spectrum_harmonic_classification_is_unknown_not_spatial() -> None:
+    # Regression (point-spectrum vertical slice): a (position, wavenumber) array is a
+    # genuine 2-D array but NOT a spatial image; the coherence/SNR method was validated
+    # only for true (y, x) images (docs/harmonic-ranking-analysis.md), so it must never
+    # be run on this shape - even though it would satisfy the old "ndim == 2" gate. Use
+    # a smooth field (would classify "signal" if wrongly treated as spatial) to prove the
+    # capability gate, not the shape check, is what suppresses it.
+    ds = _line_scan_spectrum_dataset(_smooth_field(64, 64))
+    assert ds.kind is DataKind.LINE_SCAN
+    harm = diagnose(ds).harmonics
+    assert harm is not None
+    a = harm.amplitudes[0]
+    assert a.classification == "unknown"
+    assert a.spatial_coherence is None and a.snr_estimate is None
+    # The shape-agnostic facts (mean amplitude) are still reported.
+    assert a.mean_amplitude == pytest.approx(float(np.mean(np.abs(_smooth_field(64, 64)))))
+
+
 # --------------------------------------------------------------------------- #
 # Applicability
 # --------------------------------------------------------------------------- #

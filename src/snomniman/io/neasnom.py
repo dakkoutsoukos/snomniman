@@ -21,7 +21,6 @@ fields are preserved verbatim rather than discarded.
 from __future__ import annotations
 
 import re
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +47,15 @@ from snomniman.core import (
 )
 from snomniman.core.exceptions import ReaderError
 
+from ._neasnom_header import (
+    is_wavenumber_unit,
+    num,
+    pair_to_nm,
+    parse_date,
+    parse_param_file,
+    str_value,
+    txt_index,
+)
 from .gsf import GsfFile, read_gsf
 
 #: Reader id (format + version), used in ``RawSource`` and the registry.
@@ -105,7 +113,7 @@ def read_neasnom_measurement(path: str | Path) -> Dataset:
         coords={"x": ("x", x_nm, xattrs), "y": ("y", y_nm, yattrs)},
     )
 
-    txt = _parse_param_file(txt_path)
+    txt = parse_param_file(txt_path)
     metadata = _build_metadata(
         grid=grid,
         txt=txt,
@@ -388,53 +396,6 @@ def _find_param_file(root: Path) -> Path:
     return txts[0]
 
 
-def _parse_param_file(path: Path) -> dict[str, Any]:
-    """Parse the neaSNOM ``.txt`` into verbatim lines + ordered records."""
-    raw_lines = path.read_text(encoding="utf-8").splitlines()
-    records: list[dict[str, Any]] = []
-    for line in raw_lines:
-        if not line.startswith("#"):
-            continue
-        content = line[1:].strip()
-        if not content:
-            continue
-        parts = [p.strip() for p in content.split("\t")]
-        label = parts[0].rstrip(":").strip()
-        unit: str | None = None
-        values: list[str] = []
-        for tok in parts[1:]:
-            if not tok:
-                continue
-            if unit is None and not values and tok.startswith("[") and tok.endswith("]"):
-                unit = tok[1:-1]
-            else:
-                values.append(tok)
-        records.append({"label": label, "unit": unit, "values": values})
-    return {"lines": raw_lines, "records": records}
-
-
-def _txt_index(txt: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {r["label"]: r for r in txt["records"]}
-
-
-def _num(rec: dict[str, Any] | None, i: int = 0) -> float | None:
-    if rec is None:
-        return None
-    values = rec["values"]
-    if i >= len(values):
-        return None
-    try:
-        return float(values[i].replace(",", ""))
-    except ValueError:
-        return None
-
-
-def _str(rec: dict[str, Any] | None, i: int = 0) -> str | None:
-    if rec is None or i >= len(rec["values"]):
-        return None
-    return str(rec["values"][i])
-
-
 # --------------------------------------------------------------------------- #
 # Metadata assembly
 # --------------------------------------------------------------------------- #
@@ -448,30 +409,30 @@ def _build_metadata(
     channels: tuple[ChannelInfo, ...],
     harmonics: tuple[int, ...],
 ) -> Metadata:
-    idx = _txt_index(txt)
+    idx = txt_index(txt)
     factor = length_scale_to_nm(grid.xyunits)
 
     # excitation: the "Target Wavelength" field is actually a wavenumber (cm^-1).
     target = idx.get("Target Wavelength")
-    wavenumber = _num(target) if target and _is_wavenumber(target.get("unit")) else None
+    wavenumber = num(target) if target and is_wavenumber_unit(target.get("unit")) else None
 
     center = idx.get("Scanner Center Position (X, Y)")
-    center_nm = _pair_to_nm(center, factor_from_unit=center.get("unit") if center else None)
-    rotation = _num(idx.get("Rotation"))
+    center_nm = pair_to_nm(center, factor_from_unit=center.get("unit") if center else None)
+    rotation = num(idx.get("Rotation"))
 
     is_neaspec = any(r["label"].startswith("www.neaspec") for r in txt["records"])
     instrument = Instrument(
         vendor="neaspec" if is_neaspec else None,
         model=None,
-        software_version=_str(idx.get("Version")),
+        software_version=str_value(idx.get("Version")),
     )
     excitation = Excitation(
-        source_type=_str(idx.get("Laser Source")),
-        detector=_str(idx.get("Detector")),
+        source_type=str_value(idx.get("Laser Source")),
+        detector=str_value(idx.get("Detector")),
         wavenumber_cm1=wavenumber,
     )
     demodulation = Demodulation(
-        detection=_str(idx.get("Demodulation Mode")),
+        detection=str_value(idx.get("Demodulation Mode")),
         harmonics=harmonics,
     )
     scan = ScanInfo(
@@ -482,13 +443,13 @@ def _build_metadata(
         pixel_size_nm=(grid.xreal * factor / grid.xres, grid.yreal * factor / grid.yres),
         rotation_deg=rotation,
     )
-    integ_ms = _num(idx.get("Integration time"))
+    integ_ms = num(idx.get("Integration time"))
     acquisition = Acquisition(
-        datetime=_parse_date(_str(idx.get("Date"))),
+        datetime=parse_date(str_value(idx.get("Date"))),
         integration_time_s=None if integ_ms is None else integ_ms / 1000.0,
-        tapping_amplitude_nm=_num(idx.get("Tapping Amplitude")),
-        setpoint=_num(idx.get("Setpoint")),
-        averaging=_int(_num(idx.get("Averaging"))),
+        tapping_amplitude_nm=num(idx.get("Tapping Amplitude")),
+        setpoint=num(idx.get("Setpoint")),
+        averaging=_int(num(idx.get("Averaging"))),
     )
 
     original_units = {
@@ -517,34 +478,6 @@ def _build_metadata(
         original_units=original_units,
         raw_header=raw_header,
     )
-
-
-def _is_wavenumber(unit: str | None) -> bool:
-    if not unit:
-        return False
-    u = unit.lower()
-    return "cm" in u and ("-1" in u or "⁻¹" in u or "¹" in u)
-
-
-def _pair_to_nm(
-    rec: dict[str, Any] | None, *, factor_from_unit: str | None
-) -> tuple[float, float] | None:
-    if rec is None:
-        return None
-    a, b = _num(rec, 0), _num(rec, 1)
-    if a is None or b is None:
-        return None
-    factor = length_scale_to_nm(factor_from_unit) if factor_from_unit else 1.0
-    return (a * factor, b * factor)
-
-
-def _parse_date(value: str | None) -> str | None:
-    if not value:
-        return None
-    try:
-        return datetime.strptime(value, "%m/%d/%Y %H:%M:%S").isoformat()
-    except ValueError:
-        return None
 
 
 def _int(value: float | None) -> int | None:

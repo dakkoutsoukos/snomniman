@@ -35,6 +35,7 @@ from snomniman.core import (
     Metadata,
     ProvenanceNode,
     ScanInfo,
+    SpectralInfo,
     StepRecord,
 )
 from snomniman.io import write_gsf
@@ -203,6 +204,56 @@ def optical_only_dataset() -> Dataset:
         node_id="n0", record=StepRecord(step_id="io.read", step_version=1, deterministic=True)
     )
     return Dataset(data, kind=DataKind.IMAGE, metadata=metadata, provenance=node)
+
+
+@pytest.fixture
+def spectrum_dataset() -> Dataset:
+    """A LINE_SCAN point-spectroscopy Dataset - dims (s, wavenumber), no 2-D grid.
+
+    Shared by the describe/diagnostics/briefing/GUI tests that exercise the point
+    spectrum vertical slice without needing the real sample directory. 6 positions
+    along a line, each a 30-point spectrum; O2 varies by position + wavenumber so
+    a position/channel switch is visibly different (useful for GUI assertions).
+    """
+    n_pos, n_wn = 6, 30
+    s = (np.arange(n_pos, dtype=np.float64) + 0.5) * 20.0
+    wn = 5920.0 + np.arange(n_wn, dtype=np.float64)
+    amp = 1.0 + 0.1 * np.arange(n_pos, dtype=np.float64)[:, None] + 0.01 * np.arange(n_wn)[None, :]
+    phase = np.linspace(-np.pi, np.pi, n_pos * n_wn).reshape(n_pos, n_wn)
+    o2 = (amp * np.exp(1j * phase)).astype(np.complex64)
+    z = (800.0 + np.arange(n_pos * n_wn, dtype=np.float64).reshape(n_pos, n_wn) * 0.01)
+    data = xr.Dataset(
+        {"O2": (("s", "wavenumber"), o2), "Z": (("s", "wavenumber"), z)},
+        coords={
+            "s": ("s", s, {"unit": "nm", "long_name": "scan distance", "axis": "s"}),
+            "wavenumber": (
+                "wavenumber", wn, {"unit": "cm-1", "long_name": "wavenumber", "axis": "wavenumber"}
+            ),
+        },
+    )
+    channels = (
+        ChannelInfo("O2", "optical", "signal", "complex64", harmonic=2, amplitude_unit="a.u.",
+                    phase_unit="rad"),
+        ChannelInfo("Z", "topography", "signal", "float64", value_unit="nm"),
+    )
+    metadata = Metadata(
+        data_kind=DataKind.LINE_SCAN,
+        conventions=Conventions(),
+        instrument=Instrument(vendor="neaspec", model="neaSNOM"),
+        excitation=Excitation(source_type="Piano", detector="MIR"),
+        demodulation=Demodulation(detection="PsHet", harmonics=(2,)),
+        scan=ScanInfo(pixels=(n_pos, 1), size_nm=(n_pos * 20.0, 0.0), pixel_size_nm=(20.0, 0.0)),
+        spectral=SpectralInfo(
+            wavenumber_min_cm1=float(wn[0]), wavenumber_max_cm1=float(wn[-1]),
+            n_points=n_wn, sampling_cm1=1.0,
+        ),
+        channels=channels,
+        original_units={"wavenumber": "cm-1", "Z": "m"},
+    )
+    node = ProvenanceNode(
+        node_id="n0", record=StepRecord(step_id="io.read", step_version=1, deterministic=True)
+    )
+    return Dataset(data, kind=DataKind.LINE_SCAN, metadata=metadata, provenance=node)
 
 
 @pytest.fixture

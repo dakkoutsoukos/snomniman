@@ -2991,3 +2991,108 @@ Processing Workspace and Diagnostics with no GUI code.
 
 ### Documentation Updated
 - `LOG.md` (this entry), `NEXT.md` (Phase 3C shipped; deferred items updated).
+
+---
+
+## 2026-07-02 - Point Spectrum vertical slice (second data modality)
+
+The first non-imaging modality: real point-spectroscopy data end-to-end through the
+whole stack (reader -> Dataset -> Explorer -> Scientific Briefing -> Knowledge Center
+-> provenance), proving the Phase 1 architecture generalizes without redesign.
+
+### Completed
+
+**Investigation first (docs/point-spectrum-discovery.md).** The real sample's only
+point-spectroscopy file (`...PSP CdO Dense ROI 2/...Spectra.txt`) is not a single
+isolated spectrum: it is 100 spatial positions along a real 2 µm line, each a full
+201-point wavenumber sweep (5920-6120 cm^-1) with all optical harmonics + height.
+Found that `docs/data-model.md` sec 2 had already specified the exact target
+representation (`DataKind.SPECTRUM`/`LINE_SCAN`, `Capability.SPECTRAL`/`SPATIAL_1D`)
+before any reader existed - so no redesign was needed, only a validation of what was
+already anticipated. Empirically verified the existing imaging reader already failed
+loud (not silently) on this directory, but `io.registry.sniff()` mis-routed it there.
+
+**Core (additive only):** `core.metadata.SpectralInfo` (+ `Metadata.spectral`,
+default `None`) - the spectral analogue of `ScanInfo`.
+
+**`io`:** new `neasnom_spectrum.py` reader (`neasnom.spectrum.txt.v1`) parsing
+`Spectra.txt`'s vendor header (grammar factored out of `neasnom.py` into
+`_neasnom_header.py`, shared by both readers) + its tab data table; selects
+`DataKind.SPECTRUM` (one position) vs `LINE_SCAN` (several) purely from how many
+positions the file has; validates the wavenumber sweep is identical at every
+position and cross-checks the parsed shape against the header's own "Pixel Area"
+(Rule 6). `registry.sniff()` now content-checks for a Point-Spectroscopy header
+*before* the imaging GSF check (the routing-gap fix). The companion per-position GSF
+channel maps the vendor also writes are deliberately not ingested (documented, not
+silently dropped).
+
+**`describe`:** `SpectralGeometryDescription` (+ `MetadataSummary.spectral`).
+`describe_measurement`/`summarize_provenance` needed no other changes - already
+axis-name-agnostic.
+
+**`diagnostics` bug fix (found via real-data testing, not new-modality-specific):**
+`harmonic_diagnostics`'s spatial-coherence/SNR classifier gated on
+`amplitude.ndim == 2` alone, so a `(position, wavenumber)` array - a genuine 2-D
+array but *not* a spatial image - was silently fed through a classifier validated
+only for true `(y, x)` images (harmonic-ranking-analysis.md). Fixed to gate on
+`Capability.SPATIAL_2D`; now honestly reports `"unknown"`. Regression test uses a
+smooth field that would have wrongly classified "signal" under the old gate.
+`topography_diagnostics`/`channel_statistics`/`histogram` already degraded correctly
+with no changes.
+
+**`ai.briefing`:** spectral-range/sampling summary line (supersedes the single-value
+"Excitation at..." line when a spectral axis is present); an honest "height values
+are recorded" line (not "roughness, profiles", which need `SPATIAL_2D`) when
+topography exists without a 2-D grid.
+
+**`knowledge`:** two new concept articles, `concept.point_spectrum` and
+`concept.spectral_axis`, explicit that this acquisition (direct wavenumber sweep,
+PsHet) is scientifically distinct from interferometric nano-FTIR (`INTERFEROGRAM`).
+
+**`gui`:** new `spectrumview.py` (`SpectrumPlotView`) - a pyqtgraph curve view, a 4th
+page in the Explorer's existing `QStackedWidget`; reuses `ChannelBrowser` for
+channel/representation selection; a position selector (shown only for a `LINE_SCAN`)
+with a mouse-hover value readout. `ExplorerModel` gained `is_spectral`,
+`spectrum_curve`, `spectrum_position_count`, `spectrum_histogram`, a "Spectral axis"
+metadata section. `window.py` dispatches on `is_spectral` throughout (`_load`,
+channel/representation selection, session switching/restore) and disables (with an
+honest message, not a crash) the image-only affordances for a spectral active
+measurement: Measure, Comparison, Contact sheet, GSF/figure export, and
+cross-measurement comparison. Verified live: offscreen-rendered the real window
+against the real PSP measurement, screenshotted it, switched representation and
+position, and confirmed the plotted curve changed correctly (a phase sawtooth
+appeared exactly as expected).
+
+### Decisions
+
+- **No ADR, no architecture change.** `DataKind`/`Capability` were already
+  sufficient; the only additive type is `SpectralInfo`, following `ScanInfo`'s
+  existing pattern exactly.
+- **`LINE_SCAN` (not `HYPERSPECTRAL`) for the real multi-position file.**
+  `HYPERSPECTRAL` is documented as a full 2-D cube `(y, x, wavenumber)`; the real
+  file is a 1-D line of spectra `(s, wavenumber)`, which `LINE_SCAN`'s documented
+  dims already cover.
+- **Companion GSF side-export out of scope.** Ingesting it would be a second,
+  separate reader concern (a normal 100x1 image reader on the same directory);
+  deferred, documented, not silently dropped.
+- **Image-only GUI affordances disabled, not built out, for spectra.** Measure/
+  Comparison/Contact-sheet/exports stay image-only per the milestone's explicit
+  "not a spectroscopy feature sprint" scope; a friendly message replaces a crash.
+
+### Issues Found
+- The diagnostics harmonic-classification gating bug above (fixed, regression-tested).
+- `io.registry.sniff()` routing gap for a directory that has both `.gsf` files and a
+  `Spectra.txt` (fixed).
+
+### Tests / gates
+- 599 tests (up from 560, +39): `test_io_neasnom_spectrum.py` (21, golden real-data +
+  synthetic + validation-guard tests), `test_gui_spectrumview.py` (11, offscreen
+  window smoke tests), plus extensions to `test_metadata.py`, `test_describe.py`,
+  `test_diagnostics.py` (the harmonic-classification regression), `test_ai_briefing.py`,
+  and a new `spectrum_dataset` fixture in `conftest.py`. `ruff` clean; `mypy --strict`
+  clean (120 files); Qt-free invariant green.
+
+### Documentation Updated
+- New `docs/point-spectrum-discovery.md` (the discovery record). `docs/architecture.md`
+  (`io` module bullet). `LOG.md` (this entry). `NEXT.md` (refreshed). `CLAUDE.md`
+  (project status paragraph).

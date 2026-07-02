@@ -28,7 +28,7 @@ import numpy.typing as npt
 import snomniman.processing.image  # noqa: F401  (registers image ops for applicability)
 from snomniman import viz
 from snomniman.ai import Briefing, WorkflowSuggestions, build_briefing, recommend_workflow
-from snomniman.core import Dataset, Metadata, current_software
+from snomniman.core import Capability, Dataset, Metadata, current_software
 from snomniman.core.exceptions import ProcessingError
 from snomniman.describe import (
     LineageStep,
@@ -152,6 +152,24 @@ class PaneSpec:
     def title(self) -> str:
         if self.label is not None:
             return self.label
+        if self.representation == REAL:
+            return self.channel
+        return f"{self.channel} {self.representation}"
+
+
+@dataclass(frozen=True)
+class SpectrumCurve:
+    """One channel's values versus wavenumber at a fixed position (read-only)."""
+
+    channel: str
+    representation: str  # AMPLITUDE | PHASE | REAL
+    wavenumber_cm1: npt.NDArray[np.float64]
+    values: npt.NDArray[np.float64]
+    unit: str
+    cyclic: bool  # True for phase (wraps at +/-pi)
+
+    @property
+    def label(self) -> str:
         if self.representation == REAL:
             return self.channel
         return f"{self.channel} {self.representation}"
@@ -511,6 +529,14 @@ class ExplorerModel:
             )),
             MetadataSection("Conventions", _convention_items(m)),
         ]
+        if m.spectral is not None:
+            wn_min, wn_max = m.spectral.wavenumber_min_cm1, m.spectral.wavenumber_max_cm1
+            wn_range = (wn_min, wn_max) if wn_min is not None and wn_max is not None else None
+            sections.insert(3, MetadataSection("Spectral axis", (
+                MetadataItem("Range", _pair(wn_range, "{:.0f} - {:.0f}"), "cm^-1", _TXT),
+                MetadataItem("Points", _s(m.spectral.n_points), None, _TXT),
+                MetadataItem("Sampling", _n(m.spectral.sampling_cm1), "cm^-1", _TXT),
+            )))
         return sections
 
     # -- provenance -----------------------------------------------------------
@@ -652,6 +678,63 @@ class ExplorerModel:
         """The value distribution of the channel/representation currently displayed."""
         render = self.render()
         return histogram(np.asarray(render.values, dtype=np.float64), unit=render.unit)
+
+    # -- point spectroscopy (SPECTRUM / LINE_SCAN-with-wavenumber, read-only) -
+
+    @property
+    def is_spectral(self) -> bool:
+        """True for a ``SPECTRUM``/``LINE_SCAN``-with-wavenumber dataset (no 2-D grid).
+
+        The image-oriented display (:meth:`render`), the Measure panel, comparison,
+        and the contact sheet all assume a 2-D spatial grid; the Explorer shows the
+        spectrum plot view instead when this is true.
+        """
+        caps = self._ds.capabilities
+        return Capability.SPECTRAL in caps and Capability.SPATIAL_2D not in caps
+
+    def spectrum_position_count(self) -> int | None:
+        """Number of spatial positions along ``s``, or ``None`` for a single spectrum."""
+        return int(self._ds.data.sizes["s"]) if "s" in self._ds.coord_names else None
+
+    def spectrum_curve(self, position_index: int = 0) -> SpectrumCurve:
+        """The current channel/representation's values versus wavenumber (read-only).
+
+        ``position_index`` selects which of the ``s`` positions to plot when the
+        dataset has more than one (a ``LINE_SCAN``); ignored for a single ``SPECTRUM``.
+        """
+        channel, rep = self._channel, self._representation
+        if rep == AMPLITUDE:
+            da = self._ds.amplitude(channel)
+        elif rep == PHASE:
+            da = self._ds.phase(channel)
+        else:
+            da = self._ds.channel(channel)
+        if "s" in da.dims:
+            da = da.isel(s=position_index)
+        try:
+            info = self._ds.metadata.channel(channel)
+        except KeyError:
+            info = None
+        if rep == AMPLITUDE:
+            unit = (info.amplitude_unit if info else None) or "a.u."
+        elif rep == PHASE:
+            unit = "rad"
+        else:
+            unit = (info.value_unit if info else None) or "a.u."
+        wavenumber = np.asarray(self._ds.coordinate("wavenumber").values, dtype=np.float64)
+        return SpectrumCurve(
+            channel=channel,
+            representation=rep,
+            wavenumber_cm1=wavenumber,
+            values=np.asarray(da.values, dtype=np.float64),
+            unit=unit,
+            cyclic=(rep == PHASE),
+        )
+
+    def spectrum_histogram(self, position_index: int = 0) -> HistogramData:
+        """The value distribution of the spectrum curve currently displayed."""
+        curve = self.spectrum_curve(position_index)
+        return histogram(curve.values, unit=curve.unit)
 
     # -- publication figure (read-only) ---------------------------------------
 

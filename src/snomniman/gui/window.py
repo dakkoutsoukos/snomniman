@@ -61,6 +61,7 @@ from .panels import (
     ProvenanceInspector,
 )
 from .process import ProcessingWorkspace
+from .spectrumview import SpectrumPlotView
 
 
 class MeasurementExplorerWindow(QtWidgets.QMainWindow):
@@ -99,6 +100,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._active = QtWidgets.QLabel()
         self._back_btn = QtWidgets.QPushButton()
         self._image = ChannelImageView()
+        self._spectrum = SpectrumPlotView()
         self._comparison = ComparisonView()
         self._contact = ContactSheet()
         self._stack = QtWidgets.QStackedWidget()
@@ -211,6 +213,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._stack.addWidget(self._image)  # page 0: single channel
         self._stack.addWidget(self._comparison)  # page 1: side-by-side comparison
         self._stack.addWidget(self._contact)  # page 2: harmonic contact sheet
+        self._stack.addWidget(self._spectrum)  # page 3: point-spectroscopy curve
         outer.addWidget(self._stack, 1)
         outer.addWidget(self._active)
         self.setCentralWidget(central)
@@ -258,18 +261,24 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
         single = QtWidgets.QPushButton("Single")
         single.setToolTip("Show one channel with full colorbar and contrast controls")
-        single.clicked.connect(self._show_single)
+        single.clicked.connect(self._show_channel_view)
         row.addWidget(single)
         row.addSpacing(12)
         row.addWidget(QtWidgets.QLabel("Compare:"))
+        # Multi-pane comparison/contact sheet are 2-D-image-only (they render every pane
+        # through the image ``render_spec``); disabled for a spectral active measurement
+        # rather than left to crash when clicked (see ``_refresh_view_controls``).
+        self._image_only_buttons: list[QtWidgets.QPushButton] = []
         for preset, label in PRESET_LABELS.items():
             button = QtWidgets.QPushButton(label)
             button.clicked.connect(lambda _checked=False, p=preset: self._show_comparison(p))
             row.addWidget(button)
+            self._image_only_buttons.append(button)
         contact = QtWidgets.QPushButton("Contact sheet")
         contact.setToolTip("Thumbnails of every harmonic; click one to inspect it")
         contact.clicked.connect(self._show_contact)
         row.addWidget(contact)
+        self._image_only_buttons.append(contact)
         row.addStretch(1)
         export = QtWidgets.QPushButton("Export figure...")
         export.setToolTip("Save the current view as a publication figure + provenance")
@@ -295,7 +304,8 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._comparison.cursorMoved.connect(self._on_comparison_cursor)
         self._contact.channelSelected.connect(self._on_channel_selected)
         # Measurements live on the single image; adding one focuses that view.
-        self._measure.measurementAdded.connect(self._show_single)
+        self._measure.measurementAdded.connect(self._show_channel_view)
+        self._spectrum.positionChanged.connect(self._on_spectrum_position_changed)
         # Processing signals (generic, registry-driven workspace)
         self._process.operationSelected.connect(self._on_operation_selected)
         self._process.previewRequested.connect(self._on_preview_requested)
@@ -324,28 +334,30 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._briefing.set_suggestions(self._model.workflow_suggestions())
         self._process.set_catalog(self._model.operation_catalog())
         self._browser.select(self._model.current_channel)
-        self._show_single()
+        self._show_channel_view()
 
     def _on_channel_selected(self, canonical: str) -> None:
         # Selecting a channel (from the browser or a contact-sheet thumbnail) opens
         # it in the single, detailed view - or, in cross-measurement compare, changes
-        # the shared channel for every pane (when the channel is shared).
+        # the shared channel for every pane (when the channel is shared). Cross-
+        # measurement comparison reuses the image-only ComparisonView, so a spectral
+        # active measurement always falls back to its own (spectrum) channel view.
         self._model.set_channel(canonical)  # the anchor measurement has this channel
-        if self._experiment_compare is not None:
+        if self._experiment_compare is not None and not self._model.is_spectral:
             if canonical in self._experiment.shared_channels(list(self._experiment_compare)):
                 self._experiment_compare_channel = canonical
                 self._show_experiment_comparison()
             else:
-                self._show_single()  # not shared by all -> fall back to a single view
+                self._show_channel_view()  # not shared by all -> fall back to a single view
             return
-        self._show_single()
+        self._show_channel_view()
 
     def _on_representation_selected(self, representation: str) -> None:
         self._model.set_representation(representation)
-        if self._experiment_compare is not None:
+        if self._experiment_compare is not None and not self._model.is_spectral:
             self._show_experiment_comparison()  # shared representation across panes
             return
-        self._show_single()
+        self._show_channel_view()
 
     # -- model switching (derivation navigation) ------------------------------
 
@@ -374,10 +386,35 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
     # -- view switching -------------------------------------------------------
 
+    def _show_channel_view(self) -> None:
+        """Show the active measurement's own per-channel view (image or spectrum)."""
+        self._refresh_view_controls()
+        if self._model.is_spectral:
+            self._show_spectrum()
+        else:
+            self._show_single()
+
+    def _refresh_view_controls(self) -> None:
+        """Enable/disable the image-only (comparison/contact-sheet) toolbar buttons."""
+        for button in self._image_only_buttons:
+            button.setEnabled(not self._model.is_spectral)
+
     def _show_single(self) -> None:
         self._experiment_compare = None  # any single view leaves cross-measurement compare
         self._stack.setCurrentWidget(self._image)
         self._refresh_channel()
+
+    def _show_spectrum(self) -> None:
+        """The point-spectroscopy analogue of :meth:`_show_single` (Rule 4: no image-only
+        affordance - comparison, contact sheet, Measure - applies to a dataset with no
+        2-D spatial grid; see docs/point-spectrum-discovery.md)."""
+        self._experiment_compare = None
+        self._spectrum.set_position_range(self._model.spectrum_position_count())
+        self._stack.setCurrentWidget(self._spectrum)
+        self._refresh_spectrum()
+
+    def _on_spectrum_position_changed(self, _index: int) -> None:
+        self._refresh_spectrum()
 
     def _show_comparison(self, preset: str) -> None:
         self._experiment_compare = None  # a within-measurement preset, not a cross-measurement view
@@ -729,6 +766,20 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         chosen = [i for i in indices if 0 <= i < len(self._sessions)]
         if len(chosen) < 2:
             return
+        # Cross-measurement comparison reuses the image-only ComparisonView (each pane
+        # is rendered through a per-measurement ``render_spec``); a point-spectroscopy
+        # measurement has no such rendering yet, so it is excluded here rather than
+        # left to crash when a shared channel name happens to line up.
+        image_only = [i for i in chosen if not self._sessions[i].model.is_spectral]
+        if len(image_only) < 2:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Compare measurements",
+                "Point-spectroscopy measurements cannot be compared in this view yet; "
+                "select two or more image measurements.",
+            )
+            return
+        chosen = image_only
         self._experiment.set_sessions(self._sessions)
         shared = self._experiment.shared_channels(chosen)
         if not shared:
@@ -929,6 +980,8 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             mode = "comparison"
         elif current is self._contact:
             mode = "contact"
+        elif current is self._spectrum:
+            mode = "spectrum"
         return {
             "channel": self._model.current_channel,
             "representation": self._model.current_representation,
@@ -946,16 +999,21 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             if isinstance(representation, str) and representation in self._model.representations():
                 self._model.set_representation(representation)
             self._browser.select(channel)
-            self._refresh_channel()
+            if self._model.is_spectral:
+                self._refresh_spectrum()
+            else:
+                self._refresh_channel()
         records = s.measure_records
         has_measurements = bool(records)
         if has_measurements:
             self._measure.load_records(records)
-        # Measurements live on the single image, so they force that view; otherwise
-        # restore whatever multi-pane view the session was last in.
+        # Measurements and multi-pane comparison/contact views are image-only; a
+        # spectral active measurement always restores into its own channel view.
         mode = view.get("mode", "single")
         preset = view.get("preset")
-        if not has_measurements and mode == "comparison" and isinstance(preset, str):
+        if self._model.is_spectral:
+            self._show_channel_view()
+        elif not has_measurements and mode == "comparison" and isinstance(preset, str):
             self._show_comparison(preset)
         elif not has_measurements and mode == "contact":
             self._show_contact()
@@ -988,6 +1046,13 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
     def _export_channel_gsf(self) -> None:
         """Export the channel/representation on screen as a Gwyddion Simple Field grid."""
+        if self._model.is_spectral:
+            QtWidgets.QMessageBox.information(
+                self, "Not available",
+                "GSF export is a 2-D spatial grid format; it is not available for a "
+                "point-spectroscopy measurement. Use Export -> Processed Data (Zarr) instead.",
+            )
+            return
         channel = self._model.current_channel
         representation = self._model.current_representation
         default = f"{self._model.title}_{channel}_{representation}.gsf"
@@ -1012,6 +1077,13 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
     def _export_measurement_csv(self) -> None:
         """Export the active measurement's numbers as CSV (delegates to the Measure panel)."""
+        if self._model.is_spectral:
+            QtWidgets.QMessageBox.information(
+                self, "Not available",
+                "Line/ROI measurements are not yet available for a point-spectroscopy "
+                "measurement (no 2-D spatial grid to measure across).",
+            )
+            return
         self._inspect_tabs.setCurrentWidget(self._measure_panel)
         self._measure_panel.export_active_csv()
 
@@ -1045,6 +1117,13 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         return kind, [(current_spec, self._image.levels)], overlays
 
     def _export_figure(self) -> None:
+        if self._model.is_spectral:
+            QtWidgets.QMessageBox.information(
+                self, "Not available",
+                "Publication figure export is not yet available for a point-spectroscopy "
+                "measurement. Use Export -> Processed Data (Zarr) to export the dataset.",
+            )
+            return
         kind, panels, overlays = self._figure_inputs()
         spec = self._model.figure_spec(panels, overlays, kind=kind, title=self._model.title)
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
@@ -1068,6 +1147,27 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             self._model.representations(), self._model.current_representation
         )
         self._refresh_image()
+
+    def _refresh_spectrum(self) -> None:
+        self._browser.set_representations(
+            self._model.representations(), self._model.current_representation
+        )
+        position = self._spectrum.position()
+        curve = self._model.spectrum_curve(position_index=position)
+        self._spectrum.show_curve(curve)
+        state = self._channel_state(curve.channel)
+        position_note = (
+            f"      position {position + 1}/{self._model.spectrum_position_count()}"
+            if self._model.spectrum_position_count() is not None
+            else ""
+        )
+        self._active.setText(f"Showing   {curve.label}      state: {state}{position_note}")
+        self._diagnostics.set_histogram(
+            self._model.spectrum_histogram(position_index=position),
+            float(curve.values.min()) if curve.values.size else 0.0,
+            float(curve.values.max()) if curve.values.size else 0.0,
+            curve.label,
+        )
 
     def _refresh_image(self) -> None:
         render = self._model.render()

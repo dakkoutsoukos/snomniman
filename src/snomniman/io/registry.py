@@ -13,9 +13,12 @@ from pathlib import Path
 from snomniman.core import Dataset
 from snomniman.core.exceptions import ReaderError
 
+from ._neasnom_header import parse_param_file, str_value, txt_index
 from .gsf import MAGIC
 from .neasnom import READER_ID as NEASNOM_READER_ID
 from .neasnom import read_neasnom_measurement
+from .neasnom_spectrum import READER_ID as NEASNOM_SPECTRUM_READER_ID
+from .neasnom_spectrum import read_neasnom_spectrum_measurement
 
 Reader = Callable[[Path], Dataset]
 
@@ -43,12 +46,19 @@ def available_readers() -> list[str]:
 def sniff(path: str | Path) -> str | None:
     """Return the reader id that can handle ``path``, or ``None``.
 
-    A neaSNOM GSF measurement is a directory that contains at least one ``.gsf``
-    file with the GSF magic and a ``.txt`` parameter file.
+    Content-based, in order: a **point-spectroscopy** directory has a
+    ``*Spectra.txt`` file whose vendor header ``Scan:`` line names "Point
+    Spectroscopy" - checked *before* the imaging check, since such a directory
+    also carries ordinary-looking per-position ``.gsf`` channel maps that would
+    otherwise wrongly match the imaging sniff below. An **imaging** neaSNOM
+    measurement is a directory that contains at least one ``.gsf`` file with the
+    GSF magic and a ``.txt`` parameter file.
     """
     p = Path(path)
     if not p.is_dir():
         return None
+    if _looks_like_point_spectroscopy(p):
+        return NEASNOM_SPECTRUM_READER_ID
     gsf_files = sorted(p.glob("*.gsf"))
     has_txt = any(p.glob("*.txt"))
     if gsf_files and has_txt and _looks_like_gsf(gsf_files[0]):
@@ -72,8 +82,21 @@ def _looks_like_gsf(path: Path) -> bool:
         return False
 
 
+def _looks_like_point_spectroscopy(root: Path) -> bool:
+    candidates = sorted(root.glob("*Spectra.txt"))
+    if not candidates:
+        return False
+    try:
+        txt = parse_param_file(candidates[0])
+    except OSError:  # pragma: no cover - defensive
+        return False
+    scan = str_value(txt_index(txt).get("Scan")) or ""
+    return "point spectroscopy" in scan.lower()
+
+
 # Built-in readers.
 register(NEASNOM_READER_ID, read_neasnom_measurement)
+register(NEASNOM_SPECTRUM_READER_ID, read_neasnom_spectrum_measurement)
 
 
 __all__ = [

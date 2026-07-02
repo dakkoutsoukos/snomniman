@@ -14,6 +14,7 @@ from snomniman.core import (
     Instrument,
     Metadata,
     ScanInfo,
+    SpectralInfo,
 )
 
 
@@ -94,3 +95,26 @@ def test_raw_header_preserved_verbatim() -> None:
     # Round-trip keeps it byte-for-byte (treated strictly as data).
     restored = Metadata.from_dict(md.to_dict())
     assert restored.raw_header == md.raw_header
+
+
+def test_spectral_defaults_to_none() -> None:
+    # Imaging metadata never sets it - additive field, existing readers unaffected.
+    md = _full_metadata()
+    assert md.spectral is None
+    restored = Metadata.from_dict(md.to_dict())
+    assert restored.spectral is None
+
+
+def test_spectral_info_round_trips() -> None:
+    md = Metadata(
+        data_kind=DataKind.LINE_SCAN,
+        spectral=SpectralInfo(
+            wavenumber_min_cm1=5920.0, wavenumber_max_cm1=6120.0, n_points=201, sampling_cm1=1.0
+        ),
+    )
+    as_dict = md.to_dict()
+    restored = Metadata.from_dict(json.loads(json.dumps(as_dict)))
+    assert restored.spectral == SpectralInfo(
+        wavenumber_min_cm1=5920.0, wavenumber_max_cm1=6120.0, n_points=201, sampling_cm1=1.0
+    )
+    assert restored.data_kind is DataKind.LINE_SCAN

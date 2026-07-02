@@ -71,6 +71,19 @@ class GeometryDescription:
 
 
 @dataclass(frozen=True)
+class SpectralGeometryDescription:
+    """Spectral-axis geometry (the ``SpectralInfo`` analogue of ``GeometryDescription``)."""
+
+    wavenumber_min_cm1: float | None
+    wavenumber_max_cm1: float | None
+    n_points: int | None
+    sampling_cm1: float | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: _jsonify(v) for k, v in asdict(self).items()}
+
+
+@dataclass(frozen=True)
 class MetadataSummary:
     """A curated, glanceable projection of :class:`~snomniman.core.Metadata`.
 
@@ -95,6 +108,7 @@ class MetadataSummary:
     setpoint: float | None
     averaging: int | None
     geometry: GeometryDescription
+    spectral: SpectralGeometryDescription | None
     conventions: ConventionsDescription
     original_units: dict[str, str]
 
@@ -250,4 +264,5 @@ __all__ = [
     "OperationParameter",
     "ProvenanceSummary",
     "SourceDescription",
+    "SpectralGeometryDescription",
 ]

@@ -32,6 +32,7 @@ from .metadata import (
     Instrument,
     Metadata,
     ScanInfo,
+    SpectralInfo,
 )
 from .provenance import (
     READ_STEP_ID,
@@ -67,6 +68,7 @@ __all__ = [
     "ReaderError",
     "ScanInfo",
     "SnomnimanError",
+    "SpectralInfo",
     "StepRecord",
     "current_software",
     "deserialize_dag",

@@ -82,7 +82,21 @@ rather than repeating them.
 > operation, diagnostics, the AI's philosophy), with "Learn more" deep-links from
 > operations and recommendations - the same curated content a future AI narrator grounds
 > its explanations in.
-> 534 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> **The second data modality - point spectroscopy - is now shipped** (2026-07-02,
+> `docs/point-spectrum-discovery.md`): a new `snomniman.io.neasnom_spectrum` reader
+> produces `DataKind.SPECTRUM` (`(wavenumber,)`) or `LINE_SCAN` (`(s, wavenumber)`) -
+> both pre-existing `DataKind`/`Capability` members anticipated in `docs/data-model.md`
+> since Phase 1, so **no architecture change was needed**, only the additive
+> `core.metadata.SpectralInfo` + its `describe`/`ai.briefing` projections, two Knowledge
+> articles, and a new `snomniman.gui.SpectrumPlotView` Explorer page (capability-gated:
+> image-only affordances - Measure, Comparison, Contact sheet, GSF/figure export -
+> decline with an honest message rather than crash for a spectral measurement). Along
+> the way, a real diagnostics bug the new modality surfaced was fixed: harmonic
+> signal/noise classification was gated on array `ndim` instead of
+> `Capability.SPATIAL_2D`, so a `(position, wavenumber)` array could be silently
+> misclassified as a spatial image; it now honestly reports "unknown" for non-spatial
+> shapes (regression-tested).
+> 599 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
@@ -440,6 +454,7 @@ surface automatically. See `docs/roadmap.md` for the current priority order.
 | `docs/harmonic-ranking-analysis.md` | **The first Scientific-Validation study to reach Outcome 1** (validate-and-implement); ADR-0026. Can the signal-vs-noise boundary across optical harmonics be drawn deterministically from one measurement? Candidate diagnostics (spatial coherence - lag-1 autocorrelation, Moran null - + a single-image Immerkaer SNR), analytical + synthetic + **two-sided real-data** validation. Conclusion: the signal/noise **classification** is defensible and shipped in `diagnostics` (meets Beta Readiness M4); the literal **"informativeness ranking / best-harmonic recommendation" is rejected** (the metrics conflate near-field with far-field background) - so a fact ships, no rule does. Discharges ADR-0019's SNR deferral. |
 | `docs/reference-normalization-analysis.md` | **Scientific-Validation study, Outcome 2 (DEFERRED), no code** (Candidate 3). When should the engine *recommend* `image.reference_normalize`? Distinguishes possible / appropriate / strongly-recommended. The *decline* conditions (redundant / weak / noisy / empty reference) are defensible and validated (reusing the ADR-0026 primitive + a redundancy metric); the *positive* "appropriate" branch cannot be validated - all real data is PsHet "Self-Reference Off" with `R-` channels that are near-copies of the signal (`O/R ~ 1`, normalization erases contrast), and appropriateness is experimental-design metadata the array lacks. Also flags that the existing flat-0.85 `ReferenceNormalizeRule` is unvalidated and over-recommends - revisit (gate or withdraw). |
 | `docs/knowledge-center.md` | **Knowledge Center** (`snomniman.knowledge`; ADR-0024): a living, in-app scientific knowledge base - philosophy (teach the science while performing it; ground the AI), architecture (a Qt-free leaf), the structured `Article` model, the Explorer panel + "Learn more" deep-links, AI integration, the integrity/no-drift guarantees, and future expansion. |
+| `docs/point-spectrum-discovery.md` | **Point Spectrum Discovery** - the second-modality analogue of `measurement-discovery.md`: what the real point-spectroscopy sample actually is (a 100-position line of spectra, not one isolated spectrum), why `DataKind.SPECTRUM`/`LINE_SCAN` + `Capability.SPECTRAL`/`SPATIAL_1D` (already anticipated in `data-model.md`) needed **no redesign**, the one additive `Metadata` field (`SpectralInfo`), the diagnostics gating bug the new modality surfaced and fixed, and the documented GUI scope boundary (image-only affordances decline gracefully for a spectral measurement). |
 
 ---
 
