@@ -15,6 +15,7 @@ the researcher can navigate back to the original measurement after a derivation.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from typing import Any
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from snomniman import viz
+from snomniman.batch import BatchOutcome, BatchResult, run_batch
 from snomniman.core import Dataset, current_software
 from snomniman.core.exceptions import DatasetError, ProcessingError, ReaderError
 from snomniman.io import export_channel_gsf, write_zarr
@@ -303,6 +305,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._manager.addRequested.connect(self._add_measurement)
         self._manager.removeRequested.connect(self.close_measurement)
         self._manager.renameRequested.connect(self._rename_measurement)
+        self._manager.batchRequested.connect(self._on_batch_requested)
         # Experiment panel: project-wide diagnostics (lazy) + cross-measurement stats.
         self._inspect_tabs.currentChanged.connect(self._on_inspect_tab_changed)
         self._experiment_panel.compareOverlayRequested.connect(self._compare_overlay)
@@ -741,6 +744,123 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
     def _refresh_recipes(self) -> None:
         self._process.set_recipes(sorted(self._recipes))
+
+    # -- batch processing (Phase 4B: replay one recipe across many measurements) --
+
+    def _on_batch_requested(self) -> None:
+        """Dialog-driven: choose scope + recipe, confirm, run with a progress dialog."""
+        if not self._recipes:
+            QtWidgets.QMessageBox.information(
+                self,
+                "No recipes available",
+                "Save a recipe from a measurement's processing history first "
+                "(Process tab -> Save current history as recipe...).",
+            )
+            return
+
+        selected = self._manager.selected_rows()
+        indices = list(range(len(self._sessions)))
+        if selected:
+            scope, ok = QtWidgets.QInputDialog.getItem(
+                self,
+                "Batch scope",
+                "Run the recipe on:",
+                [f"All measurements ({len(self._sessions)})", f"Selected ({len(selected)})"],
+                editable=False,
+            )
+            if not ok:
+                return
+            if scope.startswith("Selected"):
+                indices = selected
+
+        recipe_name, ok = QtWidgets.QInputDialog.getItem(
+            self, "Choose a recipe", "Recipe:", sorted(self._recipes), editable=False
+        )
+        if not ok:
+            return
+        recipe = self._recipes[recipe_name]
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Run batch",
+            f"Replay recipe '{recipe.name}' on {len(indices)} measurement(s)?\n"
+            "Any measurement it does not apply to will be skipped, explained, and "
+            "the rest will continue.",
+        )
+        if reply != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+
+        progress = QtWidgets.QProgressDialog(
+            "Starting batch...", "Cancel", 0, len(indices), self
+        )
+        progress.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+        progress.setWindowTitle("Batch processing")
+        progress.setMinimumDuration(0)
+
+        def on_progress(i: int, total: int, outcome: BatchOutcome) -> None:
+            progress.setValue(i)
+            progress.setLabelText(f"[{outcome.status}] {outcome.title}  ({i}/{total})")
+            QtWidgets.QApplication.processEvents()
+
+        result = self._run_batch(
+            recipe, indices, on_progress=on_progress, should_stop=progress.wasCanceled
+        )
+        progress.setValue(len(result.outcomes))
+        progress.close()
+
+        self._show_batch_result(result, recipe)
+        summary = (
+            f"Batch '{recipe.name}': {len(result.succeeded)} succeeded, "
+            f"{len(result.skipped)} skipped, {len(result.failed)} failed "
+            f"of {result.requested} requested ({result.elapsed_seconds:.1f}s)."
+        )
+        if result.stopped_early:
+            summary += " Stopped early by request."
+        QtWidgets.QMessageBox.information(self, "Batch complete", summary)
+
+    def _run_batch(
+        self,
+        recipe: Recipe,
+        indices: Sequence[int],
+        *,
+        on_progress: Callable[[int, int, BatchOutcome], None] | None = None,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> BatchResult:
+        """Replay *recipe* on the sessions at *indices*; commit each success in place.
+
+        Mirrors accepting a manual Preview for every successful measurement: the
+        updated session's prior model moves to its history, and its new active
+        model wraps the recipe's derived dataset - without going through the
+        Preview/Accept UI (batch calls :func:`snomniman.batch.run_batch`, which
+        replays via the unchanged ``apply_recipe`` directly, skipping the per-
+        measurement before/after rendering a UI Preview needs but a batch does not).
+        The currently displayed measurement, if included, is refreshed once at the
+        end - never per measurement, so watching a long batch run stays cheap.
+        """
+        measurements = [self._measurement_of(self._sessions[i]) for i in indices]
+        result = run_batch(recipe, measurements, on_progress=on_progress, should_stop=should_stop)
+        touched_active = False
+        for i, outcome in zip(indices, result.outcomes, strict=False):
+            if outcome.measurement is None:
+                continue
+            session = self._sessions[i]
+            session.history.append(session.model)
+            session.model = ExplorerModel(
+                outcome.measurement.current, title=f"{session.title} -> recipe '{recipe.name}'"
+            )
+            if i == self._active_index:
+                touched_active = True
+        if touched_active:
+            self._load()
+            self._refresh_navigation()
+        self._refresh_manager()
+        return result
+
+    def _show_batch_result(self, result: BatchResult, recipe: Recipe) -> None:
+        """Surface a completed batch run in the Experiment tab (no new report artifact)."""
+        table = self._experiment.batch_result_table(result, recipe)
+        self._experiment_panel.set_batch_result(table)
+        self._inspect_tabs.setCurrentWidget(self._experiment_panel)
 
     def current_project(self) -> Project:
         """Bundle every measurement (each with its history + view + overlays) for saving."""

@@ -3,21 +3,23 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-07-02b (shipped **Processing Recipes** - Phase 4A, ADR-0031: capture a
-completed processing history once, save it as a `.snomrecipe` file, and replay it deterministically
-on another compatible measurement through the *same* Processing Workspace, the *same*
-`ProcessingStep.apply()` path, and the *same* Preview -> Accept/Cancel lifecycle every operation
-already uses - no second processing engine, no project-manifest schema change. Re-validated the
-prior design doc's Option B ("a recipe is a projection of the provenance DAG") against the codebase
-as it stood after Phases 2A-3C before implementing; the one refinement found was that capture must
-walk the `primary` provenance edge only (rejecting a chain through a multi-input step, e.g.
-`image.arithmetic`), not reuse `describe.summarize_provenance`'s full topological walk. Rename/
-Duplicate/param-editing ship at the backend layer (tested) but are intentionally not wired into
-v1's GUI (Rule 9 scope: create/browse/inspect/execute). See `docs/phase4-workflow-automation.md`
-(the design doc this implements) and the "Workflow automation track" section below. Earlier:
-Point Spectrum vertical slice (second data modality); Phase 3C region-aware ops; Phase 3B
-scientific analysis toolbox; Phase 3A core operations; Phase 2C multi-input/arithmetic; Phase 2B
-experiment analysis; Phase 2A multi-measurement projects; complete research workflow.
+**Last updated:** 2026-07-02c (shipped **Batch Processing** - Phase 4B: replays one
+`Recipe` across many measurements, independently, by looping the unchanged
+`pipeline.apply_recipe` - a thin orchestration layer, confirmed correct before
+implementing (Option B, no ADR needed - the design doc's own plan). Per-measurement
+outcomes are `success` / `skipped` (an honest, expected incompatibility) / `failed`
+(a genuinely unexpected error); neither aborts the run. Local, serial, deterministic
+(Rule 1); a stock `QProgressDialog` gives live progress + a clean between-
+measurement stop; the Explorer reuses the Measurement Manager's existing multi-select
+and the recipe library from 4A; results land in the Experiment tab by projecting
+`BatchResult` into the existing `ExperimentTable` shape (no new report artifact).
+This closes the documented **#1 daily-adoption gap** (Workflow C, `beta-readiness-
+v1.md`: "process a day of scans and export for Origin/Python"). See `LOG.md` entry
+"2026-07-02c" and the "Workflow automation track" section below. Earlier: Processing
+Recipes (Phase 4A, ADR-0031); Point Spectrum vertical slice (second data modality);
+Phase 3C region-aware ops; Phase 3B scientific analysis toolbox; Phase 3A core
+operations; Phase 2C multi-input/arithmetic; Phase 2B experiment analysis; Phase 2A
+multi-measurement projects; complete research workflow.
 Governance: the Scientific Validation Phase + Beta Readiness Review remain the planning systems)
 
 ---
@@ -53,14 +55,12 @@ whether it reuses existing abstractions (Rule 7).
   measurement's processing history as a portable `Recipe`, save/load it as a
   `.snomrecipe` file, browse/inspect/execute it in the same Processing Workspace
   through the same Preview -> Accept lifecycle. See `LOG.md` entry "2026-07-02b".
-- **Phase 4B - Batch Processing - NEXT.** Fill the `snomniman.batch` stub: run a
-  recipe over a project's measurements or a folder of measurement directories,
-  headlessly, emitting a run manifest (recipe identity, per-input success/failure,
-  versions). This is the documented **#1 daily-adoption gap** (Workflow C,
-  `beta-readiness-v1.md`: "process a day of scans and export for Origin/Python").
-  Depends only on 4A (done). Local/serial in v1 (Rule 1 - no parallelism ahead of a
-  measured need).
-- **Phase 4C - Automated Reporting - after 4B, lower priority.** Assemble
+- **Phase 4B - Batch Processing. DONE (2026-07-02c, no ADR).** `snomniman.batch.
+  run_batch` replays a `Recipe` over selected (or all) project measurements,
+  headlessly, per-measurement success/skipped/failed outcomes + a run summary
+  (elapsed time, stopped-early flag). Closed the documented **#1 daily-adoption
+  gap** (Workflow C, `beta-readiness-v1.md`). See `LOG.md` entry "2026-07-02c".
+- **Phase 4C - Automated Reporting - NEXT, lower priority.** Assemble
   `ExperimentModel` + `describe` + `viz.figure` into one provenance-bearing
   experiment summary document. Highest scope-creep risk of the three (a "report
   builder" invites endless layout features) - consider waiting for user-testing
@@ -192,8 +192,8 @@ The canonical queue lives in `docs/scientific-validation.md` Section 7.
   shipped end-to-end (`docs/point-spectrum-discovery.md`). Remaining: interferometric
   nano-FTIR (`INTERFEROGRAM` -> FFT -> `SPECTRUM`, distinct from the direct wavenumber
   sweep already shipped), a full `HYPERSPECTRAL` cube reader/viewer (Phase 5). The
-  `snomniman.batch` engine is now **Phase 4B** (see "Workflow automation track"
-  above), built directly on the Phase 4A `Recipe` runner - no longer a distant Phase 6.
+  `snomniman.batch` engine is now **shipped** (Phase 4B, see "Workflow automation
+  track" above), built directly on the Phase 4A `Recipe` runner.
   Deliberate future phases - no reader/viewer/AI work ahead of a real sample file
   (Rule 6).
 - **Read-only refinements** - mirror a measurement overlay into every comparison pane; a

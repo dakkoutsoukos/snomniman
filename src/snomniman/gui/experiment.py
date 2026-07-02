@@ -31,9 +31,11 @@ from typing import cast
 import numpy as np
 
 from snomniman import viz
+from snomniman.batch import STATUS_SUCCESS, BatchResult
 from snomniman.core import Dataset
 from snomniman.diagnostics import diagnose
 from snomniman.diagnostics.descriptors import HARMONIC_SIGNAL, MeasurementDiagnostics
+from snomniman.pipeline import Recipe
 from snomniman.viz import RenderData
 
 from .model import CursorReadout, CursorValue, ExplorerModel, MeasurementSession, PaneSpec
@@ -347,6 +349,36 @@ class ExperimentModel:
             ExperimentColumn("Max", unit),
         )
         return ExperimentTable(f"{channel} line profile", columns, tuple(rows))
+
+    # -- batch results (Phase 4B: reuses the same generic table shape) --------
+
+    def batch_result_table(self, result: BatchResult, recipe: Recipe) -> ExperimentTable:
+        """Project a completed batch run into the generic experiment-table shape.
+
+        Reuses the exact :class:`ExperimentTable` the diagnostics/statistics views
+        already render - no new results widget - so "part of the experiment
+        workflow" is literal: the same table, the same panel, no new UI surface.
+        """
+        columns = (ExperimentColumn("Status"), ExperimentColumn("Detail"))
+        rows = tuple(
+            ExperimentTableRow(
+                measurement_id=o.measurement_id,
+                title=o.title,
+                cells=(
+                    ExperimentCell(o.status),
+                    ExperimentCell(o.reason or f"{len(recipe.steps)} step(s) applied"),
+                ),
+            )
+            for o in result.outcomes
+        )
+        n_ok = sum(1 for o in result.outcomes if o.status == STATUS_SUCCESS)
+        title = (
+            f"Batch: recipe '{result.recipe_name}' - {n_ok}/{len(result.outcomes)} succeeded "
+            f"of {result.requested} requested ({result.elapsed_seconds:.1f}s)"
+        )
+        if result.stopped_early:
+            title += " - stopped early by request"
+        return ExperimentTable(title, columns, rows)
 
     # -- internals ------------------------------------------------------------
 

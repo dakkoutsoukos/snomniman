@@ -82,11 +82,27 @@ class ExperimentPanel(QtWidgets.QWidget):
         export_row.addStretch(1)
         layout.addLayout(export_row)
 
+        line2 = QtWidgets.QFrame()
+        line2.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        layout.addWidget(line2)
+
+        self._batch_caption = QtWidgets.QLabel(
+            "Batch results  -  run a recipe across measurements from the Measurements panel"
+        )
+        layout.addWidget(self._batch_caption)
+        self._batch = _new_table()
+        layout.addWidget(self._batch, 1)
+
     def set_diagnostics(self, table: ExperimentTable) -> None:
         _fill_table(self._diagnostics, table)
 
     def set_statistics(self, table: ExperimentTable) -> None:
         _fill_table(self._statistics, table)
+
+    def set_batch_result(self, table: ExperimentTable) -> None:
+        """Show a completed batch run's per-measurement outcomes (Phase 4B)."""
+        self._batch_caption.setText(table.title)
+        _fill_table(self._batch, table)
 
 
 def _new_table() -> QtWidgets.QTableWidget:

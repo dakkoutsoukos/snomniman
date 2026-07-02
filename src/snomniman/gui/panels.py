@@ -118,6 +118,7 @@ class MeasurementManager(QtWidgets.QWidget):
     addRequested = QtCore.Signal()  # "Add Measurement..."
     removeRequested = QtCore.Signal(int)  # close the measurement at this row
     renameRequested = QtCore.Signal(int)  # rename the measurement at this row
+    batchRequested = QtCore.Signal()  # "Batch..." - the window reads selected_rows() itself
 
     _COLUMNS = ("Measurement", "Time", "Processing", "Harmonics", "Ref")
 
@@ -153,6 +154,12 @@ class MeasurementManager(QtWidgets.QWidget):
             button.clicked.connect(slot)
             tools.addWidget(button)
         tools.addWidget(self._compare_btn)
+        self._batch_btn = QtWidgets.QPushButton("Batch...")
+        self._batch_btn.setToolTip(
+            "Replay a saved recipe across all measurements, or just the selected ones"
+        )
+        self._batch_btn.clicked.connect(lambda: self.batchRequested.emit())
+        tools.addWidget(self._batch_btn)
         tools.addStretch(1)
         layout.addLayout(tools)
 

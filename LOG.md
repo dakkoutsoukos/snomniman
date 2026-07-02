@@ -3198,3 +3198,121 @@ Dialog-driven handlers (`_save_recipe_as`, `_load_recipe_dialog`,
   `docs/phase4-workflow-automation.md` sec 6).
 - Consider embedding a recipe copy in the `.snomproj` manifest once project-embedded
   recipes prove wanted (deferred in ADR-0031, not rejected).
+
+---
+
+## 2026-07-02c - Batch Processing (Phase 4B)
+
+The second Phase 4 milestone: replay one processing recipe across many measurements
+in a project, independently, so a researcher can process a whole session as easily
+as one scan. Directly closes the documented #1 daily-adoption gap in
+`beta-readiness-v1.md` (Workflow C: "process a day of scans and export for
+Origin/Python").
+
+### Completed
+
+**Architecture validation (before any code).** Re-checked the Phase 4 design doc's
+Option A (a separate execution engine) vs Option B (a thin orchestration layer over
+recipe replay) against the just-shipped Phase 4A implementation. Option B was
+already the plan and remains correct: `pipeline.apply_recipe` already takes one
+`Recipe` + one `Dataset` and returns an ordinary derived `Dataset`; batch needed only
+a loop, a per-measurement outcome, and a summary - no new scientific logic, no
+second processing/provenance system. No architectural revision was required, so no
+new ADR was written (per the task's own "ADR only if architectural decisions
+change").
+
+**`snomniman.batch` (filled the stub):** `run_batch(recipe, measurements,
+on_progress=, should_stop=)` replays `recipe` on each `Measurement`'s **current**
+(active) dataset via the unchanged `apply_recipe` - identical to selecting that one
+measurement and replaying the recipe by hand. Three outcome statuses per measurement:
+`STATUS_SUCCESS` (derived dataset appended to a *copy* of that measurement's history,
+inputs never mutated), `STATUS_SKIPPED` (the recipe does not apply - the engine's own
+`ProcessingError`, an honest, expected incompatibility), `STATUS_FAILED` (a genuinely
+unexpected, non-`ProcessingError` exception - caught so one bad measurement never
+costs the rest of the batch its results, never silently swallowed since the outcome
+records the exception type + message). Neither non-success status aborts the run.
+Local, serial (Rule 1: no parallelism ahead of a measured need); `should_stop` is
+checked *between* measurements (never mid-measurement) for a clean, deterministic
+early stop; `on_progress` fires after each attempted measurement with
+`(completed_count, total, outcome)`. `BatchResult` records `recipe_name`,
+`requested` (how many were selected), the outcome tuple, `started_at`,
+`elapsed_seconds`, `stopped_early`, plus `.succeeded`/`.skipped`/`.failed` filters.
+
+**GUI wiring (reuses existing selection + recipe + Experiment surfaces, no second
+processing interface):**
+- `MeasurementManager` (`panels.py`) gains a "Batch..." button (`batchRequested`
+  signal) beside the existing Compare button, reusing the *same*
+  `selected_rows()` multi-select the Compare feature already has.
+- `window._on_batch_requested` is dialog-driven (stock `QInputDialog.getItem` for
+  scope All-vs-Selected and recipe choice, `QMessageBox.question` to confirm,
+  a stock `QProgressDialog` for live per-measurement progress with a Cancel button
+  wired to `should_stop` and `QApplication.processEvents()` calls so the dialog
+  stays responsive across a long, purely-serial run) and delegates to two directly-
+  testable core methods, mirroring the Phase 4A convention: `window._run_batch(recipe,
+  indices, on_progress=, should_stop=)` builds a `Measurement` snapshot per selected
+  session (reusing the existing `_measurement_of` helper `current_project()` already
+  used), calls `run_batch`, and commits each success into its session exactly as a
+  manual Preview -> Accept would (the old model moves to `session.history`, the new
+  model wraps the derived dataset) - refreshing the visible display only once, and
+  only if the *active* session was among those touched, so watching a large batch
+  run stays cheap; `window._show_batch_result(result, recipe)` surfaces the run.
+- **Results land in the Experiment tab, not a new report artifact:**
+  `ExperimentModel.batch_result_table(result, recipe)` projects a `BatchResult` into
+  the *same* `ExperimentTable` shape the diagnostics/statistics views already use;
+  `ExperimentPanel` gained one more labelled table section ("Batch results") that
+  renders it via the *same* generic `_fill_table` helper - literally the same table
+  widget code, no new rendering path. A final `QMessageBox` states the plain-language
+  summary (succeeded/skipped/failed/elapsed, stopped-early if applicable).
+
+### Decisions
+
+- **No ADR.** Batch is exactly the orchestration layer the Phase 4 design doc and
+  ADR-0031 already anticipated (`docs/phase4-workflow-automation.md` sec 3.2,
+  5.2); nothing about the provenance model, the `Recipe` shape, or the processing
+  registry changed. Explicitly confirmed before implementation, per the task.
+- **Skipped vs failed is a real distinction, not a cosmetic split.** `STATUS_SKIPPED`
+  = the engine's own designed "this does not apply" path (`ProcessingError`);
+  `STATUS_FAILED` = an unexpected, uncategorized error. Inventing a difference the
+  underlying data didn't support would have violated the project's honesty
+  discipline; this split is grounded in the two exception paths that actually occur.
+- **Replay target is each measurement's *current* (active) dataset, not always its
+  raw.** This matches "identical to manually running the recipe" for any
+  measurement, whatever state it is currently in - and for the common case (a
+  freshly opened batch of untouched sibling scans), current == raw for every one.
+- **No parallelism, no custom dialog classes.** Serial execution only (Rule 1); the
+  progress/scope/recipe prompts reuse stock `QInputDialog`/`QMessageBox`/
+  `QProgressDialog` exactly as every other GUI dialog in this codebase already does
+  (no custom `QDialog` subclass existed before this milestone, and none was added).
+
+### Issues Found
+- None - the recipe engine, provenance DAG, and `Measurement`/`Project` model needed
+  no changes; this was pure orchestration of already-tested seams.
+
+### Tests / gates
+- 655 tests (up from 631, +24): `test_batch.py` (12: independent multi-measurement
+  replay incl. a non-planar per-measurement "bump" fixture so results are
+  distinguishable rather than coincidentally identical, replay-matches-manual-chain,
+  history/`current_index` bookkeeping, input-immutability, skip-vs-fail
+  distinction with an unexpected-error injection via monkeypatch, progress callback
+  ordering, `should_stop` early-stop semantics, empty-input handling);
+  `test_gui_batch.py` (12: multi-session commit, active-vs-non-active display
+  refresh behavior, progress/should_stop forwarding, skip handling, the Experiment-tab
+  projection, and a full dialog-driven run with stock dialogs monkeypatched). `ruff`
+  clean; `mypy --strict` clean (125 files); Qt-free invariant green.
+
+### Documentation Updated
+- `docs/architecture.md` (`snomniman.batch` module bullet - no longer "(stub)",
+  dependency diagram, Data Flow sec 5 "Batch" line, "Last updated"). `LOG.md` (this
+  entry). `NEXT.md` (refreshed). `CLAUDE.md` (project status paragraph, module list,
+  the `phase4-workflow-automation.md` hierarchy-table entry).
+
+### Next Recommended Actions
+- **Phase 4C (Reporting)** is the last item on the Phase 4 roadmap - lower priority
+  than 4A/4B were, and the design doc's own highest scope-creep risk. Consider
+  waiting for the Beta Readiness user-testing protocol's signal before building it.
+- **CSV export of a batch result** would be a natural, cheap follow-on (the
+  Experiment tab's other two tables already have Copy/Export CSV) - deliberately
+  left out of this milestone to keep it from blurring into "reporting"; add it if a
+  researcher asks.
+- Project-manifest-embedded recipes (ADR-0031's deferred alternative) remain
+  unbuilt; revisit only if a concrete need appears (Rule 7).

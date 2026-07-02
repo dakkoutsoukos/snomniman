@@ -4,7 +4,7 @@
 Diagnostics / AI / Knowledge layers are implemented (ADR-0018..0024). **Foundational
 development is complete** - new capability now enters via the governance process
 (Section 10), extending these layers rather than adding new ones.
-**Last updated:** 2026-07-02 (Processing Recipes, ADR-0031)
+**Last updated:** 2026-07-02c (Batch Processing, Phase 4B)
 
 Authoritative description of the system's structure. When the architecture changes,
 this file changes in the same commit, with rationale in [`decisions.md`](decisions.md).
@@ -36,10 +36,10 @@ reverse). `core` imports nothing else in the project. There are no cycles.
         v
   +----------------+   +-------------------+   +----------------+
   | snomniman.batch|-->| snomniman.pipeline|   | snomniman.viz  |
-  | headless runs  |   | provenance DAG,   |   | display-ready  |
-  | over many srcs |   | replay, (de)ser., |   | data + mpl     |
-  | (stub)         |   | Project save/open,|   | static export  |
-  |                |   | Recipes (ADR-0031)|   |                |
+  | replays one    |   | provenance DAG,   |   | display-ready  |
+  | Recipe across  |   | replay, (de)ser., |   | data + mpl     |
+  | many Measure-  |   | Project save/open,|   | static export  |
+  | ments (4B)     |   | Recipes (ADR-0031)|   |                |
   +----------------+   +-------------------+   +----------------+
                             | uses             +----------------+
                             v                          |
@@ -265,9 +265,17 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
   pixel-edge extent) + `pick_scale_bar`; `measure` (line/region quantitative
   measurement); and `figure` - provenance-bearing matplotlib publication export.
 
-### `snomniman.batch` - headless multi-dataset runs (depends on `pipeline`, `io`, `core`)
-- Applies a DAG (or template) across many sources, emitting results + a per-result
-  provenance record + a run manifest. Pure backend; no UI.
+### `snomniman.batch` - headless multi-measurement recipe runs (depends on `pipeline`, `io`, `core`)
+- **Implemented (Phase 4B).** `run_batch(recipe, measurements, on_progress=, should_stop=)`
+  replays one `pipeline.Recipe` across many `Measurement`s, independently, by looping
+  the unchanged `apply_recipe` - no second automation system. Each measurement's
+  outcome is one of `STATUS_SUCCESS` / `STATUS_SKIPPED` (the recipe does not apply -
+  an honest, expected `ProcessingError`) / `STATUS_FAILED` (a genuinely unexpected
+  error) - neither non-success status aborts the run. Local, serial, deterministic
+  (Rule 1: no parallelism ahead of a measured need); `should_stop` allows a clean
+  stop between measurements. Pure backend; no UI; the GUI orchestrates it and
+  projects `BatchResult` into the existing `ExperimentTable` shape (no new report
+  artifact).
 
 ### `snomniman.gui` - application (depends on all backend; nothing depends on it)
 - PySide6 application shell, PyQtGraph viewers, channel/LUT controls, ROI tools,
@@ -345,8 +353,10 @@ exercisable from Python/pytest with no Qt event loop. The GUI is thin.
 - **Interactive:** open file -> `io` reader -> `Dataset` -> `gui` viewer -> user
   adds steps -> `processing` produces new `Dataset`s (nodes in the DAG) ->
   `viz`/`gui` render -> save `Project` (sources + DAG) -> `viz` exports figures.
-- **Batch:** load a DAG/template -> `batch` iterates sources -> `pipeline.replay`
-  per source -> results + provenance + manifest written by `io`.
+- **Batch (implemented, Phase 4B):** load a `pipeline.Recipe` -> `batch.run_batch`
+  replays it (via `pipeline.apply_recipe`) on each selected `Measurement`,
+  independently -> a `BatchResult` (per-measurement success/skipped/failed
+  outcomes + elapsed time), surfaced in the Experiment tab.
 - **Reproduce:** open `Project` JSON -> `pipeline.replay` against raw -> results
   (bit-identical for deterministic steps, else within tolerance).
 

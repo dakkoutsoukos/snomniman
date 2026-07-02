@@ -106,9 +106,22 @@ rather than repeating them.
 > Persists as a standalone `.snomrecipe` JSON file (no project-manifest change); the
 > Processing Workspace surfaces recipes as a second kind of tree item (create/browse/
 > inspect/execute) through the identical Preview -> Accept/Cancel lifecycle every
-> operation already uses - no second processing interface. Batch execution of a
-> recipe across many measurements (`snomniman.batch`) is the next milestone (Phase 4B).
-> 631 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> operation already uses - no second processing interface.
+> **Phase 4B - Batch Processing is shipped** (2026-07-02, no ADR - Option B, "a
+> thin orchestration layer over recipe replay," was the already-planned Phase 4
+> design and needed no revision): `snomniman.batch.run_batch` replays one `Recipe`
+> across many `Measurement`s, independently, by looping the unchanged
+> `apply_recipe` - no second automation system. Each measurement's outcome is
+> `success` / `skipped` (an honest, expected incompatibility) / `failed` (a
+> genuinely unexpected error); neither non-success status aborts the run.
+> Local, serial, deterministic (Rule 1); a caller may request a clean stop
+> between measurements and observe live progress. The Explorer reuses the
+> Measurement Manager's existing multi-select (all-or-selected measurements),
+> a stock `QProgressDialog` for live progress/cancel, and surfaces the run's
+> summary as a new "Batch results" section in the Experiment tab by projecting
+> `BatchResult` into the existing `ExperimentTable` shape - no new report
+> artifact. `snomniman.batch` is no longer a stub.
+> 655 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
@@ -257,7 +270,10 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
   (no internal deps); content held to the project maxim; a no-drift test requires an article
   per registered operation. See `docs/knowledge-center.md` (ADR-0024).
 - `snomniman.viz` - display-ready render data + matplotlib static export.
-- `snomniman.batch` - headless application of a DAG across many sources.
+- `snomniman.batch` - Phase 4B: replays one `pipeline.Recipe` across many
+  `Measurement`s, independently, via the unchanged `apply_recipe` (no second
+  automation system); per-measurement success/skipped/failed outcomes; local,
+  serial, deterministic.
 - `snomniman.gui` - the desktop app; presentation/interaction only.
 
 **Dependency rules:**
@@ -470,7 +486,7 @@ surface automatically. See `docs/roadmap.md` for the current priority order.
 | `docs/reference-normalization-analysis.md` | **Scientific-Validation study, Outcome 2 (DEFERRED), no code** (Candidate 3). When should the engine *recommend* `image.reference_normalize`? Distinguishes possible / appropriate / strongly-recommended. The *decline* conditions (redundant / weak / noisy / empty reference) are defensible and validated (reusing the ADR-0026 primitive + a redundancy metric); the *positive* "appropriate" branch cannot be validated - all real data is PsHet "Self-Reference Off" with `R-` channels that are near-copies of the signal (`O/R ~ 1`, normalization erases contrast), and appropriateness is experimental-design metadata the array lacks. Also flags that the existing flat-0.85 `ReferenceNormalizeRule` is unvalidated and over-recommends - revisit (gate or withdraw). |
 | `docs/knowledge-center.md` | **Knowledge Center** (`snomniman.knowledge`; ADR-0024): a living, in-app scientific knowledge base - philosophy (teach the science while performing it; ground the AI), architecture (a Qt-free leaf), the structured `Article` model, the Explorer panel + "Learn more" deep-links, AI integration, the integrity/no-drift guarantees, and future expansion. |
 | `docs/point-spectrum-discovery.md` | **Point Spectrum Discovery** - the second-modality analogue of `measurement-discovery.md`: what the real point-spectroscopy sample actually is (a 100-position line of spectra, not one isolated spectrum), why `DataKind.SPECTRUM`/`LINE_SCAN` + `Capability.SPECTRAL`/`SPATIAL_1D` (already anticipated in `data-model.md`) needed **no redesign**, the one additive `Metadata` field (`SpectralInfo`), the diagnostics gating bug the new modality surfaced and fixed, and the documented GUI scope boundary (image-only affordances decline gracefully for a spectral measurement). |
-| `docs/phase4-workflow-automation.md` | **Phase 4 - Workflow Automation (Research & Design)** - the user-commissioned blueprint for automating repeated processing across a multi-scan session: a workflow survey (Gwyddion/MountainsMap/WSxM/ImageJ/neaPLOT), the Recipe design (a re-bindable projection of the provenance DAG, not a second engine - Option B, confirmed and implemented as ADR-0031), the Phase 4A/4B/4C roadmap (Recipes -> Batch -> Reporting), and the explicit deferrals (auto-recipe-selection stays validation-gated; no scripting/macro language). Phase 4A (Recipes) is now **shipped** (ADR-0031); 4B (Batch) is next. |
+| `docs/phase4-workflow-automation.md` | **Phase 4 - Workflow Automation (Research & Design)** - the user-commissioned blueprint for automating repeated processing across a multi-scan session: a workflow survey (Gwyddion/MountainsMap/WSxM/ImageJ/neaPLOT), the Recipe design (a re-bindable projection of the provenance DAG, not a second engine - Option B, confirmed and implemented as ADR-0031), the Phase 4A/4B/4C roadmap (Recipes -> Batch -> Reporting), and the explicit deferrals (auto-recipe-selection stays validation-gated; no scripting/macro language). Phase 4A (Recipes, ADR-0031) and 4B (Batch) are now **shipped**; 4C (Reporting) is next, lower priority, pending user-testing signal. |
 
 ---
 
