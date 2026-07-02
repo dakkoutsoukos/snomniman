@@ -178,6 +178,8 @@ def _derive_capabilities(data: xr.Dataset) -> frozenset[Capability]:
         caps.add(Capability.SPATIAL_1D)
     if "wavenumber" in coords:
         caps.add(Capability.SPECTRAL)
+    if "opd" in coords:
+        caps.add(Capability.INTERFEROMETRIC)
 
     optical_orders: set[int] = set()
     mechanical_orders: set[int] = set()

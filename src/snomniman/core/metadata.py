@@ -86,6 +86,23 @@ class SpectralInfo:
 
 
 @dataclass(frozen=True)
+class InterferometerInfo:
+    """Interferometric-acquisition parameters for ``INTERFEROGRAM`` datasets - the
+    interferometric analogue of :class:`ScanInfo` / :class:`SpectralInfo`.
+
+    Sketched (unimplemented) in data-model.md sec 6 since Phase 0; also used by
+    :class:`~snomniman.processing.spectrum.FftInterferogram` to record the
+    apodization/zero-fill it applied, alongside the identical values already
+    captured in the step's provenance record.
+    """
+
+    mirror_velocity: float | None = None  # mm/s, moving-mirror scan velocity
+    spectral_resolution_cm1: float | None = None
+    zero_fill: int | None = None
+    apodization: str | None = None
+
+
+@dataclass(frozen=True)
 class Acquisition:
     """Per-acquisition parameters."""
 
@@ -130,6 +147,7 @@ class Metadata:
     demodulation: Demodulation = field(default_factory=Demodulation)
     scan: ScanInfo = field(default_factory=ScanInfo)
     spectral: SpectralInfo | None = None
+    interferometer: InterferometerInfo | None = None
     acquisition: Acquisition = field(default_factory=Acquisition)
     channels: tuple[ChannelInfo, ...] = ()
     original_units: dict[str, str] = field(default_factory=dict)
@@ -163,6 +181,7 @@ class Metadata:
             ),
             scan=_scan_from_dict(data.get("scan", {})),
             spectral=_spectral_from_dict(data.get("spectral")),
+            interferometer=_interferometer_from_dict(data.get("interferometer")),
             acquisition=Acquisition(**data.get("acquisition", {})),
             channels=tuple(
                 ChannelInfo(
@@ -205,6 +224,10 @@ def _spectral_from_dict(d: dict[str, Any] | None) -> SpectralInfo | None:
     return None if d is None else SpectralInfo(**d)
 
 
+def _interferometer_from_dict(d: dict[str, Any] | None) -> InterferometerInfo | None:
+    return None if d is None else InterferometerInfo(**d)
+
+
 def _jsonify(obj: Any) -> Any:
     """Recursively convert tuples to lists so the result is JSON-round-trippable."""
     if isinstance(obj, dict):
@@ -222,6 +245,7 @@ __all__ = [
     "Demodulation",
     "Excitation",
     "Instrument",
+    "InterferometerInfo",
     "Metadata",
     "ScanInfo",
     "SpectralInfo",

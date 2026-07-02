@@ -23,6 +23,18 @@ _GWYDDION = "Necas & Klapetek, Cent. Eur. J. Phys. 10, 181 (2012) - Gwyddion SPM
 _WSXM = "Horcas et al., Rev. Sci. Instrum. 78, 013705 (2007) - WSxM SPM software."
 _IMMERKAER = "Immerkaer, Comput. Vis. Image Underst. 64, 300 (1996) - single-image noise sigma."
 _MORAN = "Moran, Biometrika 37, 17 (1950); Cliff & Ord, Spatial Processes (1981)."
+_GRIFFITHS = (
+    "Griffiths & de Haseth, Fourier Transform Infrared Spectrometry, 2nd ed., Wiley "
+    "(2007) - the standard FTIR apodization/zero-fill/phase-correction chain."
+)
+_MERTZ = (
+    "Mertz, Infrared Phys. 7, 17 (1967) - auxiliary computation (phase "
+    "correction) for Fourier spectrometry."
+)
+_HARRIS = (
+    "Harris, Proc. IEEE 66(1), 51 (1978) - on the use of windows for harmonic "
+    "analysis with the DFT (apodization window definitions)."
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -372,6 +384,7 @@ _CONCEPTS = (
             "concept.pseudoheterodyne",
             "concept.harmonics",
             "concept.near_field_microscopy",
+            "concept.interferogram",
         ),
         references=(_HUTH,),
     ),
@@ -399,6 +412,112 @@ _CONCEPTS = (
             "step - a 1 cm^-1 step cannot resolve structure finer than that."
         ),
         related_concepts=("concept.point_spectrum",),
+    ),
+    Article(
+        article_id="concept.interferogram",
+        category=CONCEPT,
+        title="Interferograms and the zero-path-difference (ZPD)",
+        summary=(
+            "An interferogram is the raw signal recorded against optical path "
+            "difference (OPD), before Fourier transformation - the actual 'FTIR' "
+            "half of nano-FTIR that a point spectrum's direct wavenumber sweep "
+            "never records."
+        ),
+        explanation=(
+            "As an interferometer's moving mirror scans, the detector (or a "
+            "demodulated near-field signal) is recorded as a function of the "
+            "resulting optical path difference (OPD), not of wavenumber directly. "
+            "This signal - the interferogram, `INTERFEROGRAM`, dims `(opd,)` - is "
+            "not yet a spectrum: it must be Fourier-transformed to recover amplitude "
+            "and phase versus wavenumber (`spectrum.fft_interferogram`). Its most "
+            "important sample is the zero-path-difference (ZPD) point, where the two "
+            "interferometer arms are exactly equal length and the signal reaches its "
+            "burst maximum; every other OPD sample is referenced relative to it. Real "
+            "acquisitions are commonly asymmetric ('single-sided'): a short segment "
+            "before ZPD and a much longer one after, to keep the scan fast while "
+            "still capturing enough of the burst to estimate the interferometer's "
+            "instrumental phase."
+        ),
+        scientific_background=(
+            "Conventional FTIR spectrometry is built entirely on this interferogram "
+            "-> spectrum pipeline (apodize, zero-fill, phase-correct, Fourier "
+            "transform); nano-FTIR reuses the identical computation on a near-field "
+            "interferogram (Huth et al., Nano Lett. 12, 3973, 2012). This is "
+            "scientifically distinct from the direct wavenumber-sweep point "
+            "spectroscopy SNOMNIMAN already supports (concept.point_spectrum): a "
+            "sweep measures each wavenumber directly, one at a time, and needs no "
+            "Fourier transform at all."
+        ),
+        practical_guidance=(
+            "Inspect an interferogram before processing it - a well-registered ZPD "
+            "should show a clear, symmetric burst; a badly asymmetric or missing "
+            "burst usually means the ZPD is mis-located, which is exactly what phase "
+            "correction (concept.apodization; spectrum.fft_interferogram's "
+            "`phase_correction` parameter) is designed to compensate for."
+        ),
+        common_mistakes=(
+            "Treating an interferogram as if it were already a spectrum - its axis "
+            "is optical path difference (cm), not wavenumber, and its values carry "
+            "no direct per-wavenumber meaning until Fourier-transformed.",
+            "Assuming the ZPD is always the interferogram's first sample - real, "
+            "asymmetric single-sided acquisitions place it wherever the OPD "
+            "coordinate is closest to zero, not necessarily at index 0.",
+        ),
+        related_concepts=("concept.apodization", "concept.point_spectrum", "concept.spectral_axis"),
+        related_operations=("spectrum.fft_interferogram",),
+        references=(_GRIFFITHS, _HUTH),
+    ),
+    Article(
+        article_id="concept.apodization",
+        category=CONCEPT,
+        title="Apodization (interferogram windowing)",
+        summary=(
+            "Multiplying an interferogram by a tapering window before the Fourier "
+            "transform trades spectral resolution for suppressed sidelobe ringing - "
+            "a routine, deterministic step in every FTIR processing chain."
+        ),
+        explanation=(
+            "An interferogram is necessarily recorded over a finite OPD range; "
+            "truncating it abruptly (no window, 'boxcar') is equivalent to "
+            "convolving the true spectrum with a sinc function, whose slowly "
+            "decaying sidelobes ring broadly across the whole spectrum. A tapering "
+            "window (Hann, Hamming, the 3-term Blackman-Harris window) that decays "
+            "smoothly toward the edges of the recorded OPD range suppresses this "
+            "ringing at the cost of a wider main lobe (lower resolution) - a "
+            "well-characterized trade-off, not a free improvement. The window is "
+            "coherent-gain normalized (rescaled to unit mean) so the recovered peak "
+            "amplitude is comparable across window choices; only the sidelobe/"
+            "resolution trade-off differs between them."
+        ),
+        mathematical_background=(
+            "The window must be centered on the zero-path-difference (ZPD) sample, "
+            "not on the array's geometric center: a real interferogram is commonly "
+            "acquired asymmetrically about ZPD (a short segment before it, a longer "
+            "one after), so a window's peak (value 1) is placed at the ZPD sample "
+            "and evaluated outward to whichever array edge is reached first. "
+            "Centering a symmetric window on the array instead would apodize a "
+            "single-sided interferogram (ZPD at its very first sample) down to zero "
+            "at that highest-amplitude sample - discarding essentially the entire "
+            "signal."
+        ),
+        practical_guidance=(
+            "The 3-term Blackman-Harris window (the default) gives strong sidelobe "
+            "suppression (~-67 dB), the usual choice when a weak near-field "
+            "resonance sits near a much stronger far-field background; boxcar (no "
+            "apodization) keeps maximum resolution when sidelobe ringing is "
+            "acceptable or a very clean, well-registered interferogram is available."
+        ),
+        common_mistakes=(
+            "Expecting apodization to change *where* a resonance appears - it "
+            "changes lineshape (width, sidelobes), not peak position.",
+            "Using boxcar with a large zero-fill factor and reading the resulting "
+            "many small ripples as real spectral features - they are sinc-sidelobe "
+            "ringing from the unwindowed truncation, resolved (not created) by the "
+            "finer sampling.",
+        ),
+        related_concepts=("concept.interferogram",),
+        related_operations=("spectrum.fft_interferogram",),
+        references=(_HARRIS, _GRIFFITHS),
     ),
     Article(
         article_id="concept.processing_recipe",
@@ -978,6 +1097,73 @@ _OPERATIONS = (
             "recommendation for it. Use it before measurement/statistics to isolate a feature."
         ),
         related_concepts=("concept.immutable_measurements",),
+    ),
+    Article(
+        article_id="operation.spectrum.fft_interferogram",
+        category=OPERATION,
+        title="FFT Interferogram (nano-FTIR)",
+        summary=(
+            "Apodizes, zero-fills, phase-corrects, and Fourier-transforms a "
+            "real-valued interferogram into a complex spectrum - the actual "
+            "Fourier-transform computation nano-FTIR is named for."
+        ),
+        explanation=(
+            "Reads a real-valued channel indexed by optical path difference (OPD) "
+            "and produces a new complex channel indexed by wavenumber: the raw "
+            "measurement (`INTERFEROGRAM`) becomes a `SPECTRUM`. The chain is the "
+            "standard conventional-FTIR sequence - apodize (window the interferogram "
+            "to suppress truncation ringing), zero-fill (interpolate more spectral "
+            "points; adds no new resolution), phase-correct (Mertz method: estimate "
+            "and remove instrumental phase error from a short segment around the "
+            "zero-path-difference sample), forward FFT - applied unmodified to the "
+            "near-field variant. This is the first operation whose output data kind "
+            "differs from its input's; the processing engine already supported this "
+            "(a step's `_execute` may return any `DataKind`), it simply had no prior "
+            "operation exercising it."
+        ),
+        scientific_background=(
+            "Conventional Fourier-transform infrared spectrometry is built on "
+            "exactly this pipeline (Griffiths & de Haseth 2007 ch. 3); nano-FTIR "
+            "reuses the identical computation on a near-field interferogram (Huth "
+            "et al., Nano Lett. 12, 3973, 2012). Apodization window definitions and "
+            "the coherent-gain normalization follow Harris (1978); the phase-"
+            "correction method follows Mertz (1967)."
+        ),
+        mathematical_background=(
+            "With OPD sampled uniformly in centimetres, wavenumber [cm^-1] = 1 / "
+            "OPD [cm] falls directly out of the standard DFT frequency relation - no "
+            "unit conversion is needed. The window is centered on the zero-path-"
+            "difference sample (not the array's geometric center - see "
+            "concept.apodization) and coherent-gain normalized; zero-filling pads "
+            "the apodized signal to `zero_fill` times its length before the real-"
+            "input FFT (`numpy.fft.rfft`); Mertz phase correction estimates a "
+            "low-resolution phase spectrum from a short segment symmetric about the "
+            "ZPD sample and multiplies the full spectrum by its (interpolated) "
+            "conjugate phasor."
+        ),
+        practical_guidance=(
+            "The defaults (3-term Blackman-Harris apodization, no zero-fill, Mertz "
+            "phase correction) are a reasonable general starting point; increase "
+            "`zero_fill` (e.g. to 2 or 4) to interpolate a smoother-looking peak "
+            "without acquiring more data, and reserve boxcar apodization for cases "
+            "where maximum resolution matters more than sidelobe suppression. This "
+            "milestone handles one interferogram at a time (dims exactly `(opd,)`, "
+            "real-valued); a hyperspectral interferometric cube and a complex "
+            "(heterodyne-demodulated) interferogram are both deliberately out of "
+            "scope for now."
+        ),
+        common_mistakes=(
+            "Expecting this step to accept a hyperspectral interferometric cube "
+            "(dims `(y, x, opd)`) or a complex-valued interferogram channel - both "
+            "are explicitly out of scope for this milestone and are refused with a "
+            "clear reason, not silently reshaped or coerced.",
+            "Reading zero-fill as adding real spectral resolution - it only "
+            "interpolates the existing information more finely (concept.apodization "
+            "has the sidelobe-vs-resolution trade-off that genuinely limits "
+            "resolution).",
+        ),
+        related_concepts=("concept.interferogram", "concept.apodization", "concept.point_spectrum"),
+        references=(_GRIFFITHS, _MERTZ, _HARRIS, _HUTH),
     ),
 )
 

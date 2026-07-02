@@ -3,28 +3,27 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-07-02d (shipped **Scientific Reporting** - Phase 4C, the final
-workflow-automation milestone: `gui/report.py`'s `ReportModel` - a third Qt-free
-presenter alongside `ExperimentModel` (no ADR: same "present consumer" rationale, not
-a new backend package) - composes an **Experiment Report** (project/measurement/
-diagnostics summaries, processing history, applied recipes, batch runs, ROI/profile/
-histogram summaries), a **Publication Package** (a curated subset: metadata, tables,
-already-exported figures), and a **Reproducibility Report** (one measurement's source,
-matched recipe, processing chain, and the *exact* `core.serialize_dag` JSON as a
-machine-readable appendix) entirely from facts Phases 1-4B already compute - no new
-science, no AI interpretation. New `pipeline.matching_recipe_name` grounds "which
-recipe produced this measurement" in the provenance DAG itself, not session tracking.
-`render_markdown`/`render_html` are pure formatters over one shared `Report`
-structure; PDF is deliberately deferred (would need a new major dependency with no
-present justification - an individual figure already exports as vector PDF via the
-unchanged `viz.figure`). Reachable from the Experiment tab. **This completes the
-Phase 4 workflow automation track end-to-end: Define (4A recipes) -> Execute (4B
-batch) -> Document (4C reports).** See `LOG.md` entry "2026-07-02d". Earlier: Batch
-Processing (Phase 4B); Processing Recipes (Phase 4A, ADR-0031); Point Spectrum
-vertical slice (second data modality); Phase 3C region-aware ops; Phase 3B scientific
-analysis toolbox; Phase 3A core operations; Phase 2C multi-input/arithmetic; Phase 2B
-experiment analysis; Phase 2A multi-measurement projects; complete research workflow.
-Governance: the Scientific Validation Phase + Beta Readiness Review remain the planning systems)
+**Last updated:** 2026-07-02e (shipped **Phase 5A - Spectral Processing
+Foundations**: a new `processing.spectrum` subpackage with `spectrum.
+fft_interferogram` (apodization - boxcar/Hann/Hamming/3-term Blackman-Harris -
+zero-fill, Mertz phase correction, forward FFT), the first operation whose output
+`DataKind` differs from its input's (`INTERFEROGRAM` -> `SPECTRUM`); one additive
+`Capability.INTERFEROMETRIC` (from an `opd` coordinate, mirroring `SPECTRAL`) and
+one additive `Metadata.interferometer` field (mirroring `SpectralInfo`). Validated
+synthetically (Rule 6): a known-analytic Lorentzian round-tripped through
+inverse-FFT -> interferogram -> the new step recovers its position/width within a
+documented tolerance (`docs/phase5-spectral-nanoftir.md` Appendix A, made real).
+Caught and fixed one genuine numerics bug along the way - apodization windows must
+center on the zero-path-difference sample, not the array's geometric center, or a
+single-sided interferogram's highest-amplitude sample is silently zeroed. No GUI,
+viewer, reader, spectral diagnostics, or AI reasoning (deliberately out of scope;
+Phases 5B-5D remain design-only). See `LOG.md` entry "2026-07-02e". Earlier:
+Scientific Reporting (Phase 4C); Batch Processing (Phase 4B); Processing Recipes
+(Phase 4A, ADR-0031); Point Spectrum vertical slice (second data modality); Phase 3C
+region-aware ops; Phase 3B scientific analysis toolbox; Phase 3A core operations;
+Phase 2C multi-input/arithmetic; Phase 2B experiment analysis; Phase 2A
+multi-measurement projects; complete research workflow. Governance: the Scientific
+Validation Phase + Beta Readiness Review remain the planning systems)
 
 ---
 
@@ -74,6 +73,39 @@ infrastructure, judged only by whether it reuses existing abstractions (Rule 7).
 natural next step is the Beta Readiness user-testing protocol with the complete
 multi-scan workday available - let real friction choose the next priority rather
 than guessing further ahead.
+
+---
+
+## Spectral / nano-FTIR track (Phase 5) - IN PROGRESS
+
+`docs/phase5-spectral-nanoftir.md` is the research-and-design blueprint (user-
+commissioned); it found the data model already handles hyperspectral/interferometric
+capabilities correctly (no redesign needed), so none of 5A-5D reopen a settled
+decision - only additive `Capability`/`Metadata` fields and new, precedented modules.
+
+- **Phase 5A - Spectral Processing Foundations. DONE (2026-07-02e, no ADR).**
+  `spectrum.fft_interferogram` (apodization/zero-fill/Mertz phase correction/
+  forward FFT), `Capability.INTERFEROMETRIC`, `Metadata.interferometer`. Validated
+  synthetically only; real-interferogram cross-validation stays `(user)`-gated.
+  `spectrum.reference_normalize` (5A's other originally-scoped op) was **not**
+  part of this increment - open for a follow-up. See `LOG.md` entry "2026-07-02e".
+- **Phase 5B - Hyperspectral Data Model & Viewer. NOT STARTED.** Independent of
+  5C; buildable/synthetically-validatable now against a synthetic hyperspectral
+  cube fixture. `ExplorerModel.is_hyperspectral` as a genuine third dispatch state
+  (never an overload of `is_spectral` - the design doc's central Section 1
+  finding), `band_map(wavenumber_index)`/`pixel_spectrum(x, y)`, a linked
+  band-map-image + per-pixel-spectrum viewer, multi-curve overlay.
+- **Phase 5C - Real-Data Readers. HARD-BLOCKED `(user)`.** No interferometric
+  nano-FTIR or hyperspectral cube export exists anywhere in the repository today
+  (only 3 imaging + 1 point-spectroscopy measurement are present) - needs a real
+  vendor sample file to reverse-engineer the format from (Rule 6), exactly as
+  blocked Phase 1 and the point-spectroscopy vertical slice until real samples
+  arrived.
+- **Phase 5D - Spectral Diagnostics & Reasoning.** The *fact* half (a resonance/
+  peak-identification diagnostic, reusing `viz.measure.analyze_profile` verbatim)
+  can be validated synthetically once 5A produces real spectra to test against.
+  The *recommendation* half is a **Scientific Validation Phase candidate**, not a
+  direct product feature - enters the Validation Queue below, unstarted.
 
 ---
 
@@ -198,10 +230,11 @@ The canonical queue lives in `docs/scientific-validation.md` Section 7.
   provider only *phrases* them. **Not a beta blocker** (AI rule 2: AI never gates
   understanding).
 - **Whole modalities / batch.** Point spectroscopy (`SPECTRUM`/`LINE_SCAN`) is now
-  shipped end-to-end (`docs/point-spectrum-discovery.md`). Remaining: interferometric
-  nano-FTIR (`INTERFEROGRAM` -> FFT -> `SPECTRUM`, distinct from the direct wavenumber
-  sweep already shipped), a full `HYPERSPECTRAL` cube reader/viewer (Phase 5). The
-  `snomniman.batch` engine is now **shipped** (Phase 4B, see "Workflow automation
+  shipped end-to-end (`docs/point-spectrum-discovery.md`); the interferogram -> FFT
+  -> `SPECTRUM` math (`INTERFEROGRAM` -> FFT, distinct from the direct wavenumber
+  sweep already shipped) is now shipped too (Phase 5A, see "Spectral / nano-FTIR
+  track" above). Remaining: a full `HYPERSPECTRAL` cube reader/viewer (Phase 5B/5C).
+  The `snomniman.batch` engine is now **shipped** (Phase 4B, see "Workflow automation
   track" above), built directly on the Phase 4A `Recipe` runner.
   Deliberate future phases - no reader/viewer/AI work ahead of a real sample file
   (Rule 6).

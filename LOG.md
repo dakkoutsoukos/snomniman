@@ -3453,3 +3453,143 @@ to a directly-testable core" convention (`_prompt_report_path`, `_write_report`)
 - PDF document export remains a real, deferred capability if a researcher
   specifically needs it - revisit with a proper ADR evaluating weasyprint vs
   reportlab vs an HTML-to-PDF external tool at that time.
+
+## 2026-07-02e - Phase 5A: Spectral Processing Foundations (interferogram FFT)
+
+### Completed
+- **`docs/phase5-spectral-nanoftir.md` sec 6.1 implemented as designed**, with no
+  architectural deviation: a new `snomniman.processing.spectrum` subpackage,
+  structurally identical to `processing.image` (registry, `ParameterSpec`,
+  capability-gating), containing the first genuinely new numerical domain since
+  Phase 1's image ops - the actual Fourier-transform computation nano-FTIR is
+  named for.
+- **`spectrum.fft_interferogram`** (`src/snomniman/processing/spectrum/
+  fft_interferogram.py`): apodizes (boxcar/Hann/Hamming/3-term Blackman-Harris,
+  coherent-gain normalized per Harris 1978), zero-fills, phase-corrects (Mertz
+  1967 method: a low-resolution phase estimate from a short segment around the
+  zero-path-difference sample, interpolated and removed from the full spectrum),
+  and forward-FFTs (`numpy.fft.rfft`) a real-valued `INTERFEROGRAM` channel (dims
+  exactly `(opd,)`, uniformly sampled, in centimetres) into a complex `SPECTRUM`
+  channel indexed by wavenumber (cm^-1; `wavenumber = 1/opd` falls directly out of
+  the standard DFT relation with OPD in cm, no unit conversion needed). This is
+  the **first operation whose output `DataKind` differs from its input's**
+  (`INTERFEROGRAM` -> `SPECTRUM`) - the engine's `_execute` contract already
+  supported this (docs/phase5-spectral-nanoftir.md sec 3.1 point 3), no prior
+  step had exercised it.
+- **Numerical helpers** (`processing/spectrum/_math.py`, private, mirroring the
+  `processing/image/_region.py` precedent - tested only through the public step,
+  not directly): apodization window construction, window normalization, zero-
+  padding, uniform-sampling validation, wavenumber-axis generation, the real-FFT
+  wrapper, and Mertz phase correction. Dimension-agnostic (operates along the
+  last axis) so a future hyperspectral/line variant (5B) reuses it unmodified.
+- **One additive `Capability`**: `INTERFEROMETRIC`, derived from an `opd`
+  coordinate in `core.dataset._derive_capabilities`, mirroring exactly how
+  `SPECTRAL` is derived from `wavenumber` - no `DataKind` change needed
+  (`INTERFEROGRAM`/`HYPERSPECTRAL` already existed in the enum since Phase 0).
+- **One additive `Metadata` field**: `InterferometerInfo` (`mirror_velocity`,
+  `spectral_resolution_cm1`, `zero_fill`, `apodization`), mirroring the
+  `SpectralInfo` precedent exactly (a frozen dataclass, `Metadata.interferometer:
+  InterferometerInfo | None = None`, wired into `to_dict`/`from_dict`).
+- **31 new tests** (`tests/test_processing_spectrum_fft_interferogram.py`): a
+  synthetic-Lorentzian known-answer round trip (Rule 6, the design doc's own
+  Appendix A made real - inverse-FFT a known analytic spectrum into a synthetic
+  interferogram, run the step, recover the peak position/width within a
+  documented tolerance); apodization window selection, ZPD-centering, and
+  sidelobe-suppression behaviour; an exact-interpolation proof for zero-filling
+  (padded-FFT values at the original bin frequencies match the unpadded FFT to
+  1e-10, a verifiable DSP property, not just "looks right"); a Mertz phase-
+  correction scenario (a ZPD-registration offset plus a smooth instrumental phase
+  error) showing the corrected spectrum's residual phase error drops to well
+  under half of the uncorrected case; provenance, immutability, determinism,
+  capability-gating, the `DataKind` change, and refusal paths (complex channel,
+  wrong `DataKind`, non-uniform OPD sampling, wrong dims, `zero_fill < 1`).
+- **Three new Knowledge articles**: `concept.interferogram`, `concept.
+  apodization`, `operation.spectrum.fft_interferogram` (citing Griffiths & de
+  Haseth 2007, Mertz 1967, Harris 1978, plus the existing `_HUTH` nano-FTIR
+  citation); `concept.point_spectrum` cross-linked to `concept.interferogram`,
+  discharging its own forward reference ("SNOMNIMAN does not yet read or FFT an
+  interferogram").
+
+### Decisions
+- **No ADR.** The design doc's own architecture verdict (sec 3.4) already
+  confirmed no settled decision (OHD-1..9) needed reopening; this implementation
+  followed that verdict exactly (one `Capability` member, one additive `Metadata`
+  dataclass, a new `ProcessingStep` subpackage - all precedented patterns).
+- **`spectrum.reference_normalize` was deliberately not implemented this
+  increment** - the commissioning task scoped this milestone to the FFT/
+  apodization/phase-correction "mathematical foundation" specifically, not the
+  full original 5A objective. It remains open for a follow-up (a smaller,
+  precedented extension - the spectral analogue of the already-shipped `image.
+  reference_normalize`), not a blocker for 5B/5C/5D.
+- **Interferogram signal scoped to real-valued, dims exactly `(opd,)`.** A
+  complex (heterodyne-demodulated) interferogram and a hyperspectral
+  interferometric cube (`(y, x, opd)`) are both explicitly out of scope (matching
+  the task's exclusions and Rule 6 - "avoid vendor/acquisition-specific
+  assumptions" and "no hyperspectral cubes"); both are refused with a clear
+  `ProcessingError`, not silently coerced. The underlying `_math` helpers are
+  dimension-agnostic specifically so 5B can add a cube/line variant without
+  modifying this code.
+
+### Issues Found
+- **A genuine numerical bug caught by the synthetic validation itself, not
+  anticipated by the design doc**: a symmetric apodization window (Hann, Hamming,
+  Blackman-Harris) naively centered on the *array* is exactly zero at both ends;
+  for a single-sided interferogram (zero-path-difference at or near the array's
+  first sample - the common acquisition geometry `docs/data-model.md` sec 2
+  already anticipated), this **annihilates the interferogram's highest-amplitude
+  sample** and collapses the recovered spectrum (observed directly: peak
+  magnitude fell from ~0.98 to ~0.13 with visible multi-lobe ringing instead of a
+  single clean peak). Fixed by centering the window on the ZPD sample (detected
+  as the OPD coordinate closest to zero) rather than the array center - evaluate
+  a symmetric window of length `2 * max(zpd_index, n-1-zpd_index) + 1` and slice
+  out the span matching the actual (possibly asymmetric) sample layout, the
+  standard treatment for asymmetric interferograms (Griffiths & de Haseth 2007
+  ch. 3). `test_apodization_window_centers_on_zpd_not_array_center` pins this
+  regression. This is a numerics-level fix; no capability/`DataKind`/metadata
+  shape changed.
+- A first, naive Mertz phase-correction test (a purely single-sided synthetic
+  interferogram, no double-sided segment around ZPD) gave a degenerate,
+  uninformative phase estimate - consistent with the literature's own
+  requirement that Mertz correction needs a short *double-sided* segment
+  bracketing ZPD. The validation test was corrected to construct a genuinely
+  double-sided synthetic interferogram (a small number of negative-OPD samples
+  before ZPD via a circular roll of the inverse-FFT'd signal), at which point
+  Mertz correction behaves as expected (residual phase error reduced by roughly
+  9x in the documented scenario). No code change was needed - the earlier result
+  reflected an unrepresentative test fixture, not a bug in `mertz_phase_
+  correction` itself.
+
+### Tests / gates
+- 727 tests (up from 696, +31, all new): `test_processing_spectrum_fft_
+  interferogram.py`. `ruff` clean; `mypy --strict` clean (132 files); Qt-free
+  invariant green (`test_smoke.py`). `test_knowledge.py` now also imports
+  `snomniman.processing.spectrum` (mirroring its existing `processing.image`
+  import) so the no-drift "every registered operation has an article" check
+  covers the new step even when knowledge tests run without this session's new
+  test file also having imported it.
+
+### Documentation Updated
+- `docs/phase5-spectral-nanoftir.md` (status line; an "Implementation note" at
+  the end of sec 6.1 recording what shipped, the reference_normalize deferral,
+  and the ZPD-centering finding - no research content rewritten, per the
+  commissioning instructions). `CLAUDE.md` (project status paragraph, the
+  `processing` module bullet, a new `phase5-spectral-nanoftir.md` hierarchy-table
+  row, test count 696 -> 727). `LOG.md` (this entry). `NEXT.md` (refreshed).
+  New Knowledge articles `concept.interferogram`, `concept.apodization`,
+  `operation.spectrum.fft_interferogram` (`src/snomniman/knowledge/library.py`).
+
+### Next Recommended Actions
+- **Phase 5B - Hyperspectral Data Model & Viewer** is independent of 5C and
+  buildable/synthetically-validatable now (a synthetic hyperspectral cube
+  fixture, `ExplorerModel.is_hyperspectral` as a genuine third dispatch state -
+  never an overload of `is_spectral` - `band_map`/`pixel_spectrum`, a linked
+  band-map + spectrum viewer). See `docs/phase5-spectral-nanoftir.md` sec 6.2.
+- **Phase 5C - Real-Data Readers remains hard-blocked** on real interferogram/
+  hyperspectral sample data `(user)` - no such files exist in the repository
+  today (only 3 imaging + 1 point-spectroscopy measurement are present).
+- **Phase 5D's fact half** (a resonance/peak-identification diagnostic, reusing
+  `viz.measure.analyze_profile` verbatim) can be validated synthetically now that
+  5A produces real spectra; its *recommendation* half stays in the permanent
+  Scientific Validation queue, unstarted.
+- `spectrum.reference_normalize` (deferred from this increment) is a reasonable
+  small follow-on whenever a researcher workflow calls for it.

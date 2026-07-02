@@ -140,7 +140,25 @@ rather than repeating them.
 > need a new major dependency with no present justification - an individual figure
 > already exports as vector PDF via the unchanged `viz.figure`). Reachable from the
 > Experiment tab.
-> 696 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> **Phase 5A - Spectral Processing Foundations is shipped** (2026-07-02,
+> `docs/phase5-spectral-nanoftir.md` sec 6.1, no ADR - the design doc's own
+> architecture verdict already confirmed no settled decision needed reopening):
+> the mathematical foundation for interferometric nano-FTIR - a new
+> `processing.spectrum` subpackage with `spectrum.fft_interferogram` (apodization
+> - boxcar/Hann/Hamming/3-term Blackman-Harris - zero-fill, Mertz phase correction,
+> forward FFT), one additive `Capability.INTERFEROMETRIC` (derived from an `opd`
+> coordinate, mirroring `SPECTRAL`), and one additive `Metadata.interferometer`
+> field (mirroring `SpectralInfo`). It is the first operation whose output
+> `DataKind` differs from its input's (`INTERFEROGRAM` -> `SPECTRUM`), a mechanism
+> the engine already supported but no prior step had exercised. Validated
+> synthetically only (Rule 6: a known-analytic Lorentzian round-tripped through
+> inverse-FFT -> interferogram -> the new step recovers its position/width within
+> a documented tolerance; real-interferogram cross-validation stays `(user)`-gated
+> pending real sample data, per the design doc). No GUI, viewer, reader, spectral
+> diagnostics, or AI reasoning - deliberately out of scope for this milestone
+> (Phases 5B-5D). `spectrum.reference_normalize` (5A's other originally-scoped op)
+> was not part of this increment and remains open for a follow-up.
+> 727 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
@@ -261,6 +279,9 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
 - `snomniman.processing` - operations as `ProcessingStep`s (command pattern) + registry;
   **multi-input** (ADR-0030): steps declare inputs via `InputSpec` (default single `primary`)
   and a `check_compatibility` gate; `image.arithmetic` is the first two-input op.
+  `processing.spectrum` (Phase 5A, 2026-07-02) adds `spectrum.fft_interferogram`
+  (apodization/zero-fill/Mertz phase correction/forward FFT) - the first step whose
+  output `DataKind` differs from its input's (`INTERFEROGRAM` -> `SPECTRUM`).
 - `snomniman.pipeline` - the reproducibility engine: provenance **DAG**, replay,
   (de)serialization, environment/operation-version capture, the `Project` (a
   collection of `Measurement`s, ADR-0028) + `save_project`/`load_project` bundle with
@@ -510,6 +531,7 @@ surface automatically. See `docs/roadmap.md` for the current priority order.
 | `docs/knowledge-center.md` | **Knowledge Center** (`snomniman.knowledge`; ADR-0024): a living, in-app scientific knowledge base - philosophy (teach the science while performing it; ground the AI), architecture (a Qt-free leaf), the structured `Article` model, the Explorer panel + "Learn more" deep-links, AI integration, the integrity/no-drift guarantees, and future expansion. |
 | `docs/point-spectrum-discovery.md` | **Point Spectrum Discovery** - the second-modality analogue of `measurement-discovery.md`: what the real point-spectroscopy sample actually is (a 100-position line of spectra, not one isolated spectrum), why `DataKind.SPECTRUM`/`LINE_SCAN` + `Capability.SPECTRAL`/`SPATIAL_1D` (already anticipated in `data-model.md`) needed **no redesign**, the one additive `Metadata` field (`SpectralInfo`), the diagnostics gating bug the new modality surfaced and fixed, and the documented GUI scope boundary (image-only affordances decline gracefully for a spectral measurement). |
 | `docs/phase4-workflow-automation.md` | **Phase 4 - Workflow Automation (Research & Design)** - the user-commissioned blueprint for automating repeated processing across a multi-scan session: a workflow survey (Gwyddion/MountainsMap/WSxM/ImageJ/neaPLOT), the Recipe design (a re-bindable projection of the provenance DAG, not a second engine - Option B, confirmed and implemented as ADR-0031), the Phase 4A/4B/4C roadmap (Recipes -> Batch -> Reporting), and the explicit deferrals (auto-recipe-selection stays validation-gated; no scripting/macro language). Phase 4A (Recipes, ADR-0031), 4B (Batch), and 4C (Reporting) are all now **shipped**, completing the workflow automation track (Define -> Execute -> Document). |
+| `docs/phase5-spectral-nanoftir.md` | **Phase 5 - Spectral & nano-FTIR Support (Research & Design; the authoritative Phase 5 planning artifact, superseding the stale `roadmap.md` placeholder of the same name)** - a workflow survey (W1-W9, hyperspectral mapping/interferogram FFT/spectral comparison/resonance ID ranked by scientific importance), the architecture analysis (the data model already handles hyperspectral + interferometric capabilities with one additive `Capability`/`Metadata` field each - no redesign), the data model design for `INTERFEROGRAM`/`HYPERSPECTRAL`, and the four-milestone roadmap (5A Processing Foundations, 5B Hyperspectral Viewer, 5C Real-Data Readers - `(user)`-blocked, 5D Spectral Diagnostics - validation-gated). **5A is now shipped** (`processing.spectrum.fft_interferogram`; see the implementation note in sec 6.1) exactly per this design, plus one genuine numerics finding not anticipated by the design (apodization windows must center on the ZPD sample, not the array). |
 
 ---
 

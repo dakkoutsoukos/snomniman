@@ -23,6 +23,8 @@ class Capability(Enum):
     SPATIAL_1D = "spatial_1d"
     #: Has a ``wavenumber`` coordinate (spectral content).
     SPECTRAL = "spectral"
+    #: Has an ``opd`` coordinate (raw interferometric acquisition, pre-FFT).
+    INTERFEROMETRIC = "interferometric"
     #: Has at least one complex optical near-field channel (``O{n}``).
     COMPLEX_OPTICAL = "complex_optical"
     #: Has at least one complex mechanical channel (``M{n}``).

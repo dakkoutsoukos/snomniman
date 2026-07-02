@@ -12,7 +12,8 @@ import json
 
 import pytest
 
-import snomniman.processing.image  # noqa: F401  (registers the image operations)
+import snomniman.processing.image  # registers the image operations
+import snomniman.processing.spectrum  # noqa: F401  (registers the spectrum operations)
 from snomniman.knowledge import (
     AI,
     CONCEPT,
