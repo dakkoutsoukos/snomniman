@@ -34,6 +34,7 @@ from snomniman.pipeline import (
     delete_recipe,
     duplicated,
     load_recipe,
+    matching_recipe_name,
     renamed,
     save_recipe,
     with_step_params,
@@ -263,3 +264,65 @@ def test_recipe_requires_at_least_one_step() -> None:
 def test_recipe_requires_non_empty_name() -> None:
     with pytest.raises(ValueError, match="non-empty name"):
         Recipe(name="  ", steps=(RecipeStep("image.fix_zero", 1, {"channel": "Z"}),))
+
+
+# --------------------------------------------------------------------------- #
+# matching_recipe_name (Phase 4C): provenance-grounded recipe detection
+# --------------------------------------------------------------------------- #
+
+
+def test_matching_recipe_name_finds_exact_match(topography_dataset: Dataset) -> None:
+    derived = _manual_chain(topography_dataset)
+    recipe = capture_recipe(derived, name="topo clean")
+    assert matching_recipe_name(derived, {"topo clean": recipe}) == "topo clean"
+
+
+def test_matching_recipe_name_matches_a_prefix(topography_dataset: Dataset) -> None:
+    from snomniman.processing.image.fix_zero import FixZero
+
+    recipe = capture_recipe(_manual_chain(topography_dataset), name="topo clean")
+    # Further processing happened after the recipe - the recipe's steps are still
+    # a prefix of the full chain, so it should still be recognized.
+    extra = FixZero(channel="Z").apply({"primary": _manual_chain(topography_dataset)})
+    assert matching_recipe_name(extra, {"topo clean": recipe}) == "topo clean"
+
+
+def test_matching_recipe_name_returns_none_for_raw_dataset(topography_dataset: Dataset) -> None:
+    recipe = capture_recipe(_manual_chain(topography_dataset), name="topo clean")
+    assert matching_recipe_name(topography_dataset, {"topo clean": recipe}) is None
+
+
+def test_matching_recipe_name_returns_none_when_no_recipe_matches(
+    topography_dataset: Dataset,
+) -> None:
+    derived = PlaneLevel(channel="Z", order=1).apply({"primary": topography_dataset})
+    other = Recipe(name="unrelated", steps=(RecipeStep("image.fix_zero", 1, {"channel": "Z"}),))
+    assert matching_recipe_name(derived, {"unrelated": other}) is None
+
+
+def test_matching_recipe_name_returns_none_for_empty_recipe_map(
+    topography_dataset: Dataset,
+) -> None:
+    derived = _manual_chain(topography_dataset)
+    assert matching_recipe_name(derived, {}) is None
+
+
+def test_matching_recipe_name_returns_none_through_multi_input_chain(
+    synthetic_dataset: Dataset,
+) -> None:
+    from snomniman.processing.image.arithmetic import Arithmetic
+
+    combined = Arithmetic(channel="O2", mode="a_minus_b").apply(
+        {"primary": synthetic_dataset, "secondary": synthetic_dataset}
+    )
+    recipe = Recipe(name="whatever", steps=(RecipeStep("image.arithmetic", 1, {}),))
+    assert matching_recipe_name(combined, {"whatever": recipe}) is None
+
+
+def test_matching_recipe_name_prefers_the_longest_match(topography_dataset: Dataset) -> None:
+    derived = _manual_chain(topography_dataset)
+    short = Recipe(
+        name="short", steps=(RecipeStep("image.plane_level", 1, {"channel": "Z", "order": 1}),)
+    )
+    long = capture_recipe(derived, name="long")
+    assert matching_recipe_name(derived, {"short": short, "long": long}) == "long"

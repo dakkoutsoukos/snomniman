@@ -121,7 +121,26 @@ rather than repeating them.
 > summary as a new "Batch results" section in the Experiment tab by projecting
 > `BatchResult` into the existing `ExperimentTable` shape - no new report
 > artifact. `snomniman.batch` is no longer a stub.
-> 655 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> **Phase 4C - Scientific Reporting completes the workflow automation track**
+> (2026-07-02, no ADR): `gui/report.py`'s `ReportModel` (a third Qt-free presenter,
+> the reporting analogue of `ExperimentModel`) composes three deterministic
+> documents entirely from already-computed facts - never new science, never AI
+> interpretation. The **Experiment Report** summarizes a whole project
+> (measurements, diagnostics, processing history, applied recipes, batch runs,
+> ROI/profile/histogram summaries); the **Publication Package** is a curated
+> subset for assembling a paper/SI (metadata, tables, already-exported figures);
+> the **Reproducibility Report** answers "exactly how was this result produced?"
+> for one measurement by rendering its provenance chain in prose plus the *exact*
+> machine-readable DAG JSON (`core.serialize_dag`, never a second representation)
+> as an appendix. `pipeline.matching_recipe_name` (new, reuses `capture_recipe`'s
+> chain-walk) detects which known recipe a measurement's provenance matches,
+> grounding "applied recipes" in the DAG itself rather than session-only tracking.
+> `render_markdown`/`render_html` are pure formatters over one shared `Report`
+> structure; PDF is deliberately not implemented (a laid-out document format would
+> need a new major dependency with no present justification - an individual figure
+> already exports as vector PDF via the unchanged `viz.figure`). Reachable from the
+> Experiment tab.
+> 696 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
@@ -274,7 +293,11 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
   `Measurement`s, independently, via the unchanged `apply_recipe` (no second
   automation system); per-measurement success/skipped/failed outcomes; local,
   serial, deterministic.
-- `snomniman.gui` - the desktop app; presentation/interaction only.
+- `snomniman.gui` - the desktop app; presentation/interaction only. Includes
+  `report.py` (Phase 4C): a Qt-free `ReportModel` composing the Experiment
+  Report / Publication Package / Reproducibility Report from already-computed
+  facts (no new science); Markdown/HTML renderers over one shared `Report`
+  structure.
 
 **Dependency rules:**
 - No cycles. `core` imports nothing else in the project.
@@ -486,7 +509,7 @@ surface automatically. See `docs/roadmap.md` for the current priority order.
 | `docs/reference-normalization-analysis.md` | **Scientific-Validation study, Outcome 2 (DEFERRED), no code** (Candidate 3). When should the engine *recommend* `image.reference_normalize`? Distinguishes possible / appropriate / strongly-recommended. The *decline* conditions (redundant / weak / noisy / empty reference) are defensible and validated (reusing the ADR-0026 primitive + a redundancy metric); the *positive* "appropriate" branch cannot be validated - all real data is PsHet "Self-Reference Off" with `R-` channels that are near-copies of the signal (`O/R ~ 1`, normalization erases contrast), and appropriateness is experimental-design metadata the array lacks. Also flags that the existing flat-0.85 `ReferenceNormalizeRule` is unvalidated and over-recommends - revisit (gate or withdraw). |
 | `docs/knowledge-center.md` | **Knowledge Center** (`snomniman.knowledge`; ADR-0024): a living, in-app scientific knowledge base - philosophy (teach the science while performing it; ground the AI), architecture (a Qt-free leaf), the structured `Article` model, the Explorer panel + "Learn more" deep-links, AI integration, the integrity/no-drift guarantees, and future expansion. |
 | `docs/point-spectrum-discovery.md` | **Point Spectrum Discovery** - the second-modality analogue of `measurement-discovery.md`: what the real point-spectroscopy sample actually is (a 100-position line of spectra, not one isolated spectrum), why `DataKind.SPECTRUM`/`LINE_SCAN` + `Capability.SPECTRAL`/`SPATIAL_1D` (already anticipated in `data-model.md`) needed **no redesign**, the one additive `Metadata` field (`SpectralInfo`), the diagnostics gating bug the new modality surfaced and fixed, and the documented GUI scope boundary (image-only affordances decline gracefully for a spectral measurement). |
-| `docs/phase4-workflow-automation.md` | **Phase 4 - Workflow Automation (Research & Design)** - the user-commissioned blueprint for automating repeated processing across a multi-scan session: a workflow survey (Gwyddion/MountainsMap/WSxM/ImageJ/neaPLOT), the Recipe design (a re-bindable projection of the provenance DAG, not a second engine - Option B, confirmed and implemented as ADR-0031), the Phase 4A/4B/4C roadmap (Recipes -> Batch -> Reporting), and the explicit deferrals (auto-recipe-selection stays validation-gated; no scripting/macro language). Phase 4A (Recipes, ADR-0031) and 4B (Batch) are now **shipped**; 4C (Reporting) is next, lower priority, pending user-testing signal. |
+| `docs/phase4-workflow-automation.md` | **Phase 4 - Workflow Automation (Research & Design)** - the user-commissioned blueprint for automating repeated processing across a multi-scan session: a workflow survey (Gwyddion/MountainsMap/WSxM/ImageJ/neaPLOT), the Recipe design (a re-bindable projection of the provenance DAG, not a second engine - Option B, confirmed and implemented as ADR-0031), the Phase 4A/4B/4C roadmap (Recipes -> Batch -> Reporting), and the explicit deferrals (auto-recipe-selection stays validation-gated; no scripting/macro language). Phase 4A (Recipes, ADR-0031), 4B (Batch), and 4C (Reporting) are all now **shipped**, completing the workflow automation track (Define -> Execute -> Document). |
 
 ---
 

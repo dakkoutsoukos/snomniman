@@ -3,23 +3,27 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-07-02c (shipped **Batch Processing** - Phase 4B: replays one
-`Recipe` across many measurements, independently, by looping the unchanged
-`pipeline.apply_recipe` - a thin orchestration layer, confirmed correct before
-implementing (Option B, no ADR needed - the design doc's own plan). Per-measurement
-outcomes are `success` / `skipped` (an honest, expected incompatibility) / `failed`
-(a genuinely unexpected error); neither aborts the run. Local, serial, deterministic
-(Rule 1); a stock `QProgressDialog` gives live progress + a clean between-
-measurement stop; the Explorer reuses the Measurement Manager's existing multi-select
-and the recipe library from 4A; results land in the Experiment tab by projecting
-`BatchResult` into the existing `ExperimentTable` shape (no new report artifact).
-This closes the documented **#1 daily-adoption gap** (Workflow C, `beta-readiness-
-v1.md`: "process a day of scans and export for Origin/Python"). See `LOG.md` entry
-"2026-07-02c" and the "Workflow automation track" section below. Earlier: Processing
-Recipes (Phase 4A, ADR-0031); Point Spectrum vertical slice (second data modality);
-Phase 3C region-aware ops; Phase 3B scientific analysis toolbox; Phase 3A core
-operations; Phase 2C multi-input/arithmetic; Phase 2B experiment analysis; Phase 2A
-multi-measurement projects; complete research workflow.
+**Last updated:** 2026-07-02d (shipped **Scientific Reporting** - Phase 4C, the final
+workflow-automation milestone: `gui/report.py`'s `ReportModel` - a third Qt-free
+presenter alongside `ExperimentModel` (no ADR: same "present consumer" rationale, not
+a new backend package) - composes an **Experiment Report** (project/measurement/
+diagnostics summaries, processing history, applied recipes, batch runs, ROI/profile/
+histogram summaries), a **Publication Package** (a curated subset: metadata, tables,
+already-exported figures), and a **Reproducibility Report** (one measurement's source,
+matched recipe, processing chain, and the *exact* `core.serialize_dag` JSON as a
+machine-readable appendix) entirely from facts Phases 1-4B already compute - no new
+science, no AI interpretation. New `pipeline.matching_recipe_name` grounds "which
+recipe produced this measurement" in the provenance DAG itself, not session tracking.
+`render_markdown`/`render_html` are pure formatters over one shared `Report`
+structure; PDF is deliberately deferred (would need a new major dependency with no
+present justification - an individual figure already exports as vector PDF via the
+unchanged `viz.figure`). Reachable from the Experiment tab. **This completes the
+Phase 4 workflow automation track end-to-end: Define (4A recipes) -> Execute (4B
+batch) -> Document (4C reports).** See `LOG.md` entry "2026-07-02d". Earlier: Batch
+Processing (Phase 4B); Processing Recipes (Phase 4A, ADR-0031); Point Spectrum
+vertical slice (second data modality); Phase 3C region-aware ops; Phase 3B scientific
+analysis toolbox; Phase 3A core operations; Phase 2C multi-input/arithmetic; Phase 2B
+experiment analysis; Phase 2A multi-measurement projects; complete research workflow.
 Governance: the Scientific Validation Phase + Beta Readiness Review remain the planning systems)
 
 ---
@@ -44,12 +48,12 @@ Implement only at their intersection - *needed* **and** *validated*. See `CLAUDE
 
 ---
 
-## Workflow automation track (Phase 4)
+## Workflow automation track (Phase 4) - COMPLETE
 
 `docs/phase4-workflow-automation.md` is the research-and-design blueprint (user-
-commissioned); it introduces no new scientific judgment, so it does not enter the
-Scientific Validation gate - it is reproducibility infrastructure, judged only by
-whether it reuses existing abstractions (Rule 7).
+commissioned); it introduced no new scientific judgment at any stage, so none of
+4A/4B/4C entered the Scientific Validation gate - the whole track is reproducibility
+infrastructure, judged only by whether it reuses existing abstractions (Rule 7).
 
 - **Phase 4A - Processing Recipes. DONE (2026-07-02b, ADR-0031).** Capture a
   measurement's processing history as a portable `Recipe`, save/load it as a
@@ -60,11 +64,16 @@ whether it reuses existing abstractions (Rule 7).
   headlessly, per-measurement success/skipped/failed outcomes + a run summary
   (elapsed time, stopped-early flag). Closed the documented **#1 daily-adoption
   gap** (Workflow C, `beta-readiness-v1.md`). See `LOG.md` entry "2026-07-02c".
-- **Phase 4C - Automated Reporting - NEXT, lower priority.** Assemble
-  `ExperimentModel` + `describe` + `viz.figure` into one provenance-bearing
-  experiment summary document. Highest scope-creep risk of the three (a "report
-  builder" invites endless layout features) - consider waiting for user-testing
-  signal before building it.
+- **Phase 4C - Scientific Reporting. DONE (2026-07-02d, no ADR).** `gui/report.py`'s
+  `ReportModel` composes the Experiment Report / Publication Package /
+  Reproducibility Report from facts already computed by `describe`/`diagnostics`/
+  `ExperimentModel`/the provenance DAG/`BatchResult` - no new science, no AI
+  interpretation, no PDF (deferred, documented). See `LOG.md` entry "2026-07-02d".
+
+**Phase 4 is now fully shipped end-to-end** (Define -> Execute -> Document). The
+natural next step is the Beta Readiness user-testing protocol with the complete
+multi-scan workday available - let real friction choose the next priority rather
+than guessing further ahead.
 
 ---
 

@@ -141,27 +141,63 @@ def capture_recipe(dataset: Dataset, *, name: str) -> Recipe:
     dropping the extra input. Raises the same if *dataset* is raw (no history to
     capture).
     """
+    chain = _linear_chain(dataset)
+    if chain is None:
+        raise ProcessingError(
+            "cannot capture a recipe through this dataset's history: it passes "
+            "through a step with non-portable inputs (only single-'primary'-input "
+            "chains can be captured; see docs/phase4-workflow-automation.md sec 3.1)"
+        )
+    if not chain:
+        raise ProcessingError("dataset has no processing history to capture (it is raw)")
+    return Recipe(name=name, steps=chain)
+
+
+def _linear_chain(dataset: Dataset) -> tuple[RecipeStep, ...] | None:
+    """The dataset's ``primary``-only provenance chain as ``RecipeStep``s, oldest first.
+
+    Returns ``None`` (not an error) if the chain passes through a multi-input step -
+    callers that must succeed (``capture_recipe``) turn that into a raised
+    :exc:`~snomniman.core.exceptions.ProcessingError`; callers for whom "no portable
+    chain" is simply an honest non-match (``matching_recipe_name``) do not.
+    """
     chain: list[ProvenanceNode] = []
     node = dataset.provenance
     while not node.is_raw:
         input_names = tuple(node.inputs)
         if input_names != ("primary",):
-            raise ProcessingError(
-                f"cannot capture a recipe through step {node.record.step_id!r}: it "
-                f"binds input(s) {input_names!r}, not just 'primary' - a portable "
-                "recipe covers only single-primary-input chains (see "
-                "docs/phase4-workflow-automation.md sec 3.1)"
-            )
+            return None
         chain.append(node)
         node = node.inputs["primary"]
-    if not chain:
-        raise ProcessingError("dataset has no processing history to capture (it is raw)")
     chain.reverse()
-    steps = tuple(
+    return tuple(
         RecipeStep(n.record.step_id, n.record.step_version, dict(n.record.params))
         for n in chain
     )
-    return Recipe(name=name, steps=steps)
+
+
+def matching_recipe_name(dataset: Dataset, recipes: Mapping[str, Recipe]) -> str | None:
+    """The name of the known *recipe* whose steps prefix *dataset*'s history, if any.
+
+    Grounded entirely in the provenance DAG (never a second, session-tracked record
+    of "what recipe was clicked"): a recipe is considered to have produced *dataset*
+    if its exact ``(step_id, step_version, params)`` sequence appears, in order, at
+    the **start** of the dataset's captured ``primary``-only chain - so a match still
+    holds if further steps were applied after the recipe. Returns ``None`` if the
+    dataset is raw, its chain is not portable (a multi-input step), or no known
+    recipe's steps prefix it. When more than one recipe matches, the **longest**
+    matching one is returned (the most specific explanation).
+    """
+    chain = _linear_chain(dataset)
+    if not chain:
+        return None
+    best: str | None = None
+    best_len = 0
+    for name, recipe in recipes.items():
+        n = len(recipe.steps)
+        if n <= len(chain) and n > best_len and chain[:n] == recipe.steps:
+            best, best_len = name, n
+    return best
 
 
 def apply_recipe(recipe: Recipe, dataset: Dataset) -> Dataset:
@@ -266,6 +302,7 @@ __all__ = [
     "delete_recipe",
     "duplicated",
     "load_recipe",
+    "matching_recipe_name",
     "renamed",
     "save_recipe",
     "with_step_params",

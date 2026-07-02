@@ -40,6 +40,9 @@ class ExperimentPanel(QtWidgets.QWidget):
     compareOverlayRequested = QtCore.Signal()  # evaluate the active overlay across measurements
     exportStatisticsRequested = QtCore.Signal()  # save the cross-measurement stats as CSV
     copyStatisticsRequested = QtCore.Signal()  # copy the cross-measurement stats (TSV)
+    experimentReportRequested = QtCore.Signal()  # generate the Phase 4C Experiment Report
+    publicationPackageRequested = QtCore.Signal()  # generate the Phase 4C Publication Package
+    reproducibilityReportRequested = QtCore.Signal()  # generate a report for the active measurement
 
     def __init__(self) -> None:
         super().__init__()
@@ -92,6 +95,41 @@ class ExperimentPanel(QtWidgets.QWidget):
         layout.addWidget(self._batch_caption)
         self._batch = _new_table()
         layout.addWidget(self._batch, 1)
+
+        line3 = QtWidgets.QFrame()
+        line3.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        layout.addWidget(line3)
+
+        layout.addWidget(QtWidgets.QLabel("Scientific reporting"))
+        report_intro = QtWidgets.QLabel(
+            "Deterministic, provenance-bearing documents assembled from this project's "
+            "own facts - nothing here is invented or interpreted."
+        )
+        report_intro.setWordWrap(True)
+        report_intro.setStyleSheet("color: #9aa0a6;")
+        layout.addWidget(report_intro)
+        report_row = QtWidgets.QHBoxLayout()
+        experiment_report_btn = QtWidgets.QPushButton("Generate Experiment Report...")
+        experiment_report_btn.setToolTip(
+            "Project info, measurement/diagnostics summaries, processing history, "
+            "recipes, batch runs, and ROI/profile/histogram summaries"
+        )
+        experiment_report_btn.clicked.connect(self.experimentReportRequested)
+        publication_btn = QtWidgets.QPushButton("Generate Publication Package...")
+        publication_btn.setToolTip(
+            "A curated subset for assembling a paper/SI: metadata, tables, and exported figures"
+        )
+        publication_btn.clicked.connect(self.publicationPackageRequested)
+        reproducibility_btn = QtWidgets.QPushButton("Generate Reproducibility Report...")
+        reproducibility_btn.setToolTip(
+            "For the active measurement: exactly how was this result produced?"
+        )
+        reproducibility_btn.clicked.connect(self.reproducibilityReportRequested)
+        report_row.addWidget(experiment_report_btn)
+        report_row.addWidget(publication_btn)
+        report_row.addWidget(reproducibility_btn)
+        report_row.addStretch(1)
+        layout.addLayout(report_row)
 
     def set_diagnostics(self, table: ExperimentTable) -> None:
         _fill_table(self._diagnostics, table)

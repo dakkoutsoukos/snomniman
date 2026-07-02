@@ -3316,3 +3316,140 @@ processing interface):**
   researcher asks.
 - Project-manifest-embedded recipes (ADR-0031's deferred alternative) remain
   unbuilt; revisit only if a concrete need appears (Rule 7).
+
+---
+
+## 2026-07-02d - Scientific Reporting (Phase 4C) - completes workflow automation
+
+The third and final Phase 4 milestone: deterministic Experiment Reports,
+Publication Packages, and Reproducibility Reports, assembled entirely from facts
+Phases 1-4B already compute. Completes the workflow automation progression: Define
+(4A recipes) -> Execute (4B batch) -> Document (4C reports).
+
+### Completed
+
+**Architecture validation (before any code).** Reviewed reuse of `Project`/
+`Measurement`, `ExperimentModel`, `Recipe`/`BatchResult`, the provenance DAG,
+`describe`, `diagnostics`, and `viz.figure`. Conclusion: everything a report needs
+already exists as structured, validated data; the only two additions needed were
+(1) a way to tell which known recipe (if any) produced a measurement, grounded in
+the provenance DAG rather than a second, session-only record, and (2) a thin
+composer/renderer over all of the above. Neither is a new subsystem, so no ADR.
+
+**`pipeline/recipe.py`:** refactored `capture_recipe`'s chain-walk into a shared
+`_linear_chain(dataset) -> tuple[RecipeStep, ...] | None` helper (returns `None` for
+"no portable chain" rather than raising, since that is an honest non-match, not an
+error for every caller). New `matching_recipe_name(dataset, recipes) -> str | None`:
+the name of the known recipe whose steps are an exact **prefix** of the dataset's
+captured chain (so a match still holds after further manual steps); the *longest*
+matching recipe wins when more than one matches. Grounded entirely in the DAG - no
+new provenance concept.
+
+**`gui/report.py` (new, Qt-free - the reporting analogue of `ExperimentModel`,
+same rationale for living in `gui` rather than a new backend package: its only
+present consumer is the Explorer, Rule 7):**
+- `Report`/`ReportSection` - one shared, frozen structure. A section holds
+  whichever of `lines` (prose/bullets), `facts` (reused `DiagnosticRow`), `table`
+  (reused `ExperimentTable`), or `code` (a fenced block) it needs - no new "fact"
+  or "table" type invented.
+- `ReportModel(sessions, project_title, recipes=, batch_runs=, exported_figures=,
+  experiment_stats=)` composes three reports:
+  - `experiment_report()` - Project info, a Measurements table (projects
+    `ExperimentModel.browser_rows()`), `ExperimentModel.diagnostics_table()`
+    verbatim, a Processing history section (per measurement, from
+    `ExplorerModel.provenance_steps()`), an Applied recipes section (recipe
+    identities + `matching_recipe_name` verdict per measurement), one section per
+    batch run (reuses `ExperimentModel.batch_result_table()` verbatim), a
+    Generated datasets count, and - "where available" - a Region/profile
+    measurements section (recomputes each stored Measure-tab overlay's statistics
+    via the *same* `ExplorerModel.rect_statistics`/`line_profile`/
+    `polygon_statistics` the Measure tab already uses, from the geometry the
+    session already persists) and a Value distribution section (reuses
+    `channel_histogram`/`spectrum_histogram`).
+  - `publication_package()` - the same machinery, a curated subset (adds a
+    Measurement metadata section; adds a Figures section listing any figures
+    already exported this session via the existing Export -> Figure... action,
+    by filename - it does not re-render or bundle them).
+  - `reproducibility_report(index)` - for one measurement: source + raw-source
+    lines, the `matching_recipe_name` verdict, the human-readable processing
+    chain, the software versions recorded at the last step, and a
+    machine-readable appendix that is the *exact* `core.serialize_dag` JSON the
+    project file itself uses (not a second serialization).
+- `render_markdown`/`render_html` - pure formatters over the one shared `Report`
+  structure (two presentations, not two data models); `export_report` writes
+  either to a file. **No PDF**: a laid-out multi-page document (text + tables +
+  images) would need a new, heavy dependency (weasyprint/reportlab) with no
+  present justification (Rule 7; CLAUDE.md "never introduce a major dependency
+  without an ADR"); an individual figure already exports as vector PDF via the
+  unchanged `viz.figure`, and a report simply lists such already-exported figures.
+
+**GUI wiring:** `ExperimentPanel` gained a "Scientific reporting" section with
+three buttons - Generate Experiment Report / Publication Package / Reproducibility
+Report (the last for the active measurement) - reusing the stock
+`QFileDialog.getSaveFileName` pattern every other export already uses (the chosen
+extension selects Markdown vs HTML). `window.py` tracks `_batch_runs` (appended in
+`_show_batch_result`) and `_exported_figures` (appended in `_export_figure`) purely
+as report inputs; `_build_report_model()` composes a `ReportModel` from exactly
+what the window already holds, mirroring the Phase 4A/4B "dialog handler delegates
+to a directly-testable core" convention (`_prompt_report_path`, `_write_report`).
+
+### Decisions
+
+- **No ADR.** `gui/report.py` is a third Qt-free presenter alongside
+  `ExperimentModel`, not a new backend package - it has exactly one present
+  consumer (the Explorer), so promoting it to `snomniman.report` would violate
+  Rule 7 (memory: "abstractions need a present consumer"). No dependency edge,
+  processing contract, or provenance schema changed.
+- **"Applied recipes" is provenance-grounded, not session-tracked.** Rejected
+  keeping an explicit "recipe X was applied to measurement Y" log (ephemeral,
+  wrong after reopening a saved project); `matching_recipe_name` answers the same
+  question from the DAG, which is exactly what Part 3's "reuse the Provenance DAG
+  rather than inventing a second representation" already requires of the
+  Reproducibility Report - applying the same discipline to Part 1 was the more
+  consistent choice.
+- **PDF is deferred, not silently dropped** - documented above and in
+  `gui/report.py`'s module docstring.
+- **CSV export of the batch-results table (from the Phase 4B log's suggested
+  follow-on) was not added in this milestone either** - reports subsume that need
+  (a batch run's table is now included in the Experiment Report), so it stays a
+  candidate only if a researcher specifically wants a standalone batch CSV.
+
+### Issues Found
+- None - every number a report shows was already computed and tested elsewhere;
+  this milestone is composition and formatting only.
+
+### Tests / gates
+- 696 tests (up from 655, +41): `test_pipeline_recipe.py` (+7:
+  `matching_recipe_name` - exact match, prefix match after further processing,
+  raw/no-match/empty-map/multi-input-chain honesty, longest-match precedence);
+  `test_gui_report.py` (22, Qt-free: every report's section composition, the
+  provenance-grounded applied-recipes verdict, batch-section reuse, overlay
+  recomputation from stored geometry incl. a malformed-geometry non-crash,
+  reproducibility-report JSON-appendix round-trip via `deserialize_dag`, Markdown/
+  HTML rendering + escaping, file export); `test_gui_report_window.py` (12: save-
+  path/format inference from the chosen extension, `_build_report_model` picking
+  up recipes/batch history, `_show_batch_result`/`_export_figure` recording that
+  history, write success/failure paths, and a full dialog-driven run for each of
+  the three report actions). `ruff` clean; `mypy --strict` clean (128 files);
+  Qt-free invariant green. New Knowledge Center article
+  `concept.scientific_reporting`.
+
+### Documentation Updated
+- `docs/architecture.md` (`pipeline` bullet, new `gui` bullet, Section 10
+  capability table, "Last updated"). `LOG.md` (this entry). `NEXT.md` (refreshed -
+  Phase 4 fully complete). `CLAUDE.md` (project status paragraph, module list, the
+  `phase4-workflow-automation.md` hierarchy-table entry). New Knowledge article
+  `concept.scientific_reporting` (`src/snomniman/knowledge/library.py`).
+
+### Next Recommended Actions
+- **Phase 4 (workflow automation) is now complete end-to-end** (Recipes -> Batch
+  -> Reporting). Run the Beta Readiness user-testing protocol with the full
+  multi-scan workday available, including reporting, before choosing the next
+  priority - real friction should order whatever comes next, not internal guessing.
+- If researchers want a bundled "publication folder" (report + copies of every
+  referenced figure in one directory) rather than a single document referencing
+  figures by path, that is a small, well-scoped follow-on - not built here since
+  no concrete need has surfaced yet (Rule 7).
+- PDF document export remains a real, deferred capability if a researcher
+  specifically needs it - revisit with a proper ADR evaluating weasyprint vs
+  reportlab vs an HTML-to-PDF external tool at that time.

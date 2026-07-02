@@ -69,6 +69,13 @@ from .panels import (
     ProvenanceInspector,
 )
 from .process import ProcessingWorkspace
+from .report import (
+    REPORT_FORMAT_HTML,
+    REPORT_FORMAT_MARKDOWN,
+    Report,
+    ReportModel,
+    export_report,
+)
 from .spectrumview import SpectrumPlotView
 
 
@@ -106,6 +113,12 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         # the .snomrecipe file each was saved to/loaded from (if any).
         self._recipes: dict[str, Recipe] = {}
         self._recipe_paths: dict[str, Path] = {}
+        # Batch runs performed this session (Phase 4B) and figures exported this
+        # session (existing Export -> Figure...), both consumed only by reports
+        # (Phase 4C) - the report is honest that this history is session-local,
+        # not persisted provenance.
+        self._batch_runs: list[tuple[Recipe, BatchResult]] = []
+        self._exported_figures: list[tuple[Path, Path]] = []
 
         self._title = QtWidgets.QLabel()
         self._facts = QtWidgets.QLabel()
@@ -311,6 +324,14 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._experiment_panel.compareOverlayRequested.connect(self._compare_overlay)
         self._experiment_panel.exportStatisticsRequested.connect(self._export_experiment_stats)
         self._experiment_panel.copyStatisticsRequested.connect(self._copy_experiment_stats)
+        # Scientific reporting (Phase 4C): deterministic documents over this project.
+        self._experiment_panel.experimentReportRequested.connect(self._on_generate_experiment_report)
+        self._experiment_panel.publicationPackageRequested.connect(
+            self._on_generate_publication_package
+        )
+        self._experiment_panel.reproducibilityReportRequested.connect(
+            self._on_generate_reproducibility_report
+        )
         self._browser.channelSelected.connect(self._on_channel_selected)
         self._browser.representationSelected.connect(self._on_representation_selected)
         self._image.cursorMoved.connect(self._on_cursor_moved)
@@ -861,6 +882,66 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         table = self._experiment.batch_result_table(result, recipe)
         self._experiment_panel.set_batch_result(table)
         self._inspect_tabs.setCurrentWidget(self._experiment_panel)
+        self._batch_runs.append((recipe, result))  # remembered for Phase 4C reports
+
+    # -- scientific reporting (Phase 4C: deterministic documents over the project) --
+
+    def _on_generate_experiment_report(self) -> None:
+        choice = self._prompt_report_path(f"{self._project_title} - experiment report")
+        if choice is None:
+            return
+        path, fmt = choice
+        self._write_report(self._build_report_model().experiment_report(), path, fmt)
+
+    def _on_generate_publication_package(self) -> None:
+        choice = self._prompt_report_path(f"{self._project_title} - publication package")
+        if choice is None:
+            return
+        path, fmt = choice
+        self._write_report(self._build_report_model().publication_package(), path, fmt)
+
+    def _on_generate_reproducibility_report(self) -> None:
+        default = f"{self._sessions[self._active_index].title} - reproducibility report"
+        choice = self._prompt_report_path(default)
+        if choice is None:
+            return
+        path, fmt = choice
+        report = self._build_report_model().reproducibility_report(self._active_index)
+        self._write_report(report, path, fmt)
+
+    def _prompt_report_path(self, default_name: str) -> tuple[Path, str] | None:
+        """Ask where to save a report; the chosen extension selects the format."""
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save report", f"{default_name}.md", "Markdown (*.md);;HTML (*.html)"
+        )
+        if not path:
+            return None
+        target = Path(path)
+        if target.suffix.lower() == ".html":
+            return target, REPORT_FORMAT_HTML
+        if target.suffix.lower() != ".md":
+            target = target.with_suffix(".md")
+        return target, REPORT_FORMAT_MARKDOWN
+
+    def _build_report_model(self) -> ReportModel:
+        """Compose a `ReportModel` from exactly what this session already holds."""
+        self._capture_active_session()
+        return ReportModel(
+            self._sessions,
+            self._project_title,
+            recipes=self._recipes,
+            batch_runs=self._batch_runs,
+            exported_figures=self._exported_figures,
+            experiment_stats=self._experiment_stats,
+        )
+
+    def _write_report(self, report: Report, path: Path, fmt: str) -> None:
+        try:
+            written = export_report(report, path, fmt)
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self, "Cannot save report", str(exc))
+            return
+        QtWidgets.QMessageBox.information(self, "Report saved", f"Saved report:\n{written}")
 
     def current_project(self) -> Project:
         """Bundle every measurement (each with its history + view + overlays) for saving."""
@@ -1357,6 +1438,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         if not path:
             return
         figure_path, provenance_path = viz.export(spec, self._model.dataset, path)
+        self._exported_figures.append((figure_path, provenance_path))  # for Phase 4C reports
         QtWidgets.QMessageBox.information(
             self,
             "Figure exported",

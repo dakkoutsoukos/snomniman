@@ -447,6 +447,61 @@ _CONCEPTS = (
         related_concepts=("concept.provenance", "concept.immutable_measurements"),
         related_operations=("image.plane_level", "image.line_flatten", "image.fix_zero"),
     ),
+    Article(
+        article_id="concept.scientific_reporting",
+        category=CONCEPT,
+        title="Scientific reports and publication packages",
+        summary=(
+            "A report is an assembled, not invented, document: every fact in it - "
+            "measurement identity, diagnostics, processing history, batch outcomes, "
+            "region/profile statistics - was already computed and validated elsewhere; "
+            "the report only arranges and attributes it."
+        ),
+        explanation=(
+            "Three reports serve three purposes from the same underlying facts. The "
+            "Experiment Report summarizes a whole project - every measurement, its "
+            "diagnostics, its processing history, any recipes/batch runs applied, and "
+            "any region/profile/histogram measurements taken - for a lab record or a "
+            "collaborator update. The Publication Package is a curated subset of the "
+            "same facts (metadata, tables, a list of already-exported figures) shaped "
+            "for assembling a paper or its supplementary information. The "
+            "Reproducibility Report answers one question for a single measurement - "
+            "'exactly how was this result produced?' - by rendering its provenance "
+            "chain in plain language, plus the exact machine-readable provenance JSON "
+            "as an appendix (the same serialization the project file itself uses, not "
+            "a second representation). None of the three computes a new number, and "
+            "none contains AI-generated interpretation - a report is deterministic: the "
+            "same project state always produces the same report."
+        ),
+        scientific_background=(
+            "Reproducibility depends on more than correct numbers - it depends on "
+            "being able to reconstruct, months or years later, exactly what was done "
+            "to produce a figure or a conclusion. Grounding a report entirely in the "
+            "provenance DAG (rather than a parallel, hand-maintained lab notebook) "
+            "means the report can never silently drift from what the software "
+            "actually did."
+        ),
+        practical_guidance=(
+            "Generate a report from the Experiment tab at any point in a session; it "
+            "reflects the project's state at that moment (recipes and batch runs "
+            "performed earlier in the *same* session are included, since the recipe "
+            "each measurement's processing chain matches is detected directly from its "
+            "provenance, not from a separate log). Export figures via the existing "
+            "Export -> Figure... action first if you want the Publication Package to "
+            "list them. Markdown and HTML are both supported; a laid-out PDF document "
+            "is not - export any individual figure as vector PDF instead, and paste "
+            "the report text into a manuscript or lab notebook as needed."
+        ),
+        common_mistakes=(
+            "Expecting a report to explain *why* a result matters - it states facts, "
+            "never interpretation; scientific judgment remains the researcher's.",
+            "Assuming 'applied recipes' reflects every recipe ever run on a "
+            "measurement - it reflects what the measurement's *current* provenance "
+            "chain matches, which is exactly and only what actually produced the "
+            "active dataset.",
+        ),
+        related_concepts=("concept.provenance", "concept.processing_recipe"),
+    ),
 )
 
 

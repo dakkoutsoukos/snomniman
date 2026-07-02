@@ -4,7 +4,7 @@
 Diagnostics / AI / Knowledge layers are implemented (ADR-0018..0024). **Foundational
 development is complete** - new capability now enters via the governance process
 (Section 10), extending these layers rather than adding new ones.
-**Last updated:** 2026-07-02c (Batch Processing, Phase 4B)
+**Last updated:** 2026-07-02d (Scientific Reporting, Phase 4C)
 
 Authoritative description of the system's structure. When the architecture changes,
 this file changes in the same commit, with rationale in [`decisions.md`](decisions.md).
@@ -248,7 +248,11 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
   `.snomproj`'s safety pattern) - no project-manifest schema change. The Processing
   Workspace surfaces recipes as a second kind of tree item (create/browse/inspect/
   execute) through the *same* Preview -> Accept/Cancel lifecycle every operation
-  uses - no second processing interface.
+  uses - no second processing interface. `matching_recipe_name` (Phase 4C) detects
+  which known recipe (if any) a dataset's provenance chain matches - a prefix
+  comparison over the same `primary`-only walk `capture_recipe` uses - so "which
+  recipe produced this measurement" is answered from the DAG itself, never a
+  second, session-only record.
 - `serialization`: DAG <-> JSON (schemas in `data-model.md`).
 - `environment`: captures `snomniman` + library versions and operation versions
   for full traceability (OHD-5).
@@ -307,6 +311,17 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
   Scientific logic stays in the Qt-free presenter/backend (Rule 4); the package
   `__init__` does not import Qt, so the presenter and backend import without the
   `gui` extra.
+- **Scientific reporting (implemented, Phase 4C, no ADR):** `gui/report.py` - a
+  third Qt-free presenter, `ReportModel` (the reporting analogue of
+  `ExperimentModel`; same rationale for living in `gui`, not a new backend package
+  - its only present consumer is the Explorer, Rule 7). Composes, never computes:
+  the Experiment Report, Publication Package, and Reproducibility Report are all
+  built from facts `describe`/`diagnostics`/`ExperimentModel`/`viz.measure`/the
+  provenance DAG/`BatchResult` already produced. `Report`/`ReportSection` are one
+  shared, frozen structure; `render_markdown`/`render_html` are pure formatters
+  over it (no PDF - a laid-out document format would need a new major dependency
+  with no present justification; an individual figure already exports as vector
+  PDF via `viz.figure`, unchanged). Reachable from the Experiment tab.
 
 ## 4. Key patterns
 
@@ -425,6 +440,7 @@ both **extends an existing abstraction** (Rule 7). The mapping is fixed:
 | Its **teaching** content | `snomniman.knowledge` | a curated `Article` (ADR-0024) |
 | An **export / persistence** path | `snomniman.io`, `snomniman.viz`, `snomniman.pipeline` | a writer the GUI calls; project bundles via `pipeline` over `io` (ADR-0027, **shipped**) |
 | A reusable **processing workflow** | `snomniman.pipeline` | a `Recipe` (a projection of the provenance DAG, not a new engine) (ADR-0031, **shipped**) |
+| A deterministic **report/document** | `snomniman.gui` (`report.py`) | a `ReportModel` composing existing facts (no ADR, **shipped**, Phase 4C) |
 
 Because the Diagnostics panel, the AI Scientist panel, the Processing Workspace, and
 the Knowledge Center are **generic and registry-driven**, a capability registered in
