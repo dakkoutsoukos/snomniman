@@ -3096,3 +3096,105 @@ appeared exactly as expected).
 - New `docs/point-spectrum-discovery.md` (the discovery record). `docs/architecture.md`
   (`io` module bullet). `LOG.md` (this entry). `NEXT.md` (refreshed). `CLAUDE.md`
   (project status paragraph).
+
+---
+
+## 2026-07-02b - Processing Recipes (Phase 4A, ADR-0031)
+
+The first Phase 4 (workflow automation) milestone: capture a completed processing
+history once, save it, and replay it deterministically on another compatible
+measurement - through the *same* Processing Workspace, the *same*
+`ProcessingStep.apply()` path, and the *same* Preview -> Accept/Cancel lifecycle
+every operation already uses. `docs/phase4-workflow-automation.md` (the prior
+research-and-design milestone) proposed Option B - a recipe as a re-bindable
+projection of the provenance DAG, not an independent workflow engine; this
+milestone re-validated that conclusion against the codebase as it stood after
+Phases 2A-3C (nothing had changed the answer), then implemented it.
+
+### Completed
+
+**Architecture validation (before any code).** Re-read `ProcessingStep.apply`,
+`StepRecord`/`ProvenanceNode` (`core/provenance.py`), `describe.summarize_provenance`,
+and `pipeline.Project`/`Measurement` against the design doc's Option A vs Option B
+question. Confirmed Option B, with one refinement the re-read surfaced: capture must
+walk the `primary` edge only (rejecting a chain through a multi-input step, e.g.
+`image.arithmetic`) rather than reusing `summarize_provenance`'s full topological
+walk, which follows every named edge and would silently include a second parent's
+lineage. Recorded as ADR-0031.
+
+**`pipeline/recipe.py` (new module):** `Recipe` (name, ordered `RecipeStep(step_id,
+step_version, params)` tuples, `created_at`, `software` - frozen, immutable) and
+`RecipeStep` - deliberately narrower than `StepRecord` (no `applied_at`/software/
+fingerprints: those are facts about one past run, not a portable step identity).
+`capture_recipe(dataset, name=...)` walks the provenance chain via `primary` only,
+raising `ProcessingError` (naming the offending step) for a multi-input chain or a
+raw dataset. `apply_recipe(recipe, dataset)` replays by looping the unchanged
+`get_step(step_id)(**params).apply({"primary": ds})` over the registry - the result
+is an ordinary derived `Dataset`, indistinguishable from hand-applying the same
+steps; a step that doesn't apply raises `ProcessingError` naming its position (no
+silent skip). `renamed`/`duplicated`/`with_step_params` return edited copies
+(`with_step_params` revalidates against the step's `ParameterSpec`s).
+`save_recipe`/`load_recipe`/`delete_recipe` persist a standalone `.snomrecipe` JSON
+file (format tag + schema version, mirroring `.snomproj`'s safety pattern - no
+project-manifest schema change). Exported from `snomniman.pipeline`.
+
+**GUI (`gui/model.py`, `gui/process.py`, `gui/window.py`):** `ExplorerModel.
+capture_recipe`/`recipe_steps`/`preview_recipe` are thin projections reusing the
+*exact* diff/pane-building helpers `preview_operation` already uses. The Processing
+Workspace tree gains a "Recipes" group (items prefixed `recipe:`, tracked and rebuilt
+independently of `set_catalog`'s operation groups since `set_catalog` clears the
+whole tree); selecting a recipe shows its ordered steps (title + description via the
+existing registry projection, params as text) with the parameter form and input
+pickers simply hidden; "Save current history as recipe..." and "Load recipe..."
+buttons sit beside the tree, and "Delete this recipe" appears only when a recipe is
+selected. `window.py` branches on the `recipe:` prefix in exactly two places
+(`_on_operation_selected` -> `_present_recipe`; `_on_preview_requested` -> calls
+`preview_recipe` instead of `preview_operation`) - Accept/Cancel needed **zero**
+changes, since they already only touch `preview.dataset`/`preview.title` generically.
+Dialog-driven handlers (`_save_recipe_as`, `_load_recipe_dialog`,
+`_delete_recipe_dialog`) delegate to directly-testable core methods (`_write_recipe`,
+`_read_recipe`, `_remove_recipe`), mirroring the existing project save/open pattern.
+
+### Decisions
+
+- **ADR-0031.** Recipe = a re-bindable projection of a provenance chain (Option B),
+  not a second processing engine (Option A rejected). `RecipeStep` is its own minimal
+  shape, not a reuse of `StepRecord`/`LineageStep` (which carry execution-time facts).
+  Capture is `primary`-only, narrower than `summarize_provenance`. Persistence is a
+  standalone `.snomrecipe` file, not a `.snomproj` schema bump (deferred, not
+  rejected). Rename/Duplicate/param-editing ship at the backend layer only for v1
+  GUI (Rule 9: the mandated GUI capabilities are create/browse/inspect/execute).
+  Batch execution and auto-selecting a recipe remain explicitly out of scope (4B/4C
+  and the validation-gated `ai.reasoning` lane, respectively).
+
+### Issues Found
+- None - the engine, DAG, and persistence needed no changes; this was pure
+  composition of existing, already-tested seams.
+
+### Tests / gates
+- 631 tests (up from 599, +32): `test_pipeline_recipe.py` (23: capture incl. the
+  multi-input/raw-dataset rejections, replay-equals-manual on real channel values and
+  on the step-by-step provenance chain, per-step replay failure naming the step,
+  rename/duplicate/with_step_params incl. revalidation, JSON + file round-trip,
+  overwrite/corrupt-file/missing-file guards); `test_gui_recipe.py` (9: save captures
+  + registers + persists, save-failure-on-raw-dataset warns, browse/inspect via the
+  tree, preview -> accept replays a recipe onto a fresh window with channel values
+  identical to the manual chain, preview failure warns, load/delete round-trip). `ruff`
+  clean; `mypy --strict` clean (123 files); Qt-free invariant green.
+
+### Documentation Updated
+- `docs/decisions.md` (ADR-0031). `docs/architecture.md` (`pipeline` module bullet,
+  dependency diagram, Section 10 capability-landing table, "Last updated"). `LOG.md`
+  (this entry). `NEXT.md` (refreshed). `CLAUDE.md` (project status paragraph). New
+  Knowledge Center article `concept.processing_recipe`.
+
+### Next Recommended Actions
+- **Phase 4B (Batch):** fill the `snomniman.batch` stub - run a recipe over a
+  project's measurements or a folder, headlessly, emitting a run manifest. This is
+  the documented #1 daily-adoption gap (Workflow C, `beta-readiness-v1.md`).
+- **Phase 4C (Reporting):** assemble `ExperimentModel` + `describe` + `viz.figure`
+  into one provenance-bearing experiment summary - lower priority than 4B; consider
+  waiting for user-testing signal before building it (scope-creep risk, flagged in
+  `docs/phase4-workflow-automation.md` sec 6).
+- Consider embedding a recipe copy in the `.snomproj` manifest once project-embedded
+  recipes prove wanted (deferred in ADR-0031, not rejected).

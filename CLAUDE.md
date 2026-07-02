@@ -96,7 +96,19 @@ rather than repeating them.
 > `Capability.SPATIAL_2D`, so a `(position, wavenumber)` array could be silently
 > misclassified as a spatial image; it now honestly reports "unknown" for non-spatial
 > shapes (regression-tested).
-> 599 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> **Workflow automation (Phase 4) has begun: Processing Recipes are shipped**
+> (2026-07-02, ADR-0031, `docs/phase4-workflow-automation.md`): a `Recipe`
+> (`snomniman.pipeline`) captures a measurement's linear processing history as a
+> portable, named `(step_id, version, params)` sequence - a re-bindable *projection*
+> of the provenance DAG, not a second processing engine - and replays it on another
+> compatible measurement by looping the unchanged `ProcessingStep.apply()`, producing
+> a dataset and provenance chain indistinguishable from hand-applying the same steps.
+> Persists as a standalone `.snomrecipe` JSON file (no project-manifest change); the
+> Processing Workspace surfaces recipes as a second kind of tree item (create/browse/
+> inspect/execute) through the identical Preview -> Accept/Cancel lifecycle every
+> operation already uses - no second processing interface. Batch execution of a
+> recipe across many measurements (`snomniman.batch`) is the next milestone (Phase 4B).
+> 631 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
@@ -218,9 +230,12 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
   **multi-input** (ADR-0030): steps declare inputs via `InputSpec` (default single `primary`)
   and a `check_compatibility` gate; `image.arithmetic` is the first two-input op.
 - `snomniman.pipeline` - the reproducibility engine: provenance **DAG**, replay,
-  (de)serialization, environment/operation-version capture, and the `Project` (a
+  (de)serialization, environment/operation-version capture, the `Project` (a
   collection of `Measurement`s, ADR-0028) + `save_project`/`load_project` bundle with
-  save/reopen persistence (reusing the `io` Zarr store; depends on `io` - ADR-0027).
+  save/reopen persistence (reusing the `io` Zarr store; depends on `io` - ADR-0027),
+  and **processing `Recipe`s** (ADR-0031): a portable, named projection of a
+  provenance chain, replayed via the unchanged `ProcessingStep` registry (no second
+  processing engine); persists as a standalone `.snomrecipe` file.
 - `snomniman.describe` - the Scientific Description API: a Qt-free, read-only
   projection of `core` + the step registry into structured, JSON-serializable
   descriptors (consumed by `gui`/`batch`/future `ai`; not `viz`).
@@ -455,6 +470,7 @@ surface automatically. See `docs/roadmap.md` for the current priority order.
 | `docs/reference-normalization-analysis.md` | **Scientific-Validation study, Outcome 2 (DEFERRED), no code** (Candidate 3). When should the engine *recommend* `image.reference_normalize`? Distinguishes possible / appropriate / strongly-recommended. The *decline* conditions (redundant / weak / noisy / empty reference) are defensible and validated (reusing the ADR-0026 primitive + a redundancy metric); the *positive* "appropriate" branch cannot be validated - all real data is PsHet "Self-Reference Off" with `R-` channels that are near-copies of the signal (`O/R ~ 1`, normalization erases contrast), and appropriateness is experimental-design metadata the array lacks. Also flags that the existing flat-0.85 `ReferenceNormalizeRule` is unvalidated and over-recommends - revisit (gate or withdraw). |
 | `docs/knowledge-center.md` | **Knowledge Center** (`snomniman.knowledge`; ADR-0024): a living, in-app scientific knowledge base - philosophy (teach the science while performing it; ground the AI), architecture (a Qt-free leaf), the structured `Article` model, the Explorer panel + "Learn more" deep-links, AI integration, the integrity/no-drift guarantees, and future expansion. |
 | `docs/point-spectrum-discovery.md` | **Point Spectrum Discovery** - the second-modality analogue of `measurement-discovery.md`: what the real point-spectroscopy sample actually is (a 100-position line of spectra, not one isolated spectrum), why `DataKind.SPECTRUM`/`LINE_SCAN` + `Capability.SPECTRAL`/`SPATIAL_1D` (already anticipated in `data-model.md`) needed **no redesign**, the one additive `Metadata` field (`SpectralInfo`), the diagnostics gating bug the new modality surfaced and fixed, and the documented GUI scope boundary (image-only affordances decline gracefully for a spectral measurement). |
+| `docs/phase4-workflow-automation.md` | **Phase 4 - Workflow Automation (Research & Design)** - the user-commissioned blueprint for automating repeated processing across a multi-scan session: a workflow survey (Gwyddion/MountainsMap/WSxM/ImageJ/neaPLOT), the Recipe design (a re-bindable projection of the provenance DAG, not a second engine - Option B, confirmed and implemented as ADR-0031), the Phase 4A/4B/4C roadmap (Recipes -> Batch -> Reporting), and the explicit deferrals (auto-recipe-selection stays validation-gated; no scripting/macro language). Phase 4A (Recipes) is now **shipped** (ADR-0031); 4B (Batch) is next. |
 
 ---
 

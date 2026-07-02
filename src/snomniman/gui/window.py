@@ -27,11 +27,16 @@ from snomniman.core.exceptions import DatasetError, ProcessingError, ReaderError
 from snomniman.io import export_channel_gsf, write_zarr
 from snomniman.knowledge import article_for_operation
 from snomniman.pipeline import (
+    RECIPE_SUFFIX,
     Measurement,
     Project,
+    Recipe,
+    delete_recipe,
     load_project,
+    load_recipe,
     measurement_from_history,
     save_project,
+    save_recipe,
 )
 from snomniman.viz import RenderData
 
@@ -54,6 +59,7 @@ from .model import (
     OperationPreview,
     PaneSpec,
 )
+from .model import RECIPE_STEP_PREFIX as _RECIPE_STEP_PREFIX
 from .panels import (
     ChannelBrowser,
     MeasurementManager,
@@ -94,6 +100,10 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         # Candidate datasets for a multi-input operation's extra slots (key -> Dataset),
         # rebuilt whenever an operation is shown in the workspace (ADR-0030).
         self._input_candidate_map: dict[str, Dataset] = {}
+        # Processing recipes known to this session (Phase 4A): name -> Recipe, and
+        # the .snomrecipe file each was saved to/loaded from (if any).
+        self._recipes: dict[str, Recipe] = {}
+        self._recipe_paths: dict[str, Path] = {}
 
         self._title = QtWidgets.QLabel()
         self._facts = QtWidgets.QLabel()
@@ -311,6 +321,11 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._process.previewRequested.connect(self._on_preview_requested)
         self._process.previewAccepted.connect(self._on_preview_accepted)
         self._process.previewCancelled.connect(self._on_preview_cancelled)
+        # Processing recipes (Phase 4A): create/load/delete, then Preview -> Accept
+        # reuses the same generic pathway above.
+        self._process.recipeSaveRequested.connect(self._save_recipe_as)
+        self._process.recipeLoadRequested.connect(self._load_recipe_dialog)
+        self._process.recipeDeleteRequested.connect(self._delete_recipe_dialog)
         # AI Scientist: a suggested next step hands off to the Processing Workspace.
         self._briefing.recommendationPreviewRequested.connect(self._on_recommendation_preview)
         # Knowledge Center: "Learn more" from the Workspace or a recommendation opens the article.
@@ -333,6 +348,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._briefing.set_briefing(self._model.scientific_briefing())
         self._briefing.set_suggestions(self._model.workflow_suggestions())
         self._process.set_catalog(self._model.operation_catalog())
+        self._process.set_recipes(sorted(self._recipes))
         self._browser.select(self._model.current_channel)
         self._show_channel_view()
 
@@ -434,8 +450,18 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
     # -- processing (generic: any registered operation, no per-op wiring) ------
 
     def _on_operation_selected(self, step_id: str) -> None:
-        """Show the selected operation's description, input pickers, and parameter form."""
+        """Show the selected operation or recipe (Phase 4A) in the workspace."""
+        if step_id.startswith(_RECIPE_STEP_PREFIX):
+            self._present_recipe(step_id[len(_RECIPE_STEP_PREFIX) :])
+            return
         self._present_operation(step_id)
+
+    def _present_recipe(self, name: str) -> None:
+        """Render a saved recipe's ordered steps, ready to Preview or Delete."""
+        recipe = self._recipes.get(name)
+        if recipe is None:
+            return
+        self._process.show_recipe(name, self._model.recipe_steps(recipe), recipe.created_at)
 
     def _present_operation(self, step_id: str) -> None:
         """Render an operation in the workspace with its project-wide input candidates."""
@@ -511,9 +537,14 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         window only lays the panes out and reveals the summary. Nothing is
         committed - the derived dataset rides on the preview until Accept.
         """
+        is_recipe = step_id.startswith(_RECIPE_STEP_PREFIX)
         try:
-            inputs = self._resolve_inputs()
-            preview = self._model.preview_operation(step_id, params, inputs)
+            if is_recipe:
+                recipe = self._recipes[step_id[len(_RECIPE_STEP_PREFIX) :]]
+                preview = self._model.preview_recipe(recipe)
+            else:
+                inputs = self._resolve_inputs()
+                preview = self._model.preview_operation(step_id, params, inputs)
         except ProcessingError as exc:
             QtWidgets.QMessageBox.warning(self, "Preview failed", str(exc))
             return
@@ -523,9 +554,8 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         renders: dict[PaneSpec, RenderData] = {pane.spec: pane.render for pane in preview.panes}
         self._comparison.set_panes(specs, renders.__getitem__)
         self._stack.setCurrentWidget(self._comparison)
-        self._active.setText(
-            f"Preview: {self._operation_title(step_id)} — Accept to commit, Cancel to discard"
-        )
+        header = preview.title if is_recipe else self._operation_title(step_id)
+        self._active.setText(f"Preview: {header} — Accept to commit, Cancel to discard")
         self._process.show_preview(preview)
         self._process.set_preview_mode(True)
 
@@ -639,6 +669,78 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             return
         self._project_path = path
         QtWidgets.QMessageBox.information(self, "Project saved", f"Saved project:\n{path}")
+
+    # -- processing recipes (Phase 4A: create/load/delete a saved recipe) -----
+
+    def _save_recipe_as(self) -> None:
+        """Prompt for a name and a file, then capture + save the active history."""
+        name, ok = QtWidgets.QInputDialog.getText(self, "Save as recipe", "Recipe name:")
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save recipe", f"{name}{RECIPE_SUFFIX}", f"SNOMNIMAN Recipe (*{RECIPE_SUFFIX})"
+        )
+        if not path:
+            return
+        bundle = Path(path)
+        if bundle.suffix != RECIPE_SUFFIX:
+            bundle = bundle.with_suffix(RECIPE_SUFFIX)
+        self._write_recipe(name, bundle)
+
+    def _write_recipe(self, name: str, path: Path) -> None:
+        """Capture the active measurement's history as *name* and save it to *path*."""
+        try:
+            recipe = self._model.capture_recipe(name)
+        except ProcessingError as exc:
+            QtWidgets.QMessageBox.warning(self, "Cannot save recipe", str(exc))
+            return
+        try:
+            save_recipe(recipe, path, overwrite=True)
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self, "Cannot save recipe", str(exc))
+            return
+        self._recipes[recipe.name] = recipe
+        self._recipe_paths[recipe.name] = path
+        self._refresh_recipes()
+
+    def _load_recipe_dialog(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Load recipe", "", f"SNOMNIMAN Recipe (*{RECIPE_SUFFIX})"
+        )
+        if not path:
+            return
+        self._read_recipe(Path(path))
+
+    def _read_recipe(self, path: Path) -> None:
+        try:
+            recipe = load_recipe(path)
+        except ReaderError as exc:
+            QtWidgets.QMessageBox.warning(self, "Cannot load recipe", str(exc))
+            return
+        self._recipes[recipe.name] = recipe
+        self._recipe_paths[recipe.name] = path
+        self._refresh_recipes()
+
+    def _delete_recipe_dialog(self, name: str) -> None:
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Delete recipe",
+            f"Delete the recipe '{name}'? This also removes its saved file, if any.",
+        )
+        if reply != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        self._remove_recipe(name)
+
+    def _remove_recipe(self, name: str) -> None:
+        path = self._recipe_paths.pop(name, None)
+        if path is not None:
+            delete_recipe(path)
+        self._recipes.pop(name, None)
+        self._refresh_recipes()
+
+    def _refresh_recipes(self) -> None:
+        self._process.set_recipes(sorted(self._recipes))
 
     def current_project(self) -> Project:
         """Bundle every measurement (each with its history + view + overlays) for saving."""

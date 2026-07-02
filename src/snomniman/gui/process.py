@@ -27,10 +27,12 @@ from .model import (
     FIELD_ENUM,
     FIELD_FLOAT,
     FIELD_INT,
+    RECIPE_STEP_PREFIX,
     InputCandidate,
     OperationField,
     OperationOption,
     OperationPreview,
+    RecipeStepView,
 )
 
 _MUTED = "color: #9aa0a6;"
@@ -61,6 +63,12 @@ class ProcessingWorkspace(QtWidgets.QWidget):
     previewCancelled: QtCore.Signal = QtCore.Signal()
     #: Emitted by "Learn more" for the shown operation. Arg: step_id.
     learnMoreRequested: QtCore.Signal = QtCore.Signal(str)
+    #: Emitted by "Save current history as recipe...".
+    recipeSaveRequested: QtCore.Signal = QtCore.Signal()
+    #: Emitted by "Load recipe...".
+    recipeLoadRequested: QtCore.Signal = QtCore.Signal()
+    #: Emitted by "Delete recipe" for the shown recipe. Arg: recipe name.
+    recipeDeleteRequested: QtCore.Signal = QtCore.Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -69,6 +77,10 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         # slot name -> (combobox, candidate keys aligned with combo items)
         self._input_combos: dict[str, tuple[QtWidgets.QComboBox, list[str]]] = {}
         self._inputs_ready = True  # every declared input slot has a chosen dataset
+        # The "Recipes" tree group is rebuilt independently of the operation groups
+        # (set_catalog() clears the whole tree, so the window re-calls set_recipes()
+        # right after); tracked here so it can be found and replaced in place.
+        self._recipes_group: QtWidgets.QTreeWidgetItem | None = None
 
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(6, 6, 6, 6)
@@ -76,19 +88,34 @@ class ProcessingWorkspace(QtWidgets.QWidget):
 
         intro = QtWidgets.QLabel(
             "Every operation is a transparent derivation of the immutable measurement. "
-            "Pick one, set its parameters, preview the exact effect, then accept."
+            "Pick one, set its parameters, preview the exact effect, then accept. A "
+            "Recipe captures a processing history once and replays it identically."
         )
         intro.setWordWrap(True)
         intro.setStyleSheet(_MUTED)
         outer.addWidget(intro)
 
-        outer.addWidget(_section_label("Available operations"))
+        outer.addWidget(_section_label("Available operations and recipes"))
         self._tree = QtWidgets.QTreeWidget()
         self._tree.setHeaderHidden(True)
         self._tree.setRootIsDecorated(True)
         self._tree.setMaximumHeight(170)
         self._tree.currentItemChanged.connect(self._on_item_changed)
         outer.addWidget(self._tree)
+
+        recipe_row = QtWidgets.QHBoxLayout()
+        self._save_recipe_btn = QtWidgets.QPushButton("Save current history as recipe...")
+        self._save_recipe_btn.setToolTip(
+            "Capture this measurement's processing history and save it for replay"
+        )
+        self._save_recipe_btn.clicked.connect(lambda: self.recipeSaveRequested.emit())
+        recipe_row.addWidget(self._save_recipe_btn)
+        self._load_recipe_btn = QtWidgets.QPushButton("Load recipe...")
+        self._load_recipe_btn.setToolTip("Load a saved .snomrecipe file into this session")
+        self._load_recipe_btn.clicked.connect(lambda: self.recipeLoadRequested.emit())
+        recipe_row.addWidget(self._load_recipe_btn)
+        recipe_row.addStretch(1)
+        outer.addLayout(recipe_row)
 
         # Everything below scrolls so a long parameter form / summary never overflows.
         scroll = QtWidgets.QScrollArea()
@@ -119,6 +146,12 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._learn_btn.setVisible(False)
         self._learn_btn.clicked.connect(self._on_learn_clicked)
         self._body.addWidget(self._learn_btn, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
+
+        self._delete_recipe_btn = QtWidgets.QPushButton("Delete this recipe")
+        self._delete_recipe_btn.setToolTip("Remove this recipe from the session and its file")
+        self._delete_recipe_btn.setVisible(False)
+        self._delete_recipe_btn.clicked.connect(self._on_delete_recipe_clicked)
+        self._body.addWidget(self._delete_recipe_btn, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
 
         # Multi-input operations: a dataset picker per non-primary input slot. Hidden
         # for single-input operations, so their workspace looks exactly as before.
@@ -202,7 +235,33 @@ class ProcessingWorkspace(QtWidgets.QWidget):
                 item.setForeground(0, QtCore.Qt.GlobalColor.gray)
             parent.addChild(item)
         self._tree.blockSignals(False)
+        self._recipes_group = None  # set_catalog() clears the whole tree
         self._show_placeholder()
+
+    def set_recipes(self, names: Sequence[str]) -> None:
+        """Populate/refresh the "Recipes" group in the tree, leaving operations intact.
+
+        Called after :meth:`set_catalog` (which clears the whole tree) and whenever
+        the saved-recipe library changes (create/load/delete).
+        """
+        if self._recipes_group is not None:
+            index = self._tree.indexOfTopLevelItem(self._recipes_group)
+            if index >= 0:
+                self._tree.takeTopLevelItem(index)
+            self._recipes_group = None
+        if not names:
+            return
+        self._tree.blockSignals(True)
+        group = QtWidgets.QTreeWidgetItem(["Recipes"])
+        group.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
+        self._tree.addTopLevelItem(group)
+        group.setExpanded(True)
+        for name in names:
+            item = QtWidgets.QTreeWidgetItem([name])
+            item.setData(0, QtCore.Qt.ItemDataRole.UserRole, f"{RECIPE_STEP_PREFIX}{name}")
+            group.addChild(item)
+        self._tree.blockSignals(False)
+        self._recipes_group = group
 
     def show_operation(
         self,
@@ -221,10 +280,34 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._build_inputs(option, input_candidates or {})
         self._build_form(option)
         self._learn_btn.setVisible(True)
+        self._delete_recipe_btn.setVisible(False)
         self._preview_box.setVisible(False)
         self._preview_info.clear()
         self._set_buttons_preview(active=False)
         self._preview_btn.setEnabled(option.available and self._inputs_ready)
+
+    def show_recipe(self, name: str, steps: Sequence[RecipeStepView], created_at: str) -> None:
+        """Render a saved recipe: its ordered steps, ready to Preview or Delete.
+
+        A recipe has no parameter form of its own (each step's parameters are
+        already bound) and no extra dataset inputs (recipes are single-``primary``
+        chains) - so this reuses the title/detail/preview machinery every operation
+        already uses, with the form and input pickers simply hidden.
+        """
+        self._step_id = f"{RECIPE_STEP_PREFIX}{name}"
+        self._title.setText(f"Recipe: {name}")
+        self._detail.setText(_recipe_detail_text(steps, created_at))
+        self._clear_inputs()
+        self._inputs_box.setVisible(False)
+        self._clear_form()
+        self._form_box.setVisible(False)
+        self._learn_btn.setVisible(False)
+        self._delete_recipe_btn.setVisible(True)
+        self._preview_box.setVisible(False)
+        self._preview_info.clear()
+        self._inputs_ready = True
+        self._set_buttons_preview(active=False)
+        self._preview_btn.setEnabled(True)
 
     def current_params(self) -> dict[str, Any]:
         """Read the parameter form back into a JSON-scalar dict for the engine."""
@@ -300,8 +383,9 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._clear_form()
         self._clear_inputs()
         self._title.setText("No operation selected")
-        self._detail.setText("Select an operation above to see what it does and configure it.")
+        self._detail.setText("Select an operation or recipe above to see what it does.")
         self._learn_btn.setVisible(False)
+        self._delete_recipe_btn.setVisible(False)
         self._inputs_box.setVisible(False)
         self._form_box.setVisible(False)
         self._preview_box.setVisible(False)
@@ -394,6 +478,10 @@ class ProcessingWorkspace(QtWidgets.QWidget):
     def _on_learn_clicked(self) -> None:
         if self._step_id is not None:
             self.learnMoreRequested.emit(self._step_id)
+
+    def _on_delete_recipe_clicked(self) -> None:
+        if self._step_id is not None and self._step_id.startswith(RECIPE_STEP_PREFIX):
+            self.recipeDeleteRequested.emit(self._step_id[len(RECIPE_STEP_PREFIX) :])
 
 
 # --------------------------------------------------------------------------- #
@@ -489,6 +577,15 @@ def _detail_text(option: OperationOption) -> str:
     elif option.blocked_reason is not None:
         lines.append("")
         lines.append(f"Unavailable - {option.blocked_reason}.")
+    return "\n".join(lines)
+
+
+def _recipe_detail_text(steps: Sequence[RecipeStepView], created_at: str) -> str:
+    lines = [f"Captured {created_at}", f"{len(steps)} step(s), replayed in order:", ""]
+    for i, step in enumerate(steps, start=1):
+        params = ", ".join(f"{k}={v!r}" for k, v in step.params.items()) or "(no parameters)"
+        lines.append(f"{i}. {step.title} - {step.description}")
+        lines.append(f"     {params}")
     return "\n".join(lines)
 
 

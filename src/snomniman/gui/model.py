@@ -46,6 +46,9 @@ from snomniman.diagnostics import (
     operation_applicability,
 )
 from snomniman.io import read
+from snomniman.pipeline import Recipe
+from snomniman.pipeline import apply_recipe as _apply_recipe
+from snomniman.pipeline import capture_recipe as _capture_recipe
 from snomniman.processing import CHANNEL_COMPLEX, CHANNEL_REAL, get_step
 from snomniman.viz import AMPLITUDE, PHASE, REAL, FigureSpec, OverlaySpec, RegionStats, RenderData
 
@@ -339,6 +342,21 @@ class OperationPreview:
     changes: tuple[str, ...]  # what this operation will change
     unchanged: tuple[str, ...]  # what it leaves untouched
     provenance: ProvenanceStep  # the provenance node that will be recorded
+
+
+#: Prefix marking a workspace tree item / preview as a Recipe rather than a single
+#: registered operation (see ``ExplorerModel.preview_recipe``, ``process.py``).
+RECIPE_STEP_PREFIX = "recipe:"
+
+
+@dataclass(frozen=True)
+class RecipeStepView:
+    """One step of a Recipe, projected for reading (the "inspect" capability)."""
+
+    step_id: str
+    title: str
+    description: str
+    params: dict[str, object]
 
 
 #: Human-readable phrases for each capability, for the "why unavailable" message.
@@ -963,6 +981,56 @@ class ExplorerModel:
             provenance=provenance,
         )
 
+    # -- processing recipes (Phase 4A: capture + replay of a registry chain) ---
+
+    def capture_recipe(self, name: str) -> Recipe:
+        """Capture this measurement's linear processing history as a portable Recipe.
+
+        A thin projection (Rule 4: no science here) over
+        :func:`snomniman.pipeline.capture_recipe`. Raises
+        :exc:`~snomniman.core.exceptions.ProcessingError` if the active dataset is
+        raw (nothing to capture) or its history passes through a multi-input step
+        (e.g. ``image.arithmetic``) that cannot be captured context-free.
+        """
+        return _capture_recipe(self._ds, name=name)
+
+    def recipe_steps(self, recipe: Recipe) -> tuple[RecipeStepView, ...]:
+        """Project a recipe's steps for the inspector (human title + description)."""
+        return tuple(
+            RecipeStepView(
+                step_id=s.step_id,
+                title=_operation_title(s.step_id),
+                description=_step_description(s.step_id),
+                params=dict(s.params),
+            )
+            for s in recipe.steps
+        )
+
+    def preview_recipe(self, recipe: Recipe) -> OperationPreview:
+        """Replay *recipe* onto this measurement and describe the result (Preview).
+
+        Reuses the identical apply -> diff -> panes path a single-operation preview
+        uses (:func:`snomniman.pipeline.apply_recipe` loops the same
+        ``ProcessingStep.apply()`` the Workspace already calls); the only new part is
+        the loop over steps, which lives in ``pipeline``, not here. Raises
+        :exc:`~snomniman.core.exceptions.ProcessingError` naming the failing step if
+        any step in the recipe does not apply to this measurement.
+        """
+        derived = _apply_recipe(recipe, self._ds)
+        changes, unchanged, focus = self._diff_summary(self._ds, derived)
+        panes = self._preview_panes(self._ds, derived, focus)
+        lineage = summarize_provenance(derived.provenance).steps
+        provenance = _format_lineage_step(lineage[-1])
+        return OperationPreview(
+            step_id=f"{RECIPE_STEP_PREFIX}{recipe.name}",
+            title=f"{self._title} -> recipe '{recipe.name}'",
+            dataset=derived,
+            panes=panes,
+            changes=changes,
+            unchanged=unchanged,
+            provenance=provenance,
+        )
+
     def _operation_option(
         self, desc: OperationDescription, app: OperationApplicability | None
     ) -> OperationOption:
@@ -1457,6 +1525,7 @@ __all__ = [
     "PRESET_LABELS",
     "PRESET_OPTICAL_TOPO",
     "PRESET_SAMPLE_REF",
+    "RECIPE_STEP_PREFIX",
     "ChannelEntry",
     "ChannelGroup",
     "CursorReadout",
@@ -1476,6 +1545,7 @@ __all__ = [
     "ProfileCurve",
     "ProfileSet",
     "ProvenanceStep",
+    "RecipeStepView",
     "RegionReport",
     "RegionStatRow",
 ]

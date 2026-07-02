@@ -400,6 +400,53 @@ _CONCEPTS = (
         ),
         related_concepts=("concept.point_spectrum",),
     ),
+    Article(
+        article_id="concept.processing_recipe",
+        category=CONCEPT,
+        title="Processing recipes",
+        summary=(
+            "A recipe captures a completed processing history once - an ordered list of "
+            "operations and their parameters - and replays it on another compatible "
+            "measurement through the exact same steps, unchanged."
+        ),
+        explanation=(
+            "A recipe is not a new kind of computation: it is a portable, re-bindable "
+            "projection of a provenance chain. Capturing a recipe reads a measurement's "
+            "history - which operations were applied, in what order, with what parameters - "
+            "and detaches it from that one dataset. Replaying a recipe reruns each step "
+            "through the same registered operation and the same parameter validation a "
+            "manual Preview uses, producing an ordinary derived dataset with a complete, "
+            "correct provenance record - indistinguishable from applying the same steps by "
+            "hand. A recipe therefore repeats a judgment the researcher already made and "
+            "accepted on the first scan; it makes no new scientific decision of its own."
+        ),
+        scientific_background=(
+            "Applying an identical processing chain across a set of sibling scans (a power "
+            "series, a time series, a sample series) is a correctness property, not only a "
+            "convenience: inconsistent manual processing between scans is a real source of "
+            "artifact when the results are later compared. A recipe turns 'the same "
+            "processing on every scan' from a hope into a guarantee."
+        ),
+        practical_guidance=(
+            "Build and accept a processing chain on one measurement as usual, then save it "
+            "as a recipe from its history. Load or select that recipe on another compatible "
+            "measurement and Preview it exactly as you would any operation - if a step does "
+            "not apply (e.g. a required channel is missing), the recipe reports which step "
+            "failed rather than silently skipping it or guessing a substitute."
+        ),
+        common_mistakes=(
+            "Assuming a recipe can capture a chain that combines two different measurements "
+            "(e.g. one ending in a two-input arithmetic difference) - only a single-input "
+            "chain is portable, since the second measurement is specific to the one dataset "
+            "it was compared against.",
+            "Expecting a recipe to choose which processing a new measurement needs - it only "
+            "repeats a sequence the researcher already authored and accepted; choosing what "
+            "to apply next remains the researcher's judgment (or a separately-validated AI "
+            "recommendation), never the recipe's.",
+        ),
+        related_concepts=("concept.provenance", "concept.immutable_measurements"),
+        related_operations=("image.plane_level", "image.line_flatten", "image.fix_zero"),
+    ),
 )
 
 

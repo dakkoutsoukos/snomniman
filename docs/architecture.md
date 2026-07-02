@@ -4,7 +4,7 @@
 Diagnostics / AI / Knowledge layers are implemented (ADR-0018..0024). **Foundational
 development is complete** - new capability now enters via the governance process
 (Section 10), extending these layers rather than adding new ones.
-**Last updated:** 2026-06-29 (project persistence + data/measurement export, ADR-0027)
+**Last updated:** 2026-07-02 (Processing Recipes, ADR-0031)
 
 Authoritative description of the system's structure. When the architecture changes,
 this file changes in the same commit, with rationale in [`decisions.md`](decisions.md).
@@ -38,7 +38,8 @@ reverse). `core` imports nothing else in the project. There are no cycles.
   | snomniman.batch|-->| snomniman.pipeline|   | snomniman.viz  |
   | headless runs  |   | provenance DAG,   |   | display-ready  |
   | over many srcs |   | replay, (de)ser., |   | data + mpl     |
-  | (stub)         |   | Project save/open |   | static export  |
+  | (stub)         |   | Project save/open,|   | static export  |
+  |                |   | Recipes (ADR-0031)|   |                |
   +----------------+   +-------------------+   +----------------+
                             | uses             +----------------+
                             v                          |
@@ -234,6 +235,20 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
   every measurement's processing history round-trips; raw data stays immutable.
 - `replay`: reconstruct a derived dataset from sources + the DAG (Rule 5) - a future
   optimization; today every derivation is stored faithfully in the bundle.
+- **Processing Recipes (implemented, Phase 4A, ADR-0031):** `recipe.py` - a `Recipe`
+  is a named, ordered, portable projection of a provenance chain: `capture_recipe`
+  walks a dataset's `primary`-only history into `RecipeStep(step_id, step_version,
+  params)` tuples (refusing a chain through a multi-input step, e.g.
+  `image.arithmetic`, with a clear error); `apply_recipe` replays it by looping the
+  unchanged `ProcessingStep.apply()` over the registry, producing an ordinary
+  derived `Dataset` indistinguishable from hand-applying the same steps.
+  `renamed`/`duplicated`/`with_step_params` return edited copies (recipes are
+  immutable); `save_recipe`/`load_recipe`/`delete_recipe` persist a recipe as a
+  standalone `.snomrecipe` JSON file (format tag + schema version, mirroring
+  `.snomproj`'s safety pattern) - no project-manifest schema change. The Processing
+  Workspace surfaces recipes as a second kind of tree item (create/browse/inspect/
+  execute) through the *same* Preview -> Accept/Cancel lifecycle every operation
+  uses - no second processing interface.
 - `serialization`: DAG <-> JSON (schemas in `data-model.md`).
 - `environment`: captures `snomniman` + library versions and operation versions
   for full traceability (OHD-5).
@@ -399,6 +414,7 @@ both **extends an existing abstraction** (Rule 7). The mapping is fixed:
 | A deterministic **operation** | `snomniman.processing` | a registered `ProcessingStep` (ADR-0021) |
 | Its **teaching** content | `snomniman.knowledge` | a curated `Article` (ADR-0024) |
 | An **export / persistence** path | `snomniman.io`, `snomniman.viz`, `snomniman.pipeline` | a writer the GUI calls; project bundles via `pipeline` over `io` (ADR-0027, **shipped**) |
+| A reusable **processing workflow** | `snomniman.pipeline` | a `Recipe` (a projection of the provenance DAG, not a new engine) (ADR-0031, **shipped**) |
 
 Because the Diagnostics panel, the AI Scientist panel, the Processing Workspace, and
 the Knowledge Center are **generic and registry-driven**, a capability registered in
