@@ -28,6 +28,7 @@ from snomniman.core import Dataset, current_software
 from snomniman.core.exceptions import DatasetError, ProcessingError, ReaderError
 from snomniman.io import export_channel_gsf, write_zarr
 from snomniman.knowledge import article_for_operation
+from snomniman.manual import page_for_operation
 from snomniman.pipeline import (
     RECIPE_SUFFIX,
     Measurement,
@@ -51,6 +52,7 @@ from .export import ExperimentExportContext, experiment_table_to_csv
 from .hyperspectral import HyperspectralView
 from .imageview import ChannelImageView
 from .knowledge import KnowledgePanel
+from .manual import ManualPanel
 from .measurement import MeasurementController, MeasurementPanel
 from .model import (
     PRESET_LABELS,
@@ -140,6 +142,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._briefing = BriefingPanel()
         self._process = ProcessingWorkspace()
         self._knowledge = KnowledgePanel()
+        self._manual = ManualPanel()
         self._experiment_panel = ExperimentPanel()
         # Measurements are read-only observations placed on the single image (or,
         # for a hyperspectral measurement, the band map); they report across the
@@ -220,6 +223,9 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._menu_action(file_menu, "Close &Project", self._close_project)
         self._menu_action(file_menu, "E&xit", self.close, "Ctrl+Q")
 
+        help_menu = self.menuBar().addMenu("&Help")
+        self._menu_action(help_menu, "&Manual", self._open_manual, "F1")
+
     def _menu_action(
         self, menu: QtWidgets.QMenu, text: str, slot: Any, shortcut: str | None = None
     ) -> QtGui.QAction:
@@ -276,6 +282,24 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         tabs.addTab(self._measure_panel, "Measure")
         tabs.addTab(self._process, "Process")
         tabs.addTab(self._knowledge, "Knowledge")
+        tabs.addTab(self._manual, "Manual")
+        # A single corner button that opens the Manual page for whichever Inspect
+        # tab is currently active - one entry point covering every tab, rather than
+        # wiring a "Manual" affordance into each of the 8 panel widgets individually.
+        self._tab_manual_btn = QtWidgets.QToolButton()
+        self._tab_manual_btn.setText("Manual")
+        self._tab_manual_btn.setToolTip("Open the Manual page for the current tab")
+        self._tab_manual_btn.clicked.connect(self._on_tab_manual_clicked)
+        tabs.setCornerWidget(self._tab_manual_btn, QtCore.Qt.Corner.TopRightCorner)
+        self._tab_manual_pages: dict[QtWidgets.QWidget, str] = {
+            self._metadata: "explorer.metadata",
+            self._provenance: "explorer.provenance",
+            self._diagnostics: "explorer.diagnostics",
+            self._experiment_panel: "explorer.experiment_tab",
+            self._briefing: "ai.scientific_briefing",
+            self._measure_panel: "explorer.measure_panel",
+            self._process: "workspace.overview",
+        }
         inspect = QtWidgets.QDockWidget("Inspect")
         inspect.setWidget(tabs)
         inspect.setFeatures(QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable)
@@ -368,6 +392,13 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         # Knowledge Center: "Learn more" from the Workspace or a recommendation opens the article.
         self._process.learnMoreRequested.connect(self._on_operation_learn_more)
         self._briefing.learnMoreRequested.connect(self._on_operation_learn_more)
+        # Manual: "How to use this" from the Workspace or a recommendation opens the page.
+        self._process.manualRequested.connect(self._on_operation_manual)
+        self._briefing.manualRequested.connect(self._on_operation_manual)
+        # Cross-links between Knowledge and Manual (each panel emits an id; the window
+        # is the only place that knows both panels, exactly like the deep-links above).
+        self._knowledge.manualPageRequested.connect(self._on_open_manual_page)
+        self._manual.knowledgeArticleRequested.connect(self._on_open_knowledge_article)
 
     # -- loading / refreshing -------------------------------------------------
 
@@ -640,6 +671,39 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             return
         self._inspect_tabs.setCurrentWidget(self._knowledge)
         self._knowledge.show_article(article.article_id)
+
+    def _on_operation_manual(self, step_id: str) -> None:
+        """Open the Manual page for an operation (from Workspace or AI)."""
+        page = page_for_operation(step_id)
+        if page is None:
+            return
+        self._inspect_tabs.setCurrentWidget(self._manual)
+        self._manual.show_page(page.page_id)
+
+    def _on_open_manual_page(self, page_id: str) -> None:
+        """Open a Manual page by id (a Knowledge article's 'How to use this' link)."""
+        self._inspect_tabs.setCurrentWidget(self._manual)
+        self._manual.show_page(page_id)
+
+    def _on_open_knowledge_article(self, article_id: str) -> None:
+        """Open a Knowledge article by id (a Manual page's 'See also' link)."""
+        self._inspect_tabs.setCurrentWidget(self._knowledge)
+        self._knowledge.show_article(article_id)
+
+    def _on_tab_manual_clicked(self) -> None:
+        """The Inspect tab widget's corner button: open the Manual page for this tab."""
+        page_id = self._tab_manual_pages.get(self._inspect_tabs.currentWidget())
+        if page_id is None:
+            self._inspect_tabs.setCurrentWidget(self._manual)
+            self._manual.focus_search()
+            return
+        self._inspect_tabs.setCurrentWidget(self._manual)
+        self._manual.show_page(page_id)
+
+    def _open_manual(self) -> None:
+        """Help > Manual (F1): the global, always-available entry point."""
+        self._inspect_tabs.setCurrentWidget(self._manual)
+        self._manual.focus_search()
 
     def _on_preview_requested(self, step_id: str, params: dict[str, Any]) -> None:
         """Run the operation on a copy and show a before/after preview.

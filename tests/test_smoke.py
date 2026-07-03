@@ -21,6 +21,7 @@ BACKEND_PACKAGES = [
     "snomniman.diagnostics",
     "snomniman.ai",
     "snomniman.knowledge",
+    "snomniman.manual",
     "snomniman.pipeline",
     "snomniman.viz",
     "snomniman.batch",

@@ -63,6 +63,8 @@ class ProcessingWorkspace(QtWidgets.QWidget):
     previewCancelled: QtCore.Signal = QtCore.Signal()
     #: Emitted by "Learn more" for the shown operation. Arg: step_id.
     learnMoreRequested: QtCore.Signal = QtCore.Signal(str)
+    #: Emitted by "How to use this operation" for the shown operation. Arg: step_id.
+    manualRequested: QtCore.Signal = QtCore.Signal(str)
     #: Emitted by "Save current history as recipe...".
     recipeSaveRequested: QtCore.Signal = QtCore.Signal()
     #: Emitted by "Load recipe...".
@@ -141,11 +143,19 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._detail.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
         self._body.addWidget(self._detail)
 
+        learn_row = QtWidgets.QHBoxLayout()
         self._learn_btn = QtWidgets.QPushButton("Learn more about this operation")
         self._learn_btn.setToolTip("Open the Knowledge Center article for this operation")
         self._learn_btn.setVisible(False)
         self._learn_btn.clicked.connect(self._on_learn_clicked)
-        self._body.addWidget(self._learn_btn, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
+        learn_row.addWidget(self._learn_btn)
+        self._manual_btn = QtWidgets.QPushButton("How to use this operation")
+        self._manual_btn.setToolTip("Open the Manual page for this operation")
+        self._manual_btn.setVisible(False)
+        self._manual_btn.clicked.connect(self._on_manual_clicked)
+        learn_row.addWidget(self._manual_btn)
+        learn_row.addStretch(1)
+        self._body.addLayout(learn_row)
 
         self._delete_recipe_btn = QtWidgets.QPushButton("Delete this recipe")
         self._delete_recipe_btn.setToolTip("Remove this recipe from the session and its file")
@@ -280,6 +290,7 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._build_inputs(option, input_candidates or {})
         self._build_form(option)
         self._learn_btn.setVisible(True)
+        self._manual_btn.setVisible(True)
         self._delete_recipe_btn.setVisible(False)
         self._preview_box.setVisible(False)
         self._preview_info.clear()
@@ -302,6 +313,7 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._clear_form()
         self._form_box.setVisible(False)
         self._learn_btn.setVisible(False)
+        self._manual_btn.setVisible(False)
         self._delete_recipe_btn.setVisible(True)
         self._preview_box.setVisible(False)
         self._preview_info.clear()
@@ -385,6 +397,7 @@ class ProcessingWorkspace(QtWidgets.QWidget):
         self._title.setText("No operation selected")
         self._detail.setText("Select an operation or recipe above to see what it does.")
         self._learn_btn.setVisible(False)
+        self._manual_btn.setVisible(False)
         self._delete_recipe_btn.setVisible(False)
         self._inputs_box.setVisible(False)
         self._form_box.setVisible(False)
@@ -478,6 +491,10 @@ class ProcessingWorkspace(QtWidgets.QWidget):
     def _on_learn_clicked(self) -> None:
         if self._step_id is not None:
             self.learnMoreRequested.emit(self._step_id)
+
+    def _on_manual_clicked(self) -> None:
+        if self._step_id is not None:
+            self.manualRequested.emit(self._step_id)
 
     def _on_delete_recipe_clicked(self) -> None:
         if self._step_id is not None and self._step_id.startswith(RECIPE_STEP_PREFIX):

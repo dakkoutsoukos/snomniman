@@ -824,6 +824,78 @@ tests pass (32 new: `test_pipeline_recipe.py`, `test_gui_recipe.py`); `ruff`,
 
 ---
 
+## ADR-0032 - The Manual: an integrated how-to-use-it counterpart to the Knowledge Center  [ACCEPTED]
+**Context.** User-commissioned product milestone. The Knowledge Center (ADR-0024)
+teaches *why* - the science behind a measurement, an operation, a diagnostic. As the
+app has grown (8 Inspect tabs, a dozen processing operations, recipes, batch,
+multi-format export, three report types) there was no in-app answer to *how* - which
+button does what, how a panel is used, what a workflow's steps are - only `/docs`,
+which is not reachable from the running app. This is pure product/UX infrastructure
+(no new scientific judgment, so it does not enter the Scientific Validation gate - the
+same class as the Phase 4 workflow-automation track), but a new top-level package is a
+genuine architecture addition (Rule 2/3), so it is recorded here rather than folded
+into an existing ADR.
+**Decision.** Add a second Qt-free leaf package, `snomniman.manual`, mirroring
+`snomniman.knowledge`'s architecture almost exactly: structured, queryable **pages**
+(frozen `ManualPage` value objects) rather than markdown. Each has a dot-namespaced id
+(`getting_started.*` / `explorer.*` / `workspace.*` / `ai.*` / `export.*` /
+`settings.*` / `shortcuts.*` / `troubleshooting.*`), required title/summary/purpose,
+and optional step-by-step instructions and cross-references (`related_pages`,
+`related_knowledge_articles`, `related_operations`, `related_diagnostics`). A
+`query.py` provides lookup/search-by-category/id-convention resolvers
+(`page_for_operation(step_id)`, mirroring `article_for_operation`), plus a
+relevance-ranked `search_pages` (title beats summary beats body). **Neither leaf
+package imports the other** - `manual`'s `related_knowledge_articles` and
+`knowledge`'s new, additive `related_manual_pages` field are plain string ids, exactly
+how `knowledge.Article.related_operations` already references `processing` step_ids
+without importing `processing`. A dedicated cross-package test
+(`tests/test_manual_knowledge_links.py`) is the one place allowed to import both, and
+checks every cross-link resolves in both directions - broken-link protection without a
+new dependency edge. The Explorer gains a **Manual** tab (next to Knowledge, in the
+same `_inspect_tabs`) with the same browse-tree + search + `QTextBrowser` structure as
+`KnowledgePanel`; deep-linking is symmetric - a Knowledge article's "How to use this"
+link opens the matching Manual page (`manualPageRequested` signal) and a Manual page's
+"See also" link opens the matching Knowledge article (`knowledgeArticleRequested`
+signal), both routed through the window exactly like the existing "Learn more"
+mechanism. Three entry points reach it: a "How to use this operation"/"How to use
+this" button next to every existing "Learn more" button (Processing Workspace, AI
+recommendation cards); one corner-widget button on the Inspect tab bar that opens the
+Manual page for whichever tab is currently active (one button + one `{tab: page_id}`
+dict, covering all 8 tabs without touching 8 panel files); and a global `Help > Manual`
+menu action (`F1`) that opens the Manual tab and focuses its search box. Individual
+toolbar buttons and dialogs do **not** get their own inline button in this increment -
+documented as deliberate future expansion (`docs/manual-system.md`), the same pattern
+`knowledge-center.md` uses for its own deferred "Learn more" sources. The same
+integrity guarantees as Knowledge apply: `integrity_problems()` (no dangling internal
+`related_pages`) and a no-drift test - **every registered `ProcessingStep` has a
+manual page** (`tests/test_manual.py`), mirroring the equivalent Knowledge test.
+**Alternatives.** (a) Fold how-to content into `knowledge.Article` as more optional
+fields - rejected: conflates two different questions (why vs. how) the project
+explicitly wants kept separate and separately searchable; a researcher who wants "how
+do I use Plane Level" should not have to read past the science to find it, and vice
+versa. (b) A generic in-app documentation browser rendering `/docs` markdown -
+rejected: not structured/queryable, not contextually linkable to a specific button or
+panel, and the request explicitly rules this out ("do not create a documentation
+browser"). (c) Let a `manual` package import `knowledge` (or vice versa) to resolve
+titles/validate links directly - rejected: an unnecessary new dependency edge between
+two packages that have no computational reason to depend on each other; the GUI layer
+(which legitimately depends on both) resolves titles for display, and a dedicated test
+validates cross-links, exactly the pattern already used for `related_operations`/
+`related_diagnostics` pointing into `processing`/`diagnostics`.
+**Consequences.** A researcher can search for any feature, get an operational
+how-to page, and reach the matching scientific background in one click, without
+leaving the application - "nothing more than one search away." Net new surface: one
+leaf package (`snomniman.manual`: `page.py`/`library.py`/`query.py`/`__init__.py`, 41
+initial pages), one additive field on `knowledge.Article`, one new GUI panel
+(`gui/manual.py`), and small additive wiring in `process.py`/`briefing.py`/
+`knowledge.py`/`window.py`. `core`, `processing`, `describe`, `diagnostics`, `ai`,
+`pipeline`, `viz`, and `Project`/`Measurement` persistence are all unchanged - this is
+presentation and teaching-content infrastructure only. 819 tests pass (28 new:
+`test_manual.py`, `test_manual_knowledge_links.py`, `test_gui_manual.py`); `ruff`,
+`mypy --strict`, and the Qt-free invariant green.
+
+---
+
 ## Decision Closure (OHD-1..9 resolved)
 
 | OHD | Topic | Resolution | ADR |

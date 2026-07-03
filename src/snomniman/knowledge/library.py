@@ -206,6 +206,7 @@ _CONCEPTS = (
             "that produced it, and you can never silently lose the ground truth."
         ),
         related_concepts=("concept.provenance",),
+        related_manual_pages=("troubleshooting.cannot_edit_raw_data",),
         references=(),
     ),
     Article(
@@ -224,6 +225,7 @@ _CONCEPTS = (
             "changes silently."
         ),
         related_concepts=("concept.immutable_measurements",),
+        related_manual_pages=("explorer.provenance",),
     ),
     Article(
         article_id="concept.histogram",
@@ -386,6 +388,7 @@ _CONCEPTS = (
             "concept.near_field_microscopy",
             "concept.interferogram",
         ),
+        related_manual_pages=("getting_started.opening_a_spectrum",),
         references=(_HUTH,),
     ),
     Article(
@@ -575,6 +578,7 @@ _CONCEPTS = (
             "concept.interferogram",
             "concept.spectral_axis",
         ),
+        related_manual_pages=("getting_started.opening_a_spectrum",),
         references=(_HUTH,),
     ),
     Article(
@@ -655,6 +659,7 @@ _CONCEPTS = (
         ),
         related_concepts=("concept.provenance", "concept.immutable_measurements"),
         related_operations=("image.plane_level", "image.line_flatten", "image.fix_zero"),
+        related_manual_pages=("workspace.recipes",),
     ),
     Article(
         article_id="concept.scientific_reporting",
@@ -710,6 +715,7 @@ _CONCEPTS = (
             "active dataset.",
         ),
         related_concepts=("concept.provenance", "concept.processing_recipe"),
+        related_manual_pages=("export.reports",),
     ),
 )
 
@@ -750,6 +756,7 @@ _OPERATIONS = (
         related_concepts=("concept.topography",),
         related_operations=("image.line_flatten",),
         related_diagnostics=("topography_slope", "rms_roughness"),
+        related_manual_pages=("workspace.image.plane_level",),
     ),
     Article(
         article_id="operation.image.line_flatten",
@@ -796,6 +803,7 @@ _OPERATIONS = (
         related_concepts=("concept.topography",),
         related_operations=("image.plane_level",),
         related_diagnostics=("rms_roughness",),
+        related_manual_pages=("workspace.image.line_flatten",),
         references=(_GWYDDION, _WSXM),
     ),
     Article(
@@ -848,6 +856,7 @@ _OPERATIONS = (
         related_concepts=("concept.provenance",),
         related_operations=("image.reference_normalize",),
         related_diagnostics=(),
+        related_manual_pages=("workspace.image.arithmetic",),
         references=(_GWYDDION,),
     ),
     Article(
@@ -889,6 +898,7 @@ _OPERATIONS = (
         related_concepts=("concept.topography",),
         related_operations=("image.plane_level", "image.line_flatten"),
         related_diagnostics=("rms_roughness",),
+        related_manual_pages=("workspace.image.fix_zero",),
         references=(_GWYDDION, _WSXM),
     ),
     Article(
@@ -932,6 +942,7 @@ _OPERATIONS = (
         related_concepts=("concept.phase", "concept.complex_signals"),
         related_operations=("image.reference_normalize", "image.phase_unwrap"),
         related_diagnostics=(),
+        related_manual_pages=("workspace.image.phase_offset",),
         references=(_KEILMANN, _OCELIC),
     ),
     Article(
@@ -973,6 +984,7 @@ _OPERATIONS = (
         related_concepts=("concept.complex_signals", "concept.near_field_microscopy"),
         related_operations=("image.reference_normalize",),
         related_diagnostics=(),
+        related_manual_pages=("workspace.image.normalize_amplitude",),
         references=(_KEILMANN,),
     ),
     Article(
@@ -1010,6 +1022,7 @@ _OPERATIONS = (
             "than revealing it.",
         ),
         related_concepts=("concept.complex_signals", "concept.phase"),
+        related_manual_pages=("workspace.image.reference_normalize",),
     ),
     Article(
         article_id="operation.image.phase_unwrap",
@@ -1041,6 +1054,7 @@ _OPERATIONS = (
             "Unwrapping a field with phase singularities/vortices, where the 1-D method streaks.",
         ),
         related_concepts=("concept.phase", "concept.complex_signals"),
+        related_manual_pages=("workspace.image.phase_unwrap",),
         references=(_GHIGLIA,),
     ),
     Article(
@@ -1101,6 +1115,7 @@ _OPERATIONS = (
             "image.phase_offset", "image.reference_normalize", "image.phase_unwrap"
         ),
         related_diagnostics=(),
+        related_manual_pages=("workspace.image.region_phase_reference",),
         references=(
             "Huth et al., Nano Lett. 12, 3973 (2012) - nano-FTIR phase referencing.",
             "Basov et al., Science 354, aag1992 (2016) - polariton phase maps.",
@@ -1163,6 +1178,7 @@ _OPERATIONS = (
         ),
         related_operations=("image.normalize_amplitude", "image.reference_normalize"),
         related_diagnostics=(),
+        related_manual_pages=("workspace.image.region_amplitude_reference",),
         references=(
             "Dai et al., Science 343, 1125 (2014) - hBN phonon polaritons.",
             "Woessner et al., Nature Materials 14, 421 (2015) - graphene polaritons.",
@@ -1187,6 +1203,7 @@ _OPERATIONS = (
             "recommendation for it. Use it before measurement/statistics to isolate a feature."
         ),
         related_concepts=("concept.immutable_measurements",),
+        related_manual_pages=("workspace.image.crop",),
     ),
     Article(
         article_id="operation.spectrum.fft_interferogram",
@@ -1253,6 +1270,7 @@ _OPERATIONS = (
             "resolution).",
         ),
         related_concepts=("concept.interferogram", "concept.apodization", "concept.point_spectrum"),
+        related_manual_pages=("workspace.spectrum.fft_interferogram",),
         references=(_GRIFFITHS, _MERTZ, _HARRIS, _HUTH),
     ),
 )
@@ -1282,6 +1300,7 @@ _DIAGNOSTICS = (
         ),
         related_operations=("image.plane_level",),
         related_concepts=("concept.topography",),
+        related_manual_pages=("explorer.diagnostics",),
     ),
     Article(
         article_id="diagnostic.rms_roughness",
@@ -1301,6 +1320,7 @@ _DIAGNOSTICS = (
         ),
         related_operations=("image.plane_level",),
         related_concepts=("concept.topography",),
+        related_manual_pages=("explorer.diagnostics",),
     ),
     Article(
         article_id="diagnostic.harmonic_decay",
@@ -1324,6 +1344,7 @@ _DIAGNOSTICS = (
         ),
         related_concepts=("concept.harmonics",),
         related_diagnostics=("harmonic_signal_noise",),
+        related_manual_pages=("explorer.diagnostics",),
     ),
     Article(
         article_id="diagnostic.harmonic_signal_noise",
@@ -1372,6 +1393,7 @@ _DIAGNOSTICS = (
         ),
         related_concepts=("concept.harmonics", "concept.complex_signals"),
         related_diagnostics=("harmonic_decay", "dynamic_range"),
+        related_manual_pages=("explorer.diagnostics",),
         references=(_IMMERKAER, _MORAN, _KEILMANN),
     ),
     Article(
@@ -1392,6 +1414,7 @@ _DIAGNOSTICS = (
             "are in arbitrary units until referenced).",
         ),
         related_concepts=("concept.complex_signals",),
+        related_manual_pages=("explorer.diagnostics",),
     ),
 )
 
@@ -1418,6 +1441,7 @@ _AI = (
         ),
         related_concepts=("concept.provenance",),
         related_diagnostics=("topography_slope", "harmonic_decay"),
+        related_manual_pages=("ai.scientific_briefing",),
     ),
     Article(
         article_id="ai.suggested_next_steps",
@@ -1437,6 +1461,7 @@ _AI = (
         ),
         related_concepts=("concept.provenance",),
         related_operations=("image.plane_level", "image.reference_normalize"),
+        related_manual_pages=("ai.suggested_next_steps",),
     ),
     Article(
         article_id="ai.deterministic_reasoning",
@@ -1456,6 +1481,7 @@ _AI = (
         ),
         related_concepts=("concept.provenance",),
         related_operations=("image.plane_level", "image.reference_normalize"),
+        related_manual_pages=("ai.reasoning_and_provenance",),
     ),
     Article(
         article_id="ai.why_ai_does_not_decide",
@@ -1475,6 +1501,7 @@ _AI = (
             "is preferable to an unjustified one."
         ),
         related_concepts=("concept.immutable_measurements", "concept.provenance"),
+        related_manual_pages=("ai.reasoning_and_provenance",),
     ),
 )
 

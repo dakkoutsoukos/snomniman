@@ -290,7 +290,9 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
 - **Implemented:** the **Measurement Explorer** - a Qt-free `ExplorerModel`
   presenter plus thin PyQtGraph/PySide6 widgets (image view, channel browser,
   metadata/provenance/diagnostics inspectors, the Scientific Briefing, the generic
-  Processing Workspace, interactive measurements, and the Knowledge Center) and the
+  Processing Workspace, interactive measurements, the Knowledge Center, and the
+  Manual - `snomniman.manual`, ADR-0032, the Knowledge Center's how-to-use-it
+  counterpart) and the
   `python -m snomniman.gui` entry point. It closes the research workflow (ADR-0027):
   a **File menu** for project/measurement open + save, and **exports** for the
   processed dataset (Zarr / GSF), measurement numbers (CSV / clipboard), and
@@ -437,7 +439,8 @@ both **extends an existing abstraction** (Rule 7). The mapping is fixed:
 | A deterministic **fact / metric** | `snomniman.diagnostics` | a new descriptor (ADR-0019) |
 | A deterministic **recommendation** | `snomniman.ai.reasoning` | a registered `ReasoningRule` (ADR-0023) |
 | A deterministic **operation** | `snomniman.processing` | a registered `ProcessingStep` (ADR-0021) |
-| Its **teaching** content | `snomniman.knowledge` | a curated `Article` (ADR-0024) |
+| Its **teaching** content (the science) | `snomniman.knowledge` | a curated `Article` (ADR-0024) |
+| Its **operational** content (how to use it) | `snomniman.manual` | a curated `ManualPage` (ADR-0032) |
 | An **export / persistence** path | `snomniman.io`, `snomniman.viz`, `snomniman.pipeline` | a writer the GUI calls; project bundles via `pipeline` over `io` (ADR-0027, **shipped**) |
 | A reusable **processing workflow** | `snomniman.pipeline` | a `Recipe` (a projection of the provenance DAG, not a new engine) (ADR-0031, **shipped**) |
 | A deterministic **report/document** | `snomniman.gui` (`report.py`) | a `ReportModel` composing existing facts (no ADR, **shipped**, Phase 4C) |

@@ -185,8 +185,27 @@ rather than repeating them.
 > hyperspectral reader exists yet - 5C stays blocked on real data). No AI
 > reasoning, spectral diagnostics, resonance fitting, or vendor readers -
 > deliberately out of scope.
-> 791 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
-> (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
+> **The SNOMNIMAN Manual is shipped** (2026-07-03, ADR-0032, user-commissioned): a
+> second Qt-free leaf package, `snomniman.manual`, the software counterpart to the
+> Knowledge Center - it teaches *how* to use SNOMNIMAN (every panel, button,
+> operation, workflow) exactly as Knowledge teaches *why* the science works,
+> never duplicating one another. Structurally a near-mirror of `knowledge`
+> (structured `ManualPage`s, dot-namespaced ids, a `query.py` with a
+> relevance-ranked `search_pages`), but **with no import edge between the two
+> leaf packages** - cross-links (`related_manual_pages` on `Article`,
+> `related_knowledge_articles` on `ManualPage`) are plain string ids, checked by
+> a dedicated cross-package test rather than an import, exactly how
+> `related_operations` already references `processing` step_ids without
+> importing `processing`. A new **Manual** Explorer tab sits beside Knowledge;
+> three entry points reach it - a "How to use this" button next to every
+> existing "Learn more" button (Processing Workspace, AI recommendations), one
+> corner-widget button on the Inspect tab bar that opens the right page for
+> whichever tab is active, and a global `Help > Manual` (`F1`) action that
+> focuses search - so nothing in SNOMNIMAN is more than one search away.
+> Individual toolbar-button/dialog-level entry points are a documented,
+> deliberate deferral (revisit only if real usage shows the three entry points
+> above aren't enough), not a gap. 819 tests pass; `ruff`, `mypy --strict`, and
+> the Qt-free invariant (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
 > LLM only *explains*), grounded entirely in the deterministic layers
@@ -289,6 +308,7 @@ gui            -> consumes all backend layers (PySide6 + PyQtGraph)
 batch          -> pipeline, io, core
 ai             -> describe, diagnostics, core  (AI Scientist: Briefing + Suggested Next Steps via a deterministic Reasoning Rule Engine)
 knowledge      -> (nothing internal)        (Knowledge Center: curated, queryable scientific articles; a leaf consumed by gui/future-ai)
+manual         -> (nothing internal)        (the Manual: curated, queryable how-to-use-it pages; a leaf consumed by gui; no import edge with knowledge)
 pipeline       -> processing, core         (provenance DAG, replay, serialization, version capture)
 describe       -> processing, core         (Scientific Description API: structured descriptors; projection, no computation)
 diagnostics    -> processing, core         (Scientific Diagnostics Engine: deterministic computed facts; sibling of describe)
@@ -336,6 +356,14 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
   in context ("Learn more") and a future AI narrator grounds explanations in. A Qt-free leaf
   (no internal deps); content held to the project maxim; a no-drift test requires an article
   per registered operation. See `docs/knowledge-center.md` (ADR-0024).
+- `snomniman.manual` - the Manual: curated, structured, queryable **how-to-use-it pages**
+  (getting started, one per Explorer panel, the Processing Workspace + one per registered
+  operation, the AI Scientist as seen in the UI, export/report workflows, settings,
+  shortcuts, troubleshooting) the Explorer surfaces in context ("How to use this"). A
+  Qt-free leaf, structurally a near-mirror of `knowledge` - **no import edge between the
+  two** (cross-links are plain string ids, checked by a dedicated cross-package test); a
+  no-drift test requires a page per registered operation. See `docs/manual-system.md`
+  (ADR-0032).
 - `snomniman.viz` - display-ready render data + matplotlib static export.
 - `snomniman.batch` - Phase 4B: replays one `pipeline.Recipe` across many
   `Measurement`s, independently, via the unchanged `apply_recipe` (no second
@@ -560,6 +588,7 @@ surface automatically. See `docs/roadmap.md` for the current priority order.
 | `docs/harmonic-ranking-analysis.md` | **The first Scientific-Validation study to reach Outcome 1** (validate-and-implement); ADR-0026. Can the signal-vs-noise boundary across optical harmonics be drawn deterministically from one measurement? Candidate diagnostics (spatial coherence - lag-1 autocorrelation, Moran null - + a single-image Immerkaer SNR), analytical + synthetic + **two-sided real-data** validation. Conclusion: the signal/noise **classification** is defensible and shipped in `diagnostics` (meets Beta Readiness M4); the literal **"informativeness ranking / best-harmonic recommendation" is rejected** (the metrics conflate near-field with far-field background) - so a fact ships, no rule does. Discharges ADR-0019's SNR deferral. |
 | `docs/reference-normalization-analysis.md` | **Scientific-Validation study, Outcome 2 (DEFERRED), no code** (Candidate 3). When should the engine *recommend* `image.reference_normalize`? Distinguishes possible / appropriate / strongly-recommended. The *decline* conditions (redundant / weak / noisy / empty reference) are defensible and validated (reusing the ADR-0026 primitive + a redundancy metric); the *positive* "appropriate" branch cannot be validated - all real data is PsHet "Self-Reference Off" with `R-` channels that are near-copies of the signal (`O/R ~ 1`, normalization erases contrast), and appropriateness is experimental-design metadata the array lacks. Also flags that the existing flat-0.85 `ReferenceNormalizeRule` is unvalidated and over-recommends - revisit (gate or withdraw). |
 | `docs/knowledge-center.md` | **Knowledge Center** (`snomniman.knowledge`; ADR-0024): a living, in-app scientific knowledge base - philosophy (teach the science while performing it; ground the AI), architecture (a Qt-free leaf), the structured `Article` model, the Explorer panel + "Learn more" deep-links, AI integration, the integrity/no-drift guarantees, and future expansion. |
+| `docs/manual-system.md` | **The Manual** (`snomniman.manual`; ADR-0032): the Knowledge Center's how-to-use-it counterpart - philosophy (how vs. why, never duplicating each other), architecture (a second Qt-free leaf, deliberately **no import edge** with `knowledge` - cross-links are plain string ids, checked by a dedicated cross-package test), the structured `ManualPage` model, ranked search, the Explorer **Manual** tab + three context-sensitive entry points (per-operation buttons, an Inspect-tab corner button, `Help > Manual`/F1), the integrity/no-drift guarantees, the honest Settings page, the documented toolbar/dialog-level scope boundary, and future expansion. |
 | `docs/point-spectrum-discovery.md` | **Point Spectrum Discovery** - the second-modality analogue of `measurement-discovery.md`: what the real point-spectroscopy sample actually is (a 100-position line of spectra, not one isolated spectrum), why `DataKind.SPECTRUM`/`LINE_SCAN` + `Capability.SPECTRAL`/`SPATIAL_1D` (already anticipated in `data-model.md`) needed **no redesign**, the one additive `Metadata` field (`SpectralInfo`), the diagnostics gating bug the new modality surfaced and fixed, and the documented GUI scope boundary (image-only affordances decline gracefully for a spectral measurement). |
 | `docs/phase4-workflow-automation.md` | **Phase 4 - Workflow Automation (Research & Design)** - the user-commissioned blueprint for automating repeated processing across a multi-scan session: a workflow survey (Gwyddion/MountainsMap/WSxM/ImageJ/neaPLOT), the Recipe design (a re-bindable projection of the provenance DAG, not a second engine - Option B, confirmed and implemented as ADR-0031), the Phase 4A/4B/4C roadmap (Recipes -> Batch -> Reporting), and the explicit deferrals (auto-recipe-selection stays validation-gated; no scripting/macro language). Phase 4A (Recipes, ADR-0031), 4B (Batch), and 4C (Reporting) are all now **shipped**, completing the workflow automation track (Define -> Execute -> Document). |
 | `docs/phase5-spectral-nanoftir.md` | **Phase 5 - Spectral & nano-FTIR Support (Research & Design; the authoritative Phase 5 planning artifact, superseding the stale `roadmap.md` placeholder of the same name)** - a workflow survey (W1-W9, hyperspectral mapping/interferogram FFT/spectral comparison/resonance ID ranked by scientific importance), the architecture analysis (the data model already handles hyperspectral + interferometric capabilities with one additive `Capability`/`Metadata` field each - no redesign), the data model design for `INTERFEROGRAM`/`HYPERSPECTRAL`, and the four-milestone roadmap (5A Processing Foundations, 5B Hyperspectral Viewer, 5C Real-Data Readers - `(user)`-blocked, 5D Spectral Diagnostics - validation-gated). **5A** (`processing.spectrum.fft_interferogram`; sec 6.1 implementation note) and **5B** (`HyperspectralView`, `ExplorerModel.is_hyperspectral`; sec 6.2 implementation note) are now **shipped** exactly per this design, each with one genuine implementation-time finding not anticipated by the design (5A: apodization windows must center on the ZPD sample, not the array; 5B: the Processing Workspace's Preview path crashed for any non-2-D-image focus channel, fixed with a capability-aware dispatch). 5C stays `(user)`-blocked on real sample data; 5D stays a Scientific Validation queue candidate. |

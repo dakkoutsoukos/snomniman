@@ -3790,3 +3790,186 @@ to a directly-testable core" convention (`_prompt_report_path`, `_write_report`)
 - Run the Beta Readiness user-testing protocol with the now-complete
   spectroscopy workflow available alongside the imaging one - real friction
   (not further internal guessing) should order whatever comes next.
+
+---
+
+## 2026-07-02g - Phase 5C revisit: data-validation gate re-run, still hard-blocked (no code)
+
+User-commissioned task: "Phase 5C - Real-Data Spectral Readers & Validation,"
+scoped explicitly to be **driven by real representative data, not assumptions**
+- implement real interferogram/hyperspectral readers only if representative
+files actually exist, and to "state that conclusion explicitly and stop rather
+than inventing unsupported readers" if they don't. This session is that
+validation gate, re-run in full. No code, no tests, no ADR resulted - the
+conclusion itself is the deliverable, exactly as `scientific-validation.md`'s
+"honest deferral is success" principle and this doc's own precedent
+(`phase-wrapping-analysis.md`, `reference-normalization-analysis.md`) treat a
+justified stop.
+
+### Completed
+- **Full data inventory, re-run from scratch (not assumed from prior docs).**
+  Enumerated every file in `SNOM Sample Files/2026-06-16 14928/` (four
+  measurement directories, git-ignored) and read each `.txt` parameter-file
+  header directly:
+  - Three **imaging** runs (`Scan: 2D (PsHet)`) - `190234` (150x150 px, 10x10
+    um), `205123` (400x300 px, 2x1.5 um, a zoomed re-scan), `221115` (400x300
+    px) - each a 30-channel GSF directory (`Z` + `M0-5`/`O0-5` amplitude+phase,
+    `<name> raw.gsf`). These are the existing Phase 1 golden fixtures.
+  - One **point-spectroscopy** run (`212518`, `Scan: Point Spectroscopy
+    (PsHet)`) - 100 positions x 201 wavenumbers, a GSF directory with a
+    tabular `.txt` header (`Row Column Omega Wavenumber Z O0A O0P ...`) and an
+    extra `M.gsf` position-index file. Confirmed **directly from the header
+    grammar** (no `opd`/mirror-position column, a direct `Wavenumber` sweep)
+    that this is the already-shipped point-spectroscopy `LINE_SCAN` fixture,
+    not an interferogram - it exercises `SPECTRAL`+`SPATIAL_1D`, not
+    `INTERFEROMETRIC`.
+  - A repo-wide search (`find`/grep for `interfer*`, `hyperspec*`, `cube*`,
+    plus a manual diff of all four `.txt` headers) turned up **no** file with
+    an OPD/mirror-position axis and **no** file with both a spatial and a
+    spectral axis together. The inventory is unchanged from
+    `phase5-spectral-nanoftir.md` sec 6.3's original blocker - no new sample
+    data has arrived since Phase 5B.
+- **Architecture re-validation against real data (re-run, not assumed).** Ran
+  the full suite: **791 passed**, unchanged, including the real-data golden
+  tests in `tests/test_io_neasnom_spectrum.py` that already exercise the one
+  real spectral fixture (the PSP `LINE_SCAN`) through the reader registry,
+  `Dataset`, `describe`, `diagnostics`, the AI Briefing, and the GUI model, and
+  (via the wider suite) `Measurement`/`Project`/`ExperimentModel`/
+  `ReportModel`. Confirms Section 3's architecture verdict still holds with
+  zero change required for the real data that does exist.
+- **Explicit deferral, per the task's own instruction.** Because no
+  interferogram or hyperspectral-cube export exists anywhere in the
+  repository, implementing either reader now would mean inventing an
+  unvalidated table format from assumption - exactly what Rule 6 and this
+  task's brief both forbid. No reader was written.
+
+### Decisions
+- **No architectural decisions changed; no ADR.** This session neither
+  implements nor redesigns anything - it re-confirms a standing blocker with
+  fresh evidence rather than carrying it forward on the strength of the prior
+  session's word alone.
+- **Phase 5C remains hard-blocked, `(user)`-gated**, unchanged from
+  `phase5-spectral-nanoftir.md` sec 6.3's original assessment. The unblock
+  condition is unchanged: a real vendor interferogram export and/or
+  hyperspectral cube export must arrive before 5C can start.
+
+### Issues Found
+- None (this was a validation/inventory pass, not a code change). No
+  regression: the full suite, `ruff`, and the Qt-free invariant are all
+  unaffected since no source files changed.
+
+### Documentation Updated
+- `docs/phase5-spectral-nanoftir.md` sec 6.3: appended a "Revisit note" dated
+  2026-07-02g recording the re-run inventory table and the architecture
+  re-validation, without rewriting the original research content.
+- `NEXT.md`: refreshed the Phase 5C bullet and the top summary line with the
+  revisit's conclusion and date.
+- `LOG.md` (this entry).
+- `CLAUDE.md`: no change needed (the existing `phase5-spectral-nanoftir.md`
+  hierarchy-table row already accurately says "5C stays `(user)`-blocked on
+  real sample data," which this session reconfirmed rather than altered).
+
+### Next Recommended Actions
+Unchanged from the 2026-07-02f entry: Phase 5C stays blocked until a real
+interferogram or hyperspectral-cube vendor export arrives `(user)`; Phase 5D's
+diagnostic-fact half can be validated synthetically now if prioritized; the
+Beta Readiness user-testing protocol remains the strongest source of what to
+build next. Do not re-run this same inventory again on assumption alone -
+re-check `SNOM Sample Files/` directly the next time Phase 5C is picked up, in
+case new data has arrived since this session.
+
+---
+
+## 2026-07-03 - The SNOMNIMAN Manual (ADR-0032)
+
+User-commissioned product milestone: a second, structured, in-app teaching
+system answering "how do I use this?" - the software counterpart to the
+Knowledge Center's "why does this work?". Designed and implemented in one
+session; no scientific-validation gate needed (pure product/UX
+infrastructure, the same class as the Phase 4 workflow-automation track).
+
+### Completed
+- **`snomniman.manual`** - a second Qt-free leaf package, architecturally a
+  near-mirror of `snomniman.knowledge`: `page.py` (`ManualPage` frozen
+  dataclass, eight categories - `getting_started`/`explorer`/`workspace`/
+  `ai`/`export`/`settings`/`shortcuts`/`troubleshooting` - `ManualError`),
+  `library.py` (41 curated `ManualPage` entries), `query.py` (`all_pages`/
+  `find_page`/`get_page`/`pages_in`/`page_for_operation`/`search_pages`/
+  `integrity_problems`), `__init__.py`. `search_pages` is relevance-ranked
+  (title beats summary beats step-by-step body), the "search intelligently"
+  requirement.
+- **Cross-linking without a new dependency edge.** `manual` and `knowledge`
+  do not import each other - both stay leaves. `ManualPage.
+  related_knowledge_articles` and a new additive `Article.
+  related_manual_pages` field are plain string ids, exactly how
+  `Article.related_operations` already references `processing` step_ids
+  without importing `processing`. Populated the 12 operation articles/pages
+  1:1, the 4 AI articles/3 AI pages, the 5 diagnostic articles (all point at
+  `explorer.diagnostics`), and several `concept.*` articles. A new
+  `tests/test_manual_knowledge_links.py` is the one place allowed to import
+  both packages together; it checks every cross-link resolves in both
+  directions.
+- **`gui/manual.py` - `ManualPanel`**, a close structural copy of
+  `KnowledgePanel` (search box + category tree + `QTextBrowser`), with two
+  URL schemes: `snom-page:` navigates internally (`related_pages`);
+  `snom-knowledge:` emits `knowledgeArticleRequested` for the window to
+  handle (a Manual page never navigates into Knowledge itself). Public
+  `show_page(id)` / `focus_search()`.
+- **`gui/knowledge.py`** gained the reverse link: `related_manual_pages`
+  render as a new "How to use this" line via `snom-manual:` anchors, emitting
+  a new `manualPageRequested` signal.
+- **Three context-sensitive entry points**, all routed through `window.py`
+  (child panels never know about each other - the established decoupled-
+  signal pattern):
+  1. A "How to use this operation"/"How to use this" button next to every
+     existing "Learn more" button (`process.py`'s operation detail,
+     `briefing.py`'s recommendation cards) - new `manualRequested =
+     Signal(str)` on each, resolved via `page_for_operation`.
+  2. One corner-widget "Manual" button on the Inspect tab bar
+     (`QTabWidget.setCornerWidget`) that opens the page for whichever of the
+     8 tabs is currently active, via one `{tab_widget: page_id}` dict - no
+     per-panel wiring needed.
+  3. A global `Help > Manual` menu action, shortcut `F1`, opening the Manual
+     tab and focusing its search box (`ManualPanel.focus_search()`) - the
+     literal "nothing more than one search away" requirement.
+- **Explicit, documented scope boundary**: individual toolbar buttons (Single/
+  Compare presets/Contact sheet/Export figure...) and dialogs do not get
+  their own inline button in this increment; they are fully documented as
+  Manual pages, reachable via search/tree/the corner button, not via an
+  inline control - the same "deliberate deferral, not a gap" pattern
+  `knowledge-center.md` uses for its own future "Learn more" sources.
+- **Honest content, not padded**: the `settings.overview` page states plainly
+  that SNOMNIMAN has no configurable settings/preferences today (confirmed by
+  grep: zero `QSettings`/Preferences dialog anywhere in the codebase) rather
+  than inventing a feature - the same maxim the Knowledge Center is held to.
+
+### Decisions
+- **ADR-0032** - the full design (package split, no-import cross-linking,
+  three entry points, the deferred-toolbar-button scope boundary). See
+  `docs/decisions.md`.
+
+### Issues Found
+- None (a from-scratch subsystem addition; no existing code changed
+  behavior other than the additive `Article.related_manual_pages` field and
+  the new buttons/menu/tab, all covered by regression tests).
+
+### Documentation Updated
+- New `docs/manual-system.md` (philosophy, architecture, the page model,
+  search/ranking, the cross-linking mechanism, Explorer integration,
+  integrity guarantees, the honest Settings example, the explicit scope
+  boundary, future expansion).
+- `docs/decisions.md`: ADR-0032.
+- `docs/architecture.md`: the Explorer prose and the "how do I find X" lookup
+  table now mention `snomniman.manual` alongside `snomniman.knowledge`.
+- `CLAUDE.md`: module responsibilities bullet, dependency-graph line, the
+  Documentation Hierarchy table, and a new project-status paragraph.
+- `NEXT.md`, `LOG.md` (this entry).
+
+### Next Recommended Actions
+Watch real usage (the Beta Readiness user-testing protocol remains the
+strongest source of priority): if researchers frequently reach for
+per-toolbar-button/dialog help that the three existing entry points don't
+cover well, wire the deferred inline buttons then rather than guessing ahead.
+Otherwise the Manual grows the same way Knowledge does - one page per new
+panel/operation/export workflow, enforced by the no-drift test for
+operations.

@@ -45,7 +45,9 @@ class Article:
     ``ai.suggested_next_steps``). Only ``title`` / ``summary`` / ``explanation`` are
     required; an article fills the optional fields only where it has something
     accurate to say. Cross-references: ``related_concepts`` are article ids,
-    ``related_operations`` are step_ids, ``related_diagnostics`` are diagnostic keys.
+    ``related_operations`` are step_ids, ``related_diagnostics`` are diagnostic keys,
+    ``related_manual_pages`` are :mod:`snomniman.manual` page ids (a plain string id,
+    not an import - see that package's docstring for why).
     """
 
     article_id: str
@@ -60,6 +62,7 @@ class Article:
     related_concepts: tuple[str, ...] = ()
     related_operations: tuple[str, ...] = ()
     related_diagnostics: tuple[str, ...] = ()
+    related_manual_pages: tuple[str, ...] = ()
     references: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:

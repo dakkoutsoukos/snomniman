@@ -24,8 +24,10 @@ from snomniman.knowledge import (
     find_article,
     search_articles,
 )
+from snomniman.manual import find_page
 
 _LINK = "snom-article:"
+_MANUAL_LINK = "snom-manual:"
 _CATEGORY_LABELS = {
     CONCEPT: "Concepts",
     OPERATION: "Operations",
@@ -37,6 +39,9 @@ _CATEGORY_ORDER = (CONCEPT, OPERATION, DIAGNOSTIC, AI)
 
 class KnowledgePanel(QtWidgets.QWidget):
     """Browse, search, and read interconnected scientific articles inside the app."""
+
+    #: A related-manual-page link was clicked; the window opens it in the Manual.
+    manualPageRequested: QtCore.Signal = QtCore.Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -134,6 +139,8 @@ class KnowledgePanel(QtWidgets.QWidget):
         target = url.toString()
         if target.startswith(_LINK):
             self.show_article(target[len(_LINK):])
+        elif target.startswith(_MANUAL_LINK):
+            self.manualPageRequested.emit(target[len(_MANUAL_LINK):])
 
     def _select_in_tree(self, article_id: str) -> None:
         for i in range(self._tree.topLevelItemCount()):
@@ -172,6 +179,9 @@ def _article_html(article: Article) -> str:
     related = _related_links(article)
     if related:
         parts.append("<h4>Related</h4><p>" + " &nbsp;|&nbsp; ".join(related) + "</p>")
+    how_to = _related_manual_links(article)
+    if how_to:
+        parts.append("<h4>How to use this</h4><p>" + " &nbsp;|&nbsp; ".join(how_to) + "</p>")
     if article.references:
         parts.append("<h4>References</h4>")
         parts.append("<ul>" + "".join(f"<li>{_esc(r)}</li>" for r in article.references) + "</ul>")
@@ -193,6 +203,18 @@ def _related_links(article: Article) -> list[str]:
         target = find_article(article_id)
         if target is not None:
             links.append(f'<a href="{_LINK}{article_id}">{_esc(target.title)}</a>')
+    return links
+
+
+def _related_manual_links(article: Article) -> list[str]:
+    # snomniman.knowledge itself never imports snomniman.manual (both stay leaf
+    # packages - see docs/manual-system.md); this GUI presentation module may import
+    # both, purely to render a readable title instead of a raw id.
+    links: list[str] = []
+    for page_id in article.related_manual_pages:
+        page = find_page(page_id)
+        title = page.title if page is not None else page_id
+        links.append(f'<a href="{_MANUAL_LINK}{page_id}">{_esc(title)}</a>')
     return links
 
 

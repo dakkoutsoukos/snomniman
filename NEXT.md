@@ -30,7 +30,26 @@ vertical slice (second data modality); Phase 3C region-aware ops; Phase 3B
 scientific analysis toolbox; Phase 3A core operations; Phase 2C multi-input/
 arithmetic; Phase 2B experiment analysis; Phase 2A multi-measurement projects;
 complete research workflow. Governance: the Scientific Validation Phase + Beta
-Readiness Review remain the planning systems)
+Readiness Review remain the planning systems). **2026-07-02g (no ship, revisit
+only):** re-ran Phase 5C's data-validation gate - re-inventoried all real
+sample data plus a repo-wide search for new interferogram/hyperspectral files;
+found none; reconfirmed the architecture holds against real data (791 tests
+green, incl. the real-PSP-data golden spectral tests). Phase 5C stays
+hard-blocked, unchanged; no code/ADR. See `LOG.md` entry "2026-07-02g".
+**2026-07-03 (shipped, user-commissioned, ADR-0032):** the **SNOMNIMAN
+Manual** - a second Qt-free leaf package, `snomniman.manual`, the software
+counterpart to the Knowledge Center (teaches *how*, never *why*). Structured
+`ManualPage`s (41 initial, one per registered operation plus Explorer panels/
+AI/export/settings/shortcuts/troubleshooting), cross-linked to Knowledge by
+plain string id with **no new import edge** between the two leaf packages (a
+dedicated cross-package test checks both link directions instead). A new
+**Manual** Explorer tab, reachable via a "How to use this" button next to
+every existing "Learn more" button, one corner-widget button that opens the
+right page for whichever Inspect tab is active, and a global `Help > Manual`
+(`F1`) entry point that focuses search - "nothing more than one search
+away." Individual toolbar-button/dialog-level entry points are a documented,
+deliberate deferral, not a gap. 819 tests green. See `docs/manual-system.md`,
+`LOG.md` entry "2026-07-03".
 
 ---
 
@@ -108,13 +127,18 @@ decision - only additive `Capability`/`Metadata` fields and new, precedented mod
   focus channel, incl. `spectrum.fft_interferogram`) along the way. Validated
   against a synthetic hyperspectral cube (Rule 6) + a manual visual check via a
   live screenshotted window. See `LOG.md` entry "2026-07-02f".
-- **Phase 5C - Real-Data Readers. HARD-BLOCKED `(user)`.** No interferometric
-  nano-FTIR or hyperspectral cube export exists anywhere in the repository today
-  (only 3 imaging + 1 point-spectroscopy measurement are present) - needs a real
-  vendor sample file to reverse-engineer the format from (Rule 6), exactly as
-  blocked Phase 1 and the point-spectroscopy vertical slice until real samples
-  arrived. This is the load-bearing blocker for turning either 5A or 5B into a
-  real researcher workflow against actual instrument data.
+- **Phase 5C - Real-Data Readers. HARD-BLOCKED `(user)`, revisited and
+  reconfirmed (2026-07-02g).** A full re-inventory of `SNOM Sample Files/` plus a
+  repo-wide search found no new sample data since 5B: still exactly 3 imaging
+  (`2D (PsHet)`) + 1 point-spectroscopy (`Point Spectroscopy (PsHet)`, a direct
+  wavenumber sweep, **not** interferometric) measurement, no `opd`-domain
+  interferogram export, no hyperspectral-cube export. Re-ran the full suite (791
+  tests, incl. the real-PSP-data golden spectral tests) to reconfirm the
+  architecture still holds against real data with zero change needed. No reader
+  was implemented (nothing to validate one against - Rule 6); no code/ADR
+  resulted. See `docs/phase5-spectral-nanoftir.md` sec 6.3 "Revisit note" and
+  `LOG.md` entry "2026-07-02g". This remains the load-bearing blocker for turning
+  either 5A or 5B into a real researcher workflow against actual instrument data.
 - **Phase 5D - Spectral Diagnostics & Reasoning.** The *fact* half (a resonance/
   peak-identification diagnostic, reusing `viz.measure.analyze_profile` verbatim
   - already proven generic enough for a hyperspectral pixel/ROI curve, not just
@@ -259,6 +283,12 @@ The canonical queue lives in `docs/scientific-validation.md` Section 7.
   measurement "snap to pixel" / numeric-entry mode; free-form comparison layout; "Learn
   more" deep-links from diagnostics rows / harmonics / provenance / metadata (mechanism
   already generic).
+- **Manual - toolbar/dialog-level entry points (deliberately deferred, ADR-0032).**
+  Individual toolbar buttons (Single/Compare presets/Contact sheet/Export figure...) and
+  dialogs (Save/Open/Batch) do not yet have their own inline "How to use this" button -
+  they are documented Manual pages reachable via search/tree/the corner-widget button,
+  just not an inline control. Revisit only if real usage shows the three existing entry
+  points (per-operation buttons, the tab corner button, `Help > Manual`/F1) aren't enough.
 
 ---
 
