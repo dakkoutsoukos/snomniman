@@ -98,21 +98,25 @@ widget): a category tree, a search box, and a page view (a `QTextBrowser`) whose
 `related_pages` links are clickable and navigate within the Manual, and whose
 `related_knowledge_articles` links jump into the Knowledge tab.
 
-Three entry points, all routed through the window (child panels never know about each
-other - the same decoupled-signal pattern the Knowledge Center established):
+The tab itself is the primary entry point - like Knowledge, Manual needs no special
+affordance to reach: click the tab. Two additional entry points route through the
+window (child panels never know about each other - the same decoupled-signal pattern
+the Knowledge Center established) for the moments a researcher is already looking at
+something specific:
 - **"How to use this operation" / "How to use this"** - a second button placed next to
   every existing "Learn more" button (the Processing Workspace's operation detail, an
   AI Scientist recommendation card). Each panel defines its own
   `manualRequested = Signal(str)` emitting a `step_id`; the window resolves it via
   `page_for_operation` and switches to the Manual tab.
-- **The Inspect-tab corner button** - one small "Manual" button
-  (`QTabWidget.setCornerWidget`) that opens the page for whichever Inspect tab is
-  currently active, via a single `{tab_widget: page_id}` dict covering all 8 tabs.
-  This is what makes "every major panel has a way in" tractable without touching each
-  of the 8 panel widgets individually.
 - **`Help > Manual` (`F1`)** - the global, always-available entry point: opens the
   Manual tab and focuses its search box (`ManualPanel.focus_search()`). This is the
   literal implementation of "nothing is more than one search away."
+
+A per-tab "open the Manual page for whatever I'm looking at" corner button was tried
+and removed (user feedback, 2026-07-03): a permanent button sitting next to a tab whose
+sole purpose was to switch to that same tab was redundant with just clicking it, and
+cluttered the tab bar. The Manual tab's own tree/search remains the way to reach a
+specific panel's page directly.
 
 **Cross-linking (both directions).** A Knowledge article's "How to use this" line
 (rendered from `related_manual_pages`) emits `KnowledgePanel.manualPageRequested`; a
@@ -150,11 +154,11 @@ then - not before.
 Individual toolbar buttons (Single / Compare presets / Contact sheet / Export
 figure...) and dialogs (Save/Open/Batch) do **not** get their own inline "How to use
 this" button in this increment - wiring roughly ten more signal/handler pairs for
-marginal individual value was not worth it against the three entry points above,
-which already reach every major surface. They are fully documented as Manual pages
+marginal individual value was not worth it against the entry points above, which
+already reach every major surface. They are fully documented as Manual pages
 (`explorer.comparison_mode`, `export.figure`, `workspace.batch`, ...) and reachable
-via search, the tree, or the corner-widget button for their owning tab - just not via
-an inline button on the control itself. This mirrors how `knowledge-center.md` lists
+via search or the tree - just not via an inline button on the control itself. This
+mirrors how `knowledge-center.md` lists
 its own deferred "Learn more" sources (diagnostics rows, harmonics, provenance) as
 future expansion rather than treating the initial set as exhaustive.
 

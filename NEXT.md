@@ -43,13 +43,15 @@ counterpart to the Knowledge Center (teaches *how*, never *why*). Structured
 AI/export/settings/shortcuts/troubleshooting), cross-linked to Knowledge by
 plain string id with **no new import edge** between the two leaf packages (a
 dedicated cross-package test checks both link directions instead). A new
-**Manual** Explorer tab, reachable via a "How to use this" button next to
-every existing "Learn more" button, one corner-widget button that opens the
-right page for whichever Inspect tab is active, and a global `Help > Manual`
-(`F1`) entry point that focuses search - "nothing more than one search
-away." Individual toolbar-button/dialog-level entry points are a documented,
-deliberate deferral, not a gap. 819 tests green. See `docs/manual-system.md`,
-`LOG.md` entry "2026-07-03".
+**Manual** Explorer tab is the primary entry point (click it, like
+Knowledge); a "How to use this" button next to every existing "Learn more"
+button and a global `Help > Manual` (`F1`) entry point that focuses search
+reach it directly from context - "nothing more than one search away." (A
+permanent per-tab corner button was tried and removed the same day on user
+feedback - redundant with clicking the tab it sat on.) Individual
+toolbar-button/dialog-level entry points are a documented, deliberate
+deferral, not a gap. 818 tests green. See `docs/manual-system.md`, `LOG.md`
+entries "2026-07-03"/"2026-07-03b".
 
 ---
 
@@ -286,9 +288,9 @@ The canonical queue lives in `docs/scientific-validation.md` Section 7.
 - **Manual - toolbar/dialog-level entry points (deliberately deferred, ADR-0032).**
   Individual toolbar buttons (Single/Compare presets/Contact sheet/Export figure...) and
   dialogs (Save/Open/Batch) do not yet have their own inline "How to use this" button -
-  they are documented Manual pages reachable via search/tree/the corner-widget button,
-  just not an inline control. Revisit only if real usage shows the three existing entry
-  points (per-operation buttons, the tab corner button, `Help > Manual`/F1) aren't enough.
+  they are documented Manual pages reachable via search/tree, just not an inline
+  control. Revisit only if real usage shows the existing entry points (the tab itself,
+  per-operation buttons, `Help > Manual`/F1) aren't enough.
 
 ---
 

@@ -3973,3 +3973,44 @@ cover well, wire the deferred inline buttons then rather than guessing ahead.
 Otherwise the Manual grows the same way Knowledge does - one page per new
 panel/operation/export workflow, enforced by the no-drift test for
 operations.
+
+---
+
+## 2026-07-03b - Manual: remove the tab-bar corner button (user feedback)
+
+Same-day follow-up to the Manual milestone above. User feedback: a permanent
+button sitting in the Inspect tab bar's corner, whose sole purpose was to
+switch to the Manual tab it sat next to, was redundant with just clicking
+the tab - "Process, Knowledge, Manual" should be reached the same way (click
+the tab), not via an extra always-visible control.
+
+### Completed
+- Removed `MeasurementExplorerWindow._tab_manual_btn` (the `QToolButton`
+  wired via `QTabWidget.setCornerWidget`), its `_tab_manual_pages`
+  `{tab_widget: page_id}` dict, and its `_on_tab_manual_clicked` handler from
+  `gui/window.py`. The Manual tab itself, the per-operation "How to use
+  this" buttons (Processing Workspace, AI recommendations), and the global
+  `Help > Manual` (`F1`) action are unchanged - the tab is now the sole
+  panel-level entry point, exactly like Knowledge.
+- Removed the corresponding `tests/test_gui_manual.py` test
+  (`test_tab_corner_button_opens_page_for_current_tab`).
+
+### Decisions
+- No new ADR: amended ADR-0032's own text in `docs/decisions.md` in place to
+  describe the corrected (two-entry-point, no-corner-button) design, with a
+  transparent note that the corner button was tried and removed the same
+  day - this is a same-day correction to a not-yet-settled implementation
+  detail of the same feature, not reopening a settled decision.
+
+### Issues Found
+- None (a UI simplification prompted by direct user feedback, not a bug).
+
+### Documentation Updated
+- `docs/decisions.md` (ADR-0032 text corrected), `docs/manual-system.md`
+  (removed the corner-button entry point, added a short note on why it was
+  removed), `CLAUDE.md` (project-status paragraph + Documentation Hierarchy
+  row), `NEXT.md`, `LOG.md` (this entry).
+
+### Next Recommended Actions
+None beyond what the original Manual entry already recommended: watch real
+usage before adding any further entry points.

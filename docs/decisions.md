@@ -857,13 +857,16 @@ same `_inspect_tabs`) with the same browse-tree + search + `QTextBrowser` struct
 link opens the matching Manual page (`manualPageRequested` signal) and a Manual page's
 "See also" link opens the matching Knowledge article (`knowledgeArticleRequested`
 signal), both routed through the window exactly like the existing "Learn more"
-mechanism. Three entry points reach it: a "How to use this operation"/"How to use
-this" button next to every existing "Learn more" button (Processing Workspace, AI
-recommendation cards); one corner-widget button on the Inspect tab bar that opens the
-Manual page for whichever tab is currently active (one button + one `{tab: page_id}`
-dict, covering all 8 tabs without touching 8 panel files); and a global `Help > Manual`
-menu action (`F1`) that opens the Manual tab and focuses its search box. Individual
-toolbar buttons and dialogs do **not** get their own inline button in this increment -
+mechanism. The tab itself is the primary entry point (click it, like Knowledge); two
+further entry points reach it directly from context: a "How to use this operation"/
+"How to use this" button next to every existing "Learn more" button (Processing
+Workspace, AI recommendation cards), and a global `Help > Manual` menu action (`F1`)
+that opens the Manual tab and focuses its search box. (An earlier revision also added
+a permanent corner-widget button on the Inspect tab bar that opened the Manual page
+for whichever tab was active; it was removed after user feedback the same day - a
+button whose sole purpose was to switch to the tab it sat on was redundant with the
+tab itself and cluttered the tab bar.) Individual toolbar buttons and dialogs do
+**not** get their own inline button in this increment -
 documented as deliberate future expansion (`docs/manual-system.md`), the same pattern
 `knowledge-center.md` uses for its own deferred "Learn more" sources. The same
 integrity guarantees as Knowledge apply: `integrity_problems()` (no dangling internal
@@ -890,7 +893,7 @@ initial pages), one additive field on `knowledge.Article`, one new GUI panel
 (`gui/manual.py`), and small additive wiring in `process.py`/`briefing.py`/
 `knowledge.py`/`window.py`. `core`, `processing`, `describe`, `diagnostics`, `ai`,
 `pipeline`, `viz`, and `Project`/`Measurement` persistence are all unchanged - this is
-presentation and teaching-content infrastructure only. 819 tests pass (28 new:
+presentation and teaching-content infrastructure only. 818 tests pass (27 new:
 `test_manual.py`, `test_manual_knowledge_links.py`, `test_gui_manual.py`); `ruff`,
 `mypy --strict`, and the Qt-free invariant green.
 

@@ -156,12 +156,3 @@ def test_manual_page_knowledge_link_opens_knowledge_tab(
     window._on_open_knowledge_article("operation.image.plane_level")
     assert window._inspect_tabs.currentWidget() is window._knowledge
     assert "Plane Level" in window._knowledge.current_html
-
-
-def test_tab_corner_button_opens_page_for_current_tab(
-    window: MeasurementExplorerWindow,
-) -> None:
-    window._inspect_tabs.setCurrentWidget(window._diagnostics)
-    window._on_tab_manual_clicked()
-    assert window._inspect_tabs.currentWidget() is window._manual
-    assert "Diagnostics" in window._manual.current_html

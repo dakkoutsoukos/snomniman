@@ -283,23 +283,6 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         tabs.addTab(self._process, "Process")
         tabs.addTab(self._knowledge, "Knowledge")
         tabs.addTab(self._manual, "Manual")
-        # A single corner button that opens the Manual page for whichever Inspect
-        # tab is currently active - one entry point covering every tab, rather than
-        # wiring a "Manual" affordance into each of the 8 panel widgets individually.
-        self._tab_manual_btn = QtWidgets.QToolButton()
-        self._tab_manual_btn.setText("Manual")
-        self._tab_manual_btn.setToolTip("Open the Manual page for the current tab")
-        self._tab_manual_btn.clicked.connect(self._on_tab_manual_clicked)
-        tabs.setCornerWidget(self._tab_manual_btn, QtCore.Qt.Corner.TopRightCorner)
-        self._tab_manual_pages: dict[QtWidgets.QWidget, str] = {
-            self._metadata: "explorer.metadata",
-            self._provenance: "explorer.provenance",
-            self._diagnostics: "explorer.diagnostics",
-            self._experiment_panel: "explorer.experiment_tab",
-            self._briefing: "ai.scientific_briefing",
-            self._measure_panel: "explorer.measure_panel",
-            self._process: "workspace.overview",
-        }
         inspect = QtWidgets.QDockWidget("Inspect")
         inspect.setWidget(tabs)
         inspect.setFeatures(QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable)
@@ -689,16 +672,6 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         """Open a Knowledge article by id (a Manual page's 'See also' link)."""
         self._inspect_tabs.setCurrentWidget(self._knowledge)
         self._knowledge.show_article(article_id)
-
-    def _on_tab_manual_clicked(self) -> None:
-        """The Inspect tab widget's corner button: open the Manual page for this tab."""
-        page_id = self._tab_manual_pages.get(self._inspect_tabs.currentWidget())
-        if page_id is None:
-            self._inspect_tabs.setCurrentWidget(self._manual)
-            self._manual.focus_search()
-            return
-        self._inspect_tabs.setCurrentWidget(self._manual)
-        self._manual.show_page(page_id)
 
     def _open_manual(self) -> None:
         """Help > Manual (F1): the global, always-available entry point."""
