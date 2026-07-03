@@ -21,6 +21,8 @@ from snomniman.gui.model import ExplorerModel
 
 pytest.importorskip("PySide6")
 
+from snomniman.gui.model import SpectrumCurve
+from snomniman.gui.spectrumview import SpectrumPlotView
 from snomniman.gui.window import MeasurementExplorerWindow
 
 
@@ -136,3 +138,76 @@ def test_window_never_mutates_the_dataset(
     window._on_representation_selected("phase")
     for name, values in before.items():
         np.testing.assert_array_equal(spectrum_dataset.channel(name).values, values)
+
+
+# --------------------------------------------------------------------------- #
+# Multi-curve overlay (Phase 5B: SpectrumPlotView.show_curves), tested directly
+# against the widget - no window needed for this isolated capability.
+# --------------------------------------------------------------------------- #
+
+
+def _curve(label_amplitude: float, *, cyclic: bool = False) -> SpectrumCurve:
+    wn = np.linspace(1700.0, 1750.0, 10)
+    values = np.full(10, label_amplitude) if not cyclic else np.linspace(-3.0, 3.0, 10)
+    return SpectrumCurve(
+        channel="O2", representation="amplitude", wavenumber_cm1=wn, values=values,
+        unit="a.u.", cyclic=cyclic,
+    )
+
+
+def test_show_curves_adds_one_item_per_curve(qapp: Any) -> None:
+    view = SpectrumPlotView()
+    view.show_curves({"ROI A": _curve(1.0), "ROI B": _curve(2.0)})
+    assert len(view._overlay_items) == 2
+    qapp.processEvents()
+
+
+def test_show_curves_replaces_not_accumulates(qapp: Any) -> None:
+    view = SpectrumPlotView()
+    view.show_curves({"ROI A": _curve(1.0), "ROI B": _curve(2.0)})
+    view.show_curves({"ROI C": _curve(3.0)})
+    assert len(view._overlay_items) == 1
+
+
+def test_show_curves_uses_distinct_colors(qapp: Any) -> None:
+    view = SpectrumPlotView()
+    view.show_curves({"ROI A": _curve(1.0), "ROI B": _curve(2.0), "ROI C": _curve(3.0)})
+    pens = [item.opts["pen"] for item in view._overlay_items]
+    colors = {pen.color().name() for pen in pens}
+    assert len(colors) == 3  # every curve gets a distinct color
+
+
+def test_show_curve_still_works_standalone(qapp: Any) -> None:
+    view = SpectrumPlotView()
+    view.show_curve(_curve(5.0))
+    _, y = view._curve_item.getData()
+    np.testing.assert_allclose(y, 5.0)
+    assert view._overlay_items == []
+
+
+def test_show_curve_after_show_curves_clears_overlays(qapp: Any) -> None:
+    view = SpectrumPlotView()
+    view.show_curves({"ROI A": _curve(1.0), "ROI B": _curve(2.0)})
+    view.show_curve(_curve(9.0))
+    assert view._overlay_items == []
+    _, y = view._curve_item.getData()
+    np.testing.assert_allclose(y, 9.0)
+
+
+def test_show_curves_single_entry_matches_show_curve_y_range(qapp: Any) -> None:
+    view_curves = SpectrumPlotView()
+    view_curves.show_curves({"ROI A": _curve(1.0, cyclic=True)})
+    view_single = SpectrumPlotView()
+    view_single.show_curve(_curve(1.0, cyclic=True))
+    assert view_curves._plot.getViewBox().viewRange()[1] == pytest.approx(
+        view_single._plot.getViewBox().viewRange()[1]
+    )
+
+
+def test_show_curves_empty_mapping_clears_the_plot(qapp: Any) -> None:
+    view = SpectrumPlotView()
+    view.show_curve(_curve(1.0))
+    view.show_curves({})
+    x, _ = view._curve_item.getData()
+    assert x is None or len(x) == 0
+    assert view._overlay_items == []

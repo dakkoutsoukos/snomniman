@@ -158,7 +158,34 @@ rather than repeating them.
 > diagnostics, or AI reasoning - deliberately out of scope for this milestone
 > (Phases 5B-5D). `spectrum.reference_normalize` (5A's other originally-scoped op)
 > was not part of this increment and remains open for a follow-up.
-> 727 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
+> **Phase 5B - Spectral Visualization & Hyperspectral Workspace is shipped**
+> (2026-07-02, `docs/phase5-spectral-nanoftir.md` sec 6.2, no ADR): a complete
+> spectroscopy workflow, not just a plot - `ExplorerModel.is_hyperspectral`, a
+> genuine third dispatch state confirmed necessary from live source (`is_spectral`
+> evaluates `False` for a hyperspectral dataset, which has both `SPATIAL_2D` and
+> `SPECTRAL`, so it is never an overload); `band_map`/`pixel_spectrum`/
+> `rect_spectrum`/`polygon_spectrum` on `ExplorerModel`; a new `HyperspectralView`
+> widget (`gui/hyperspectral.py`) composing the **unmodified** `ChannelImageView`
+> (band map) and an additively-extended `SpectrumPlotView` (`show_curves`,
+> multi-curve overlay) in a linked splitter - click a pixel, see its spectrum
+> live; select an ROI, see the mean spectrum. The Measurements framework gained a
+> `spectral` mode (`SpectralRegionReport`, a separate "Overlay ROI spectra"
+> action, CSV export with a `wavenumber_cm1` column) so spectral measurements are
+> recorded/exportable exactly like image ones - reusing the ROI framework, not a
+> second one. Report/Export/Knowledge integration completes the loop: a
+> hyperspectral session's histogram and overlay lines are honest per-band facts
+> (never a whole-cube average), the displayed band exports as GSF, and the
+> current band survives project save/reopen (the spectrum as a first-class,
+> persisted object). **One real bug was found and fixed during implementation**:
+> Preview crashed for any non-2-D-image focus channel (incl. Phase 5A's own
+> `spectrum.fft_interferogram`) via an uncaught `DatasetError` - fixed with a
+> capability-aware `_view_kind` dispatch in `_preview_panes`, reusing the
+> existing spectrum viewer for curve-shaped previews. Validated against a
+> synthetic hyperspectral cube with a known embedded resonance (Rule 6; no real
+> hyperspectral reader exists yet - 5C stays blocked on real data). No AI
+> reasoning, spectral diagnostics, resonance fitting, or vendor readers -
+> deliberately out of scope.
+> 791 tests pass; `ruff`, `mypy --strict`, and the Qt-free invariant
 > (subprocess-checked) are green. All OHD-1..9 settled. The AI recommends but never
 > executes (the deterministic engine performs every operation via an explicit Accept);
 > scientific judgment is deterministic (the Reasoning Rule Engine *chooses*, the future
@@ -318,7 +345,11 @@ core           -> (nothing internal)        (Dataset, DataKind+capabilities, Met
   `report.py` (Phase 4C): a Qt-free `ReportModel` composing the Experiment
   Report / Publication Package / Reproducibility Report from already-computed
   facts (no new science); Markdown/HTML renderers over one shared `Report`
-  structure.
+  structure. `hyperspectral.py` (Phase 5B): `HyperspectralView`, a linked
+  band-map + spectrum widget composing the unmodified `ChannelImageView` and an
+  extended `SpectrumPlotView` - the spectroscopy analogue of the image workflow
+  (measurements, processing preview, reporting, export, provenance-preserving
+  save/reopen all reused, not duplicated).
 
 **Dependency rules:**
 - No cycles. `core` imports nothing else in the project.
@@ -531,7 +562,7 @@ surface automatically. See `docs/roadmap.md` for the current priority order.
 | `docs/knowledge-center.md` | **Knowledge Center** (`snomniman.knowledge`; ADR-0024): a living, in-app scientific knowledge base - philosophy (teach the science while performing it; ground the AI), architecture (a Qt-free leaf), the structured `Article` model, the Explorer panel + "Learn more" deep-links, AI integration, the integrity/no-drift guarantees, and future expansion. |
 | `docs/point-spectrum-discovery.md` | **Point Spectrum Discovery** - the second-modality analogue of `measurement-discovery.md`: what the real point-spectroscopy sample actually is (a 100-position line of spectra, not one isolated spectrum), why `DataKind.SPECTRUM`/`LINE_SCAN` + `Capability.SPECTRAL`/`SPATIAL_1D` (already anticipated in `data-model.md`) needed **no redesign**, the one additive `Metadata` field (`SpectralInfo`), the diagnostics gating bug the new modality surfaced and fixed, and the documented GUI scope boundary (image-only affordances decline gracefully for a spectral measurement). |
 | `docs/phase4-workflow-automation.md` | **Phase 4 - Workflow Automation (Research & Design)** - the user-commissioned blueprint for automating repeated processing across a multi-scan session: a workflow survey (Gwyddion/MountainsMap/WSxM/ImageJ/neaPLOT), the Recipe design (a re-bindable projection of the provenance DAG, not a second engine - Option B, confirmed and implemented as ADR-0031), the Phase 4A/4B/4C roadmap (Recipes -> Batch -> Reporting), and the explicit deferrals (auto-recipe-selection stays validation-gated; no scripting/macro language). Phase 4A (Recipes, ADR-0031), 4B (Batch), and 4C (Reporting) are all now **shipped**, completing the workflow automation track (Define -> Execute -> Document). |
-| `docs/phase5-spectral-nanoftir.md` | **Phase 5 - Spectral & nano-FTIR Support (Research & Design; the authoritative Phase 5 planning artifact, superseding the stale `roadmap.md` placeholder of the same name)** - a workflow survey (W1-W9, hyperspectral mapping/interferogram FFT/spectral comparison/resonance ID ranked by scientific importance), the architecture analysis (the data model already handles hyperspectral + interferometric capabilities with one additive `Capability`/`Metadata` field each - no redesign), the data model design for `INTERFEROGRAM`/`HYPERSPECTRAL`, and the four-milestone roadmap (5A Processing Foundations, 5B Hyperspectral Viewer, 5C Real-Data Readers - `(user)`-blocked, 5D Spectral Diagnostics - validation-gated). **5A is now shipped** (`processing.spectrum.fft_interferogram`; see the implementation note in sec 6.1) exactly per this design, plus one genuine numerics finding not anticipated by the design (apodization windows must center on the ZPD sample, not the array). |
+| `docs/phase5-spectral-nanoftir.md` | **Phase 5 - Spectral & nano-FTIR Support (Research & Design; the authoritative Phase 5 planning artifact, superseding the stale `roadmap.md` placeholder of the same name)** - a workflow survey (W1-W9, hyperspectral mapping/interferogram FFT/spectral comparison/resonance ID ranked by scientific importance), the architecture analysis (the data model already handles hyperspectral + interferometric capabilities with one additive `Capability`/`Metadata` field each - no redesign), the data model design for `INTERFEROGRAM`/`HYPERSPECTRAL`, and the four-milestone roadmap (5A Processing Foundations, 5B Hyperspectral Viewer, 5C Real-Data Readers - `(user)`-blocked, 5D Spectral Diagnostics - validation-gated). **5A** (`processing.spectrum.fft_interferogram`; sec 6.1 implementation note) and **5B** (`HyperspectralView`, `ExplorerModel.is_hyperspectral`; sec 6.2 implementation note) are now **shipped** exactly per this design, each with one genuine implementation-time finding not anticipated by the design (5A: apodization windows must center on the ZPD sample, not the array; 5B: the Processing Workspace's Preview path crashed for any non-2-D-image focus channel, fixed with a capability-aware dispatch). 5C stays `(user)`-blocked on real sample data; 5D stays a Scientific Validation queue candidate. |
 
 ---
 

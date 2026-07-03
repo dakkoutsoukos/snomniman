@@ -2,8 +2,12 @@
 
 **Status:** Research -> Design proposal, largely implemented. **Phase 5A (Spectral
 Processing Foundations, sec 6.1) shipped 2026-07-02** exactly per this design - no
-architectural deviation, see the implementation note at the end of sec 6.1. Phases
-5B-5D remain design-only (unimplemented) as described below. **Date:** 2026-07-02
+architectural deviation, see the implementation note at the end of sec 6.1.
+**Phase 5B (Hyperspectral Data Model & Viewer, sec 6.2) shipped 2026-07-02** -
+see the implementation note at the end of sec 6.2 (confirms `is_hyperspectral`
+as designed, and records one real Preview-path bug found and fixed during
+implementation). Phases 5C-5D remain unimplemented/blocked as described below.
+**Date:** 2026-07-02
 **Stance:** a researcher who has just finished a full imaging + processing +
 batch + reporting workday (Phases 1-4C) asks the next question: *the sample also
 has a vibrational fingerprint - how do I get an actual spectrum out of this
@@ -532,6 +536,40 @@ architectural one; no capability/DataKind/metadata shape changed as a result.
   can ship independently against a **synthetic** hyperspectral cube fixture
   first (a small array with a known embedded resonance at known pixels).
   **Real-cube ingestion is 5C**, not this milestone.
+
+**Implementation note (2026-07-02, no architectural deviation).** Shipped
+exactly as designed: `ExplorerModel.is_hyperspectral` (confirmed against live
+source before implementation - `is_spectral` evaluates `False` for a
+hyperspectral dataset, since it has both `SPATIAL_2D` and `SPECTRAL`, so a
+genuine third state was required, not an overload); `band_map`/`pixel_spectrum`/
+`rect_spectrum`/`polygon_spectrum`/`nearest_pixel` on `ExplorerModel`; a new
+`HyperspectralView` widget (`src/snomniman/gui/hyperspectral.py`) composing the
+*unmodified* `ChannelImageView` (band map) and an additively-extended
+`SpectrumPlotView` (`show_curves` for multi-curve overlay) in a splitter; the
+Measurements framework extended with a `spectral` mode
+(`MeasurementController.rebind`, `SpectralRegionReport`, a new "Overlay ROI
+spectra" action left separate from the unchanged "Compare regions"); Report/
+Export/Knowledge integration. Validated against a synthetic hyperspectral cube
+fixture with a known embedded resonance (Rule 6) - real-cube ingestion stays
+5C, blocked on real sample data as designed. See
+`tests/test_gui_hyperspectral.py`, `tests/test_gui_measurement.py`,
+`tests/test_gui_model.py`, `tests/test_viz_render_band.py`.
+
+One genuine bug was found and fixed during implementation, not anticipated by
+this design: `ExplorerModel.preview_operation`/`preview_recipe` unconditionally
+built image-shaped preview panes via `viz.prepare_channel`, which
+unconditionally requires `x`/`y` coordinates - for a `SPECTRUM`/`LINE_SCAN`/
+`INTERFEROGRAM` focus channel (e.g. previewing Phase 5A's own
+`spectrum.fft_interferogram`) this raised an uncaught `DatasetError` from a Qt
+slot, crashing the GUI. Fixed with a capability-aware `_view_kind` dispatch in
+`_preview_panes`/`_before_panes` (image / hyperspectral-band / spectral-curve /
+honest-decline) and a `spectral_panes` field on `OperationPreview`, reusing the
+existing spectrum viewer for a curve-shaped preview - no new preview surface.
+This was necessary for this milestone's success criterion "process spectral
+datasets using the existing processing framework," which the original design
+implicitly assumed already worked (it did not, for anything but a plain image).
+`spectrum.reference_normalize` (5A's still-open op) and cross-measurement/
+Phase-2B comparison for hyperspectral remain explicitly out of scope for 5B.
 
 ### 6.3 Phase 5C - Real-Data Readers - blocked on real sample data, `(user)`
 

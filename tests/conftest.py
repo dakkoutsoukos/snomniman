@@ -257,6 +257,66 @@ def spectrum_dataset() -> Dataset:
 
 
 @pytest.fixture
+def hyperspectral_dataset() -> Dataset:
+    """A small HYPERSPECTRAL Dataset - dims ``(y, x, wavenumber)`` - with one known
+    embedded resonance, for known-answer band-map/pixel-spectrum/ROI-spectrum tests
+    (Rule 6). 4x5 spatial pixels (50 nm pitch), 25 wavenumber points (1700-1748
+    cm-1, 2 cm-1 sampling). A Lorentzian bump (center 1724 cm-1 = wavenumber index
+    12, width 8 cm-1) is embedded in ``O2`` amplitude **only at pixel (y=2, x=3)**;
+    every other pixel has a flat baseline amplitude of 0.2 - so a pixel/ROI
+    spectrum that includes (2, 3) recovers the bump, one that excludes it does not.
+    """
+    ny, nx, n_wn = 4, 5, 25
+    y = (np.arange(ny, dtype=np.float64) + 0.5) * 50.0
+    x = (np.arange(nx, dtype=np.float64) + 0.5) * 50.0
+    wn = 1700.0 + np.arange(n_wn, dtype=np.float64) * 2.0
+
+    peak_y, peak_x, peak_wn_index = 2, 3, 12
+    center, width, baseline = float(wn[peak_wn_index]), 8.0, 0.2
+    lorentzian = 1.0 / (1.0 + ((wn - center) / (width / 2.0)) ** 2)
+
+    amp = np.full((ny, nx, n_wn), baseline, dtype=np.float64)
+    amp[peak_y, peak_x, :] += lorentzian
+    o2 = amp.astype(np.complex64)  # zero phase everywhere - keeps the fixture simple
+    z = np.full((ny, nx), 800.0, dtype=np.float64)
+
+    data = xr.Dataset(
+        {
+            "O2": (("y", "x", "wavenumber"), o2),
+            "Z": (("y", "x"), z),
+        },
+        coords={
+            "x": ("x", x, {"unit": "nm", "axis": "X"}),
+            "y": ("y", y, {"unit": "nm", "axis": "Y"}),
+            "wavenumber": ("wavenumber", wn, {"unit": "cm-1", "long_name": "wavenumber"}),
+        },
+    )
+    channels = (
+        ChannelInfo("O2", "optical", "signal", "complex64", harmonic=2, amplitude_unit="a.u.",
+                    phase_unit="rad"),
+        ChannelInfo("Z", "topography", "signal", "float64", value_unit="nm"),
+    )
+    metadata = Metadata(
+        data_kind=DataKind.HYPERSPECTRAL,
+        conventions=Conventions(),
+        instrument=Instrument(vendor="neaspec", model="neaSNOM"),
+        excitation=Excitation(source_type="Piano", detector="MIR"),
+        demodulation=Demodulation(detection="PsHet", harmonics=(2,)),
+        scan=ScanInfo(pixels=(nx, ny), size_nm=(nx * 50.0, ny * 50.0), pixel_size_nm=(50.0, 50.0)),
+        spectral=SpectralInfo(
+            wavenumber_min_cm1=float(wn[0]), wavenumber_max_cm1=float(wn[-1]),
+            n_points=n_wn, sampling_cm1=2.0,
+        ),
+        channels=channels,
+        original_units={"x": "m", "y": "m", "wavenumber": "cm-1", "Z": "m"},
+    )
+    node = ProvenanceNode(
+        node_id="n0", record=StepRecord(step_id="io.read", step_version=1, deterministic=True)
+    )
+    return Dataset(data, kind=DataKind.HYPERSPECTRAL, metadata=metadata, provenance=node)
+
+
+@pytest.fixture
 def make_gsf(tmp_path: Path) -> Callable[..., Path]:
     """Factory writing a synthetic GSF file and returning its path."""
 

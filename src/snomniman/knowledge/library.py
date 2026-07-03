@@ -520,6 +520,96 @@ _CONCEPTS = (
         references=(_HARRIS, _GRIFFITHS),
     ),
     Article(
+        article_id="concept.hyperspectral_cube",
+        category=CONCEPT,
+        title="Hyperspectral cubes",
+        summary=(
+            "A full spectrum - amplitude and phase versus wavenumber - at every "
+            "pixel of a 2-D scan: nano-FTIR's single most distinctive capability, "
+            "nanoscale-resolved chemical identification rather than contrast at one "
+            "frequency."
+        ),
+        explanation=(
+            "A hyperspectral dataset (`HYPERSPECTRAL`, dims `(y, x, wavenumber)`) "
+            "carries a spatial grid and a spectral axis *together* - the data model "
+            "already derives both capabilities (`SPATIAL_2D` and `SPECTRAL`) "
+            "independently, so a hyperspectral cube needs no new representation, "
+            "only a workspace that browses it two ways: a **band map** (one "
+            "wavenumber, shown as an ordinary 2-D image - concept.band_map) and a "
+            "**per-pixel or per-ROI spectrum** (one location, shown as a curve "
+            "versus wavenumber). Clicking a pixel on the band map shows that "
+            "pixel's spectrum; selecting a rectangle or polygon ROI shows the mean "
+            "spectrum over that region, and multiple ROIs can be overlaid to "
+            "compare a resonance across locations (e.g. on versus off a "
+            "nanostructure)."
+        ),
+        scientific_background=(
+            "Recording two-dimensional arrays of thousands of spectra with "
+            "spatial resolution and precision better than 30 nm is the "
+            "literature's own framing of why hyperspectral nano-FTIR matters; the "
+            "resulting cube is explored via band maps and region comparison to "
+            "build a compositional picture, not read from a single frequency."
+        ),
+        practical_guidance=(
+            "Browse several bands (not just one) before concluding two regions "
+            "differ chemically - a single band map is one frequency's contrast, "
+            "not a compositional map. Use an ROI-averaged spectrum rather than a "
+            "single noisy pixel spectrum when comparing a resonance across "
+            "locations."
+        ),
+        common_mistakes=(
+            "Assuming a hyperspectral measurement is spectral in the same sense "
+            "as a point spectrum - it is a genuine third state (both a spatial "
+            "grid and a spectral axis together), never an overload of the "
+            "point-spectroscopy dispatch: routing it through the plain 2-D image "
+            "path (or the point-spectrum curve path) would try to render or plot "
+            "a whole 3-D array where a 2-D or 1-D one is expected.",
+            "Reading a whole-cube value distribution as if it summarized 'the "
+            "measurement' - a histogram that mixes every wavenumber and every "
+            "pixel together is scientifically misleading; the honest summary is "
+            "always per-band.",
+        ),
+        related_concepts=(
+            "concept.band_map",
+            "concept.point_spectrum",
+            "concept.interferogram",
+            "concept.spectral_axis",
+        ),
+        references=(_HUTH,),
+    ),
+    Article(
+        article_id="concept.band_map",
+        category=CONCEPT,
+        title="Band maps",
+        summary=(
+            "A single-wavenumber slice of a hyperspectral cube, shown as an "
+            "ordinary 2-D image - the spatial contrast at one frequency, not a "
+            "summary of the whole spectrum."
+        ),
+        explanation=(
+            "A band map answers 'what does the sample look like at this one "
+            "wavenumber?' - it reuses the same colormap/levels/extent/scale-bar "
+            "display logic every 2-D channel image already uses, applied to one "
+            "band instead of a whole channel. It is a projection, not a "
+            "computation: no new pixel value is derived, the cube is simply "
+            "indexed at one wavenumber."
+        ),
+        practical_guidance=(
+            "Step through wavenumbers to find where spatial contrast appears or "
+            "disappears - that is usually where a vibrational resonance is "
+            "active. A single band map cannot distinguish 'no signal here' from "
+            "'no resonance at this particular frequency here'; compare several "
+            "bands, or an ROI-averaged spectrum, before drawing a chemical "
+            "conclusion."
+        ),
+        common_mistakes=(
+            "Treating one band map as a complete compositional map - it is one "
+            "frequency's contrast; two materials can look identical at one band "
+            "and differ sharply at another.",
+        ),
+        related_concepts=("concept.hyperspectral_cube",),
+    ),
+    Article(
         article_id="concept.processing_recipe",
         category=CONCEPT,
         title="Processing recipes",

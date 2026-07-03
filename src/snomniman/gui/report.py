@@ -41,6 +41,7 @@ import numpy as np
 
 from snomniman.batch import BatchResult
 from snomniman.core import current_software, serialize_dag
+from snomniman.core.exceptions import ProcessingError
 from snomniman.pipeline import Recipe, matching_recipe_name
 
 from .experiment import (
@@ -336,13 +337,28 @@ class ReportModel:
         histogram_lines: list[str] = []
         for session in self._sessions:
             model = session.model
-            hist = model.spectrum_histogram() if model.is_spectral else model.channel_histogram()
+            if model.is_hyperspectral:
+                # Per-band, not a whole-cube statistic (mixing every wavenumber
+                # together would be scientifically misleading) - the band a
+                # researcher was last looking at, defaulting to band 0 for a
+                # session whose view was never captured.
+                index = _int_or(session.view_state.get("wavenumber_index"), 0)
+                hist = model.band_map_histogram(index)
+                wn = model.wavenumber_axis()
+                band_note = f" at {wn[index]:.1f} cm^-1" if index < wn.size else ""
+            else:
+                hist = (
+                    model.spectrum_histogram()
+                    if model.is_spectral
+                    else model.channel_histogram()
+                )
+                band_note = ""
             if hist.count == 0 or hist.mean is None:
                 continue
             histogram_lines.append(
-                f"- {session.title} ({model.current_channel} {model.current_representation}): "
-                f"mean {hist.mean:.4g}, median {hist.median:.4g}, std {hist.std:.4g}, "
-                f"n={hist.count}"
+                f"- {session.title} ({model.current_channel} {model.current_representation}"
+                f"{band_note}): mean {hist.mean:.4g}, median {hist.median:.4g}, "
+                f"std {hist.std:.4g}, n={hist.count}"
             )
         if histogram_lines:
             sections.append(
@@ -459,6 +475,8 @@ def _overlay_summary(model: ExplorerModel, record: Mapping[str, Any]) -> str | N
     kind = record.get("kind")
     name = record.get("name", "measurement")
     geometry = record.get("geometry", {})
+    if model.is_hyperspectral:
+        return _spectral_overlay_summary(model, kind, name, geometry)
     spec = PaneSpec(model.current_channel, model.current_representation)
     try:
         if kind == "line":
@@ -489,6 +507,40 @@ def _overlay_summary(model: ExplorerModel, record: Mapping[str, Any]) -> str | N
         f"{name} ({report.kind}): mean {stat.mean:.4g} {row.unit}, "
         f"std {stat.std:.4g}, n={stat.count} px"
     )
+
+
+def _spectral_overlay_summary(
+    model: ExplorerModel, kind: object, name: object, geometry: Mapping[str, Any]
+) -> str | None:
+    """The hyperspectral analogue of the rectangle/polygon branch above: a mean
+    spectrum, not a per-channel statistic (a hyperspectral ROI's natural summary
+    is a spectrum). No line case - line-ROI-across-a-band-map is out of scope
+    (docs/phase5-spectral-nanoftir.md's Phase 5B decisions)."""
+    try:
+        if kind == "rectangle":
+            x0, y0 = geometry["pos"]
+            w, h = geometry["size"]
+            spectral_report = model.rect_spectral_region(x0, y0, x0 + w, y0 + h, label=str(name))
+        elif kind == "polygon":
+            points = [tuple(p) for p in geometry["points"]]
+            spectral_report = model.polygon_spectral_region(points, label=str(name))
+        else:
+            return None
+    except (KeyError, ValueError, IndexError, ProcessingError):
+        return None
+    curve = spectral_report.curve
+    finite = curve.values[np.isfinite(curve.values)]
+    if finite.size == 0:
+        return f"{name} ({spectral_report.kind}): no finite spectrum"
+    peak = int(np.argmax(finite))
+    return (
+        f"{name} ({spectral_report.kind}): mean spectrum over {spectral_report.count} px, "
+        f"peak {finite[peak]:.4g} {curve.unit} at {curve.wavenumber_cm1[peak]:.1f} cm^-1"
+    )
+
+
+def _int_or(value: object, default: int) -> int:
+    return value if isinstance(value, int) else default
 
 
 def _markdown_table(table: ExperimentTable) -> list[str]:

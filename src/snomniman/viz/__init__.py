@@ -46,6 +46,7 @@ from .render import (
     default_representation,
     level_range,
     pick_scale_bar,
+    prepare_band,
     prepare_channel,
 )
 
@@ -75,6 +76,7 @@ __all__ = [
     "pick_scale_bar",
     "pixel_area",
     "polygon_mask",
+    "prepare_band",
     "prepare_channel",
     "provenance_caption",
     "provenance_record",

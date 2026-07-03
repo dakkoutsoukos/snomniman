@@ -16,19 +16,30 @@ here that changes anything.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+import xarray as xr
 
-import snomniman.processing.image  # noqa: F401  (registers image ops for applicability)
+import snomniman.processing.image  # registers image ops for applicability
+import snomniman.processing.spectrum  # noqa: F401  (registers spectrum ops for applicability)
 from snomniman import viz
 from snomniman.ai import Briefing, WorkflowSuggestions, build_briefing, recommend_workflow
-from snomniman.core import Capability, Dataset, Metadata, current_software
+from snomniman.core import (
+    Capability,
+    DataKind,
+    Dataset,
+    Metadata,
+    ProvenanceNode,
+    StepRecord,
+    current_software,
+)
 from snomniman.core.exceptions import ProcessingError
 from snomniman.describe import (
     LineageStep,
@@ -218,6 +229,21 @@ class RegionReport:
 
 
 @dataclass(frozen=True)
+class SpectralRegionReport:
+    """A hyperspectral ROI measurement: shared geometry plus a mean spectrum.
+
+    The spectral analogue of :class:`RegionReport` - the region's mean value
+    *versus wavenumber* (a curve) rather than a single-channel-at-a-time scalar
+    statistic, since a hyperspectral ROI's natural summary is a spectrum.
+    """
+
+    kind: str  # "rectangle" | "polygon"
+    count: int
+    area_nm2: float
+    curve: SpectrumCurve
+
+
+@dataclass(frozen=True)
 class DiagnosticRow:
     """One labelled diagnostic fact, already formatted for display."""
 
@@ -326,6 +352,19 @@ class PreviewPane:
 
 
 @dataclass(frozen=True)
+class SpectralPreviewCurve:
+    """One before/after spectral pane: a label and its curve.
+
+    The spectral analogue of :class:`PreviewPane`, used when a preview's focus
+    channel has no 2-D spatial grid to render (a ``SPECTRUM``/``LINE_SCAN``
+    dataset, or the output of an operation like ``spectrum.fft_interferogram``).
+    """
+
+    label: str
+    curve: SpectrumCurve
+
+
+@dataclass(frozen=True)
 class OperationPreview:
     """The result of previewing an operation, before it is committed.
 
@@ -333,6 +372,12 @@ class OperationPreview:
     explain the derivation: before/after panes, a plain-language change summary
     (what changes / what stays), and the provenance node that *will* be created.
     The original Dataset is untouched - accepting simply adopts ``dataset``.
+
+    ``panes`` holds image-shaped before/after panes; ``spectral_panes`` holds the
+    curve-shaped analogue for a focus channel with no 2-D spatial grid (empty by
+    default, so every existing image-only construction/consumption site is
+    unaffected). A given preview populates one or the other per focus channel,
+    never a mix for a single channel.
     """
 
     step_id: str
@@ -342,6 +387,7 @@ class OperationPreview:
     changes: tuple[str, ...]  # what this operation will change
     unchanged: tuple[str, ...]  # what it leaves untouched
     provenance: ProvenanceStep  # the provenance node that will be recorded
+    spectral_panes: tuple[SpectralPreviewCurve, ...] = ()
 
 
 #: Prefix marking a workspace tree item / preview as a Recipe rather than a single
@@ -364,6 +410,7 @@ _CAPABILITY_PHRASES = {
     "spatial_2d": "a 2-D scan (x and y axes)",
     "spatial_1d": "a line profile (one spatial axis)",
     "spectral": "a spectral (wavenumber) axis",
+    "interferometric": "an interferometric (opd) axis",
     "complex_optical": "complex optical channels (O{n})",
     "complex_mechanical": "complex mechanical channels (M{n})",
     "topography": "a topography channel (Z)",
@@ -720,6 +767,136 @@ class ExplorerModel:
         ``position_index`` selects which of the ``s`` positions to plot when the
         dataset has more than one (a ``LINE_SCAN``); ignored for a single ``SPECTRUM``.
         """
+        return _spectrum_curve_of(
+            self._ds, self._channel, self._representation, position_index=position_index
+        )
+
+    def spectrum_histogram(self, position_index: int = 0) -> HistogramData:
+        """The value distribution of the spectrum curve currently displayed."""
+        curve = self.spectrum_curve(position_index)
+        return histogram(curve.values, unit=curve.unit)
+
+    # -- hyperspectral (SPATIAL_2D + SPECTRAL together, read-only) ------------
+
+    @property
+    def is_hyperspectral(self) -> bool:
+        """True for a dataset with both a 2-D spatial grid and a wavenumber axis.
+
+        A genuine third dispatch state alongside :attr:`is_spectral` - **never**
+        an overload of it. ``is_spectral`` is ``SPECTRAL and not SPATIAL_2D``, so
+        it evaluates ``False`` for a hyperspectral dataset (which has *both*); a
+        hyperspectral measurement must be routed to its own band-map + spectrum
+        view, not silently fall through to the plain 2-D image path (which would
+        try to render a 3-D array) or the point-spectrum curve path (which has no
+        notion of a spatial position).
+        """
+        caps = self._ds.capabilities
+        return Capability.SPATIAL_2D in caps and Capability.SPECTRAL in caps
+
+    def wavenumber_axis(self) -> npt.NDArray[np.float64]:
+        """The wavenumber axis (cm^-1) of the active hyperspectral/spectral dataset."""
+        return np.asarray(self._ds.coordinate("wavenumber").values, dtype=np.float64)
+
+    def band_map(self, wavenumber_index: int) -> RenderData:
+        """Display-ready data for one wavenumber slice of the current channel."""
+        return viz.prepare_band(self._ds, self._channel, wavenumber_index, self._representation)
+
+    def band_map_histogram(self, wavenumber_index: int) -> HistogramData:
+        """The value distribution of one band map (an honest per-band summary -
+        never a whole-cube statistic mixing every wavenumber together)."""
+        render = self.band_map(wavenumber_index)
+        return histogram(np.asarray(render.values, dtype=np.float64), unit=render.unit)
+
+    def band_dataset(self, wavenumber_index: int) -> Dataset:
+        """A throwaway single-band 2-D Dataset (the current channel, sliced at one
+        wavenumber; ``x``/``y`` kept, ``wavenumber`` dropped) - lets a hyperspectral
+        band be exported through the unmodified, 2-D-only ``io.export_channel_gsf``.
+        """
+        channel = self._channel
+        var = self._ds.data[channel]
+        if "wavenumber" not in var.dims:
+            raise ProcessingError(f"channel {channel!r} has no wavenumber dimension to slice")
+        coords = self._ds.data.coords
+        sliced = xr.DataArray(
+            np.asarray(var.isel(wavenumber=wavenumber_index).values),
+            coords={"x": coords["x"], "y": coords["y"]},
+            dims=("y", "x"),
+            attrs=dict(var.attrs),
+        )
+        new_data = xr.Dataset({channel: sliced}, coords={"x": coords["x"], "y": coords["y"]})
+        new_channels = tuple(ci for ci in self._ds.metadata.channels if ci.canonical == channel)
+        new_metadata = replace(
+            self._ds.metadata, data_kind=DataKind.IMAGE, channels=new_channels, spectral=None
+        )
+        node = ProvenanceNode(
+            node_id=str(uuid.uuid4()),
+            record=StepRecord(
+                step_id="gui.band_slice", step_version=1, deterministic=True,
+                params={"wavenumber_index": wavenumber_index},
+            ),
+            inputs={"primary": self._ds.provenance},
+        )
+        return Dataset(new_data, kind=DataKind.IMAGE, metadata=new_metadata, provenance=node)
+
+    def pixel_spectrum(self, x_index: int, y_index: int) -> SpectrumCurve:
+        """One pixel's channel/representation values versus wavenumber (a hyperspectral cube)."""
+        return _spectrum_curve_of(
+            self._ds, self._channel, self._representation, pixel=(x_index, y_index)
+        )
+
+    def nearest_pixel(self, x_nm: float, y_nm: float) -> tuple[int, int, bool]:
+        """The nearest ``(y_index, x_index, in_bounds)`` to a physical point.
+
+        A public wrapper of :meth:`_nearest` (unmodified - it only reads the
+        extent, never channel values, so it already works for a hyperspectral
+        channel with no change).
+        """
+        return self._nearest(x_nm, y_nm)
+
+    def rect_spectrum(
+        self, x0: float, y0: float, x1: float, y1: float, *, label: str | None = None
+    ) -> SpectrumCurve:
+        """The mean spectrum over a rectangular ROI of a hyperspectral cube."""
+        mask = viz.rect_mask(self._x_coords(), self._y_coords(), x0, y0, x1, y1)
+        return self._roi_spectrum(mask, label)
+
+    def polygon_spectrum(
+        self, vertices: list[tuple[float, float]], *, label: str | None = None
+    ) -> SpectrumCurve:
+        """The mean spectrum over a polygon ROI of a hyperspectral cube."""
+        mask = viz.polygon_mask(self._x_coords(), self._y_coords(), vertices)
+        return self._roi_spectrum(mask, label)
+
+    def rect_spectral_region(
+        self, x0: float, y0: float, x1: float, y1: float, *, label: str | None = None
+    ) -> SpectralRegionReport:
+        """A recordable rectangular-ROI spectral measurement (the Measure panel's
+        spectral analogue of :meth:`rect_statistics`)."""
+        mask = viz.rect_mask(self._x_coords(), self._y_coords(), x0, y0, x1, y1)
+        return self._spectral_region_report(mask, "rectangle", label)
+
+    def polygon_spectral_region(
+        self, vertices: list[tuple[float, float]], *, label: str | None = None
+    ) -> SpectralRegionReport:
+        """A recordable polygon-ROI spectral measurement (the Measure panel's
+        spectral analogue of :meth:`polygon_statistics`)."""
+        mask = viz.polygon_mask(self._x_coords(), self._y_coords(), vertices)
+        return self._spectral_region_report(mask, "polygon", label)
+
+    def _spectral_region_report(
+        self, mask: npt.NDArray[np.bool_], kind: str, label: str | None
+    ) -> SpectralRegionReport:
+        curve = self._roi_spectrum(mask, label)
+        count = int(np.count_nonzero(mask))
+        area = count * self.pixel_area_nm2()
+        return SpectralRegionReport(kind=kind, count=count, area_nm2=area, curve=curve)
+
+    def _roi_spectrum(self, mask: npt.NDArray[np.bool_], label: str | None) -> SpectrumCurve:
+        """A single vectorized masked mean across the wavenumber axis (built on the
+        same reusable ``rect_mask``/``polygon_mask`` primitive the per-slice
+        design uses, but aggregated once instead of once per wavenumber - avoids
+        O(n_wavenumber) redundant work for a mathematically equivalent result).
+        """
         channel, rep = self._channel, self._representation
         if rep == AMPLITUDE:
             da = self._ds.amplitude(channel)
@@ -727,8 +904,11 @@ class ExplorerModel:
             da = self._ds.phase(channel)
         else:
             da = self._ds.channel(channel)
-        if "s" in da.dims:
-            da = da.isel(s=position_index)
+        if "wavenumber" not in da.dims:
+            raise ProcessingError(f"channel {channel!r} has no wavenumber dimension")
+        coords = {"y": da.coords["y"], "x": da.coords["x"]}
+        mask_da = xr.DataArray(mask, dims=("y", "x"), coords=coords)
+        curve_da = da.where(mask_da).mean(dim=("y", "x"), skipna=True)
         try:
             info = self._ds.metadata.channel(channel)
         except KeyError:
@@ -739,20 +919,14 @@ class ExplorerModel:
             unit = "rad"
         else:
             unit = (info.value_unit if info else None) or "a.u."
-        wavenumber = np.asarray(self._ds.coordinate("wavenumber").values, dtype=np.float64)
         return SpectrumCurve(
             channel=channel,
             representation=rep,
-            wavenumber_cm1=wavenumber,
-            values=np.asarray(da.values, dtype=np.float64),
+            wavenumber_cm1=self.wavenumber_axis(),
+            values=np.asarray(curve_da.values, dtype=np.float64),
             unit=unit,
             cyclic=(rep == PHASE),
         )
-
-    def spectrum_histogram(self, position_index: int = 0) -> HistogramData:
-        """The value distribution of the spectrum curve currently displayed."""
-        curve = self.spectrum_curve(position_index)
-        return histogram(curve.values, unit=curve.unit)
 
     # -- publication figure (read-only) ---------------------------------------
 
@@ -968,7 +1142,7 @@ class ExplorerModel:
             all_inputs.update(inputs)
         derived = step.apply(all_inputs)
         changes, unchanged, focus = self._diff_summary(self._ds, derived)
-        panes = self._preview_panes(self._ds, derived, focus)
+        panes, spectral_panes = self._preview_panes(self._ds, derived, focus)
         lineage = summarize_provenance(derived.provenance).steps
         provenance = _format_lineage_step(lineage[-1])
         return OperationPreview(
@@ -979,6 +1153,7 @@ class ExplorerModel:
             changes=changes,
             unchanged=unchanged,
             provenance=provenance,
+            spectral_panes=spectral_panes,
         )
 
     # -- processing recipes (Phase 4A: capture + replay of a registry chain) ---
@@ -1018,7 +1193,7 @@ class ExplorerModel:
         """
         derived = _apply_recipe(recipe, self._ds)
         changes, unchanged, focus = self._diff_summary(self._ds, derived)
-        panes = self._preview_panes(self._ds, derived, focus)
+        panes, spectral_panes = self._preview_panes(self._ds, derived, focus)
         lineage = summarize_provenance(derived.provenance).steps
         provenance = _format_lineage_step(lineage[-1])
         return OperationPreview(
@@ -1029,6 +1204,7 @@ class ExplorerModel:
             changes=changes,
             unchanged=unchanged,
             provenance=provenance,
+            spectral_panes=spectral_panes,
         )
 
     def _operation_option(
@@ -1145,42 +1321,77 @@ class ExplorerModel:
 
     def _preview_panes(
         self, before: Dataset, after: Dataset, focus: tuple[str, ...]
-    ) -> tuple[PreviewPane, ...]:
+    ) -> tuple[tuple[PreviewPane, ...], tuple[SpectralPreviewCurve, ...]]:
+        """Before/after preview panes for *focus*, dispatched per channel's view kind.
+
+        A channel with a 2-D spatial grid (plain image, or one representative band
+        of a hyperspectral cube) gets an image :class:`PreviewPane`; a channel with
+        only a wavenumber axis (``SPECTRUM``/``LINE_SCAN``, or the freshly-FFT'd
+        output of an operation like ``spectrum.fft_interferogram``) gets a curve
+        :class:`SpectralPreviewCurve` instead. A channel with neither (e.g. a raw
+        ``INTERFEROGRAM`` before its FFT) is honestly skipped - no pane, not a
+        crash (Rule 9).
+        """
         panes: list[PreviewPane] = []
+        spectral_panes: list[SpectralPreviewCurve] = []
         for channel in focus:
-            panes.extend(self._before_panes(before, after, channel))
-            rep = viz.default_representation(after, channel)
+            b_panes, b_curves = self._before_panes(before, after, channel)
+            panes.extend(b_panes)
+            spectral_panes.extend(b_curves)
+
             is_new = channel not in before.channel_names
             label = f"{channel} (new)" if is_new else f"{channel} (after)"
-            panes.append(
-                PreviewPane(
-                    PaneSpec(channel, rep, label=label),
-                    viz.prepare_channel(after, channel, rep),
+            kind = _view_kind(after)
+            if kind in ("image", "hyperspectral"):
+                rep = viz.default_representation(after, channel)
+                render = (
+                    viz.prepare_band(after, channel, 0, rep)
+                    if kind == "hyperspectral"
+                    else viz.prepare_channel(after, channel, rep)
                 )
-            )
-        return tuple(panes)
+                panes.append(PreviewPane(PaneSpec(channel, rep, label=label), render))
+            elif kind == "spectral":
+                rep = viz.default_representation(after, channel)
+                curve = _spectrum_curve_of(after, channel, rep)
+                spectral_panes.append(SpectralPreviewCurve(label, curve))
+            # kind == "none": no pane - an honest decline, not a crash.
+        return tuple(panes), tuple(spectral_panes)
 
     def _before_panes(
         self, before: Dataset, after: Dataset, channel: str
-    ) -> list[PreviewPane]:
+    ) -> tuple[list[PreviewPane], list[SpectralPreviewCurve]]:
         if channel in before.channel_names:
-            rep = viz.default_representation(before, channel)
-            return [
-                PreviewPane(
-                    PaneSpec(channel, rep, label=f"{channel} (before)"),
-                    viz.prepare_channel(before, channel, rep),
+            kind = _view_kind(before)
+            if kind in ("image", "hyperspectral"):
+                rep = viz.default_representation(before, channel)
+                render = (
+                    viz.prepare_band(before, channel, 0, rep)
+                    if kind == "hyperspectral"
+                    else viz.prepare_channel(before, channel, rep)
                 )
-            ]
+                pane = PreviewPane(PaneSpec(channel, rep, label=f"{channel} (before)"), render)
+                return [pane], []
+            if kind == "spectral":
+                rep = viz.default_representation(before, channel)
+                curve = _spectrum_curve_of(before, channel, rep)
+                return [], [SpectralPreviewCurve(f"{channel} (before)", curve)]
+            return [], []  # kind == "none": no "before" view to show
         # An added channel had no "before"; show the source it was derived from.
         source, rep = _derived_source(before, after, channel)
         if source is None:
-            return []
-        return [
-            PreviewPane(
-                PaneSpec(source, rep, label=f"{source} (before)"),
-                viz.prepare_channel(before, source, rep),
+            return [], []
+        kind = _view_kind(before)
+        if kind in ("image", "hyperspectral"):
+            render = (
+                viz.prepare_band(before, source, 0, rep)
+                if kind == "hyperspectral"
+                else viz.prepare_channel(before, source, rep)
             )
-        ]
+            return [PreviewPane(PaneSpec(source, rep, label=f"{source} (before)"), render)], []
+        if kind == "spectral":
+            curve = _spectrum_curve_of(before, source, rep)
+            return [], [SpectralPreviewCurve(f"{source} (before)", curve)]
+        return [], []
 
     def _x_coords(self) -> npt.NDArray[np.float64]:
         return np.asarray(self._ds.coordinate("x").values, dtype=np.float64)
@@ -1412,9 +1623,16 @@ def _arrays_equal(a: npt.NDArray[Any], b: npt.NDArray[Any]) -> bool:
 
 
 def _shape_change_line(before: Dataset, after: Dataset) -> str:
-    bx, by = int(before.data.sizes["x"]), int(before.data.sizes["y"])
-    ax, ay = int(after.data.sizes["x"]), int(after.data.sizes["y"])
-    return f"Restricts the field of view to {ax}x{ay} pixels (was {bx}x{by})."
+    before_dims, after_dims = dict(before.data.sizes), dict(after.data.sizes)
+    if {"x", "y"} <= before_dims.keys() and {"x", "y"} <= after_dims.keys():
+        bx, by = int(before_dims["x"]), int(before_dims["y"])
+        ax, ay = int(after_dims["x"]), int(after_dims["y"])
+        return f"Restricts the field of view to {ax}x{ay} pixels (was {bx}x{by})."
+    # A non-spatial shape change (e.g. spectrum.fft_interferogram: opd -> wavenumber) -
+    # no "field of view" framing applies, so describe the dims generically instead.
+    before_desc = ", ".join(f"{k}={v}" for k, v in before_dims.items())
+    after_desc = ", ".join(f"{k}={v}" for k, v in after_dims.items())
+    return f"Changes the data shape from ({before_desc}) to ({after_desc})."
 
 
 def _added_channel_line(after: Dataset, channel: str) -> str:
@@ -1471,6 +1689,69 @@ def _unchanged_lines(
     if _phase_reference_change(before, after) is None:
         lines.append(f"Conventions unchanged ({conv.spatial_unit}, {conv.origin} origin).")
     return tuple(lines)
+
+
+def _spectrum_curve_of(
+    dataset: Dataset,
+    channel: str,
+    representation: str,
+    *,
+    position_index: int = 0,
+    pixel: tuple[int, int] | None = None,
+) -> SpectrumCurve:
+    """Build a :class:`SpectrumCurve` for one channel/representation of *dataset*.
+
+    ``position_index`` selects a ``LINE_SCAN``'s ``s`` position (ignored when the
+    channel has no ``s`` dim); ``pixel`` = ``(x_index, y_index)`` selects one pixel
+    of a hyperspectral cube's ``(y, x)`` grid (ignored when the channel has no
+    ``x``/``y`` dims). A module-level function (not an ``ExplorerModel`` method) so
+    it can build a curve for an arbitrary ``dataset`` - e.g. the preview machinery's
+    ``before``/``after`` Datasets, not just the active one.
+    """
+    if representation == AMPLITUDE:
+        da = dataset.amplitude(channel)
+    elif representation == PHASE:
+        da = dataset.phase(channel)
+    else:
+        da = dataset.channel(channel)
+    if "s" in da.dims:
+        da = da.isel(s=position_index)
+    if pixel is not None and "x" in da.dims and "y" in da.dims:
+        x_index, y_index = pixel
+        da = da.isel(x=x_index, y=y_index)
+    try:
+        info = dataset.metadata.channel(channel)
+    except KeyError:
+        info = None
+    if representation == AMPLITUDE:
+        unit = (info.amplitude_unit if info else None) or "a.u."
+    elif representation == PHASE:
+        unit = "rad"
+    else:
+        unit = (info.value_unit if info else None) or "a.u."
+    wavenumber = np.asarray(dataset.coordinate("wavenumber").values, dtype=np.float64)
+    return SpectrumCurve(
+        channel=channel,
+        representation=representation,
+        wavenumber_cm1=wavenumber,
+        values=np.asarray(da.values, dtype=np.float64),
+        unit=unit,
+        cyclic=(representation == PHASE),
+    )
+
+
+def _view_kind(dataset: Dataset) -> str:
+    """Which preview surface *dataset* needs: ``"hyperspectral"``, ``"spectral"``,
+    ``"image"``, or ``"none"`` (no 2-D/curve view yet - e.g. a raw INTERFEROGRAM).
+    """
+    caps = dataset.capabilities
+    if Capability.SPATIAL_2D in caps and Capability.SPECTRAL in caps:
+        return "hyperspectral"
+    if Capability.SPECTRAL in caps:
+        return "spectral"
+    if Capability.SPATIAL_2D in caps:
+        return "image"
+    return "none"
 
 
 def _derived_source(

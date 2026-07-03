@@ -12,6 +12,7 @@ read-only index selection, not computation.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -23,6 +24,11 @@ from .model import SpectrumCurve
 
 _MUTED = "color: #9aa0a6;"
 _CURVE_PEN = pg.mkPen("#46c2ff", width=1.5)
+
+#: Overlay colors for show_curves - matches gui/measurement.py's _CURVE_COLORS
+#: convention exactly, so a curve keeps the same color whether it is measured or
+#: previewed/overlaid here.
+_OVERLAY_COLORS = ("#46c2ff", "#ffb454", "#7ee787", "#ff7b72", "#d2a8ff", "#79c0ff")
 
 
 class SpectrumPlotView(QtWidgets.QWidget):
@@ -67,6 +73,8 @@ class SpectrumPlotView(QtWidgets.QWidget):
 
         self._wavenumber: npt.NDArray[np.float64] | None = None
         self._values: npt.NDArray[np.float64] | None = None
+        self._overlay_items: list[Any] = []
+        self._legend: Any = None
         self._proxy = pg.SignalProxy(
             self._plot.scene().sigMouseMoved, rateLimit=30, slot=self._on_mouse_moved
         )
@@ -88,14 +96,53 @@ class SpectrumPlotView(QtWidgets.QWidget):
     # -- curve --------------------------------------------------------------
 
     def show_curve(self, curve: SpectrumCurve) -> None:
+        self._clear_overlays()
         self._wavenumber = curve.wavenumber_cm1
         self._values = curve.values
         self._curve_item.setData(curve.wavenumber_cm1, curve.values)
         self._plot.setLabel("left", curve.label, units=curve.unit or None)
-        if curve.cyclic:
+        self._set_y_range(curve.cyclic)
+
+    def show_curves(self, curves: Mapping[str, SpectrumCurve]) -> None:
+        """Overlay multiple labelled curves (ROI/spectral-preview comparison).
+
+        Additive to :meth:`show_curve` (unchanged, still used by the single-curve
+        point-spectroscopy path): replaces whatever was shown before, one colored,
+        legended curve per entry. The cursor readout continues reporting the first
+        (primary) curve only - no per-curve tooltip, nothing in the task asks for
+        one.
+        """
+        self._clear_overlays()
+        self._curve_item.setData([], [])
+        if not curves:
+            return
+        if self._legend is None:
+            self._legend = self._plot.addLegend()
+        first: SpectrumCurve | None = None
+        for i, (label, curve) in enumerate(curves.items()):
+            if first is None:
+                first = curve
+            pen = pg.mkPen(_OVERLAY_COLORS[i % len(_OVERLAY_COLORS)], width=1.5)
+            item = self._plot.plot(curve.wavenumber_cm1, curve.values, pen=pen, name=label)
+            self._overlay_items.append(item)
+        assert first is not None
+        self._wavenumber = first.wavenumber_cm1
+        self._values = first.values
+        self._plot.setLabel("left", first.label, units=first.unit or None)
+        self._set_y_range(first.cyclic)
+
+    def _set_y_range(self, cyclic: bool) -> None:
+        if cyclic:
             self._plot.setYRange(-np.pi - 0.2, np.pi + 0.2)
         else:
             self._plot.enableAutoRange(axis="y")
+
+    def _clear_overlays(self) -> None:
+        for item in self._overlay_items:
+            self._plot.removeItem(item)
+        self._overlay_items = []
+        if self._legend is not None:
+            self._legend.clear()
 
     def set_readout(self, text: str) -> None:
         self._readout.setText(text)

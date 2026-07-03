@@ -3593,3 +3593,200 @@ to a directly-testable core" convention (`_prompt_report_path`, `_write_report`)
   Scientific Validation queue, unstarted.
 - `spectrum.reference_normalize` (deferred from this increment) is a reasonable
   small follow-on whenever a researcher workflow calls for it.
+
+## 2026-07-02f - Phase 5B: Spectral Visualization & Hyperspectral Workspace
+
+### Completed
+- **Architecture validation (mandated deliverable, done before any code):**
+  confirmed from live source, not the design doc, that `ExplorerModel.
+  is_spectral` (`SPECTRAL in caps and SPATIAL_2D not in caps`) evaluates
+  `False` for a hyperspectral dataset (which has *both*), so a genuine third
+  dispatch state (`is_hyperspectral`) was required - never an overload. A
+  second, real bug was found during this same validation pass and confirmed
+  in-scope to fix (see Issues Found).
+- **`ExplorerModel` additions** (`src/snomniman/gui/model.py`):
+  `is_hyperspectral`; `band_map`/`wavenumber_axis`/`band_map_histogram`/
+  `band_dataset` (a throwaway single-band 2-D `Dataset`, letting a hyperspectral
+  band export through the *unmodified* `io.export_channel_gsf`); `pixel_spectrum`/
+  `nearest_pixel` (a public wrapper of the already-reusable `_nearest`);
+  `rect_spectrum`/`polygon_spectrum` (a single vectorized masked mean across the
+  wavenumber axis, built on the unmodified `rect_mask`/`polygon_mask` - faster
+  than looping `region_stats` per wavenumber slice for a mathematically
+  equivalent result) and their recordable counterparts `rect_spectral_region`/
+  `polygon_spectral_region` returning the new `SpectralRegionReport` dataclass.
+- **`viz.render.prepare_band`** (`src/snomniman/viz/render.py`): the
+  hyperspectral analogue of `prepare_channel`, sharing a new `_representation`/
+  `_finalize_render` pair underneath both (DRY; `prepare_channel`'s own output
+  is unchanged, regression-tested).
+- **`SpectrumPlotView.show_curves`** (`src/snomniman/gui/spectrumview.py`):
+  additive multi-curve overlay (colored, legended `PlotDataItem`s) alongside
+  the unchanged single-curve `show_curve` - needed for both the linked
+  pixel-click spectrum preview and ROI-spectrum comparison.
+- **`HyperspectralView`** (new `src/snomniman/gui/hyperspectral.py`) - the one
+  genuinely new GUI surface: composes the **unmodified** `ChannelImageView`
+  (band map, dimension-agnostic by construction) and the extended
+  `SpectrumPlotView` in a splitter, plus a wavenumber slider. No scientific
+  logic (Rule 4) - no `ExplorerModel` reference; `window.py` wires signals to
+  model calls exactly like every other stack page.
+- **`window.py` wiring**: a new stack page 4; a 3-way dispatch
+  (hyperspectral -> spectral -> image) replacing every one of the ~13
+  `is_spectral`-gated call sites with its own justified per-site answer (a
+  decision table, not a blanket copy) - image-only-button disablement,
+  cross-measurement-compare exclusion, GSF export *extended* (not just
+  declined) to export the displayed band via `band_dataset`, figure export
+  decline extended, and `wavenumber_index` persisted in `view_state` (the
+  spectrum as a first-class object: the displayed band survives save/reopen,
+  verified end-to-end through a real `save_project`/`load_project` round trip).
+- **Measurements framework spectral mode** (`src/snomniman/gui/measurement.py`):
+  `MeasurementController.rebind` (generalizes `set_model` to also swap the
+  bound `ChannelImageView` instance and a new `spectral: bool` flag - the same
+  widget class hosts both a plain image and a band map); rectangle/polygon ROIs
+  report `SpectralRegionReport` instead of `RegionReport` in spectral mode; the
+  "+ Line" tool is hidden (a confirmed scope decision - "line spectra" is
+  satisfied by the already-shipped point-spectroscopy `LINE_SCAN` view, not a
+  new line-across-a-cube feature); a new, **separate** "Overlay ROI spectra"
+  action (confirmed scope decision - does not repurpose "Compare regions",
+  which stays untouched and simply degrades to its existing message in
+  spectral mode since it only ever matches `RegionReport` results); new
+  `spectral_region_to_csv` in `gui/export.py` (a `wavenumber_cm1` column,
+  extending the `profile_to_csv`/`region_to_csv` pattern).
+- **Report/Knowledge integration** (`src/snomniman/gui/report.py`): the
+  histogram section extends to 3-way, reporting a correctly-labelled per-band
+  fact for a hyperspectral session (never a whole-cube average, which would be
+  scientifically misleading) using the session's persisted `wavenumber_index`
+  (defaulting to band 0 for a never-opened session); `_overlay_summary` gained
+  an `is_hyperspectral` branch reporting a spectral-ROI peak fact instead of
+  silently dropping the line (a real, found-during-verification gap - see
+  Issues Found). Two new Knowledge articles, `concept.hyperspectral_cube` and
+  `concept.band_map`, following the exact existing `Article` pattern; no new
+  `operation.spectrum.*` article needed (no new `ProcessingStep` registered).
+- **Manual visual verification**: launched the real app in-process (offscreen)
+  against a synthetic hyperspectral cube (the same known-peak fixture the test
+  suite uses), screenshotted the running window. Confirmed visually: the band
+  map highlights the known bright pixel with the ROI rectangle correctly
+  positioned around it; the pixel-click spectrum plot shows a clean Lorentzian
+  peak at the known wavenumber; the Measure panel's "+ Line" tool is hidden and
+  "Overlay ROI spectra" is present; the ROI-averaged spectrum shows the same
+  resonance, visibly broadened/diluted by the averaged flat neighbor pixels -
+  exactly the expected physical relationship between a pixel spectrum and its
+  surrounding ROI average.
+
+### Decisions
+- **No ADR.** Confirmed in the architecture validation: composition of
+  existing abstractions (a new dispatch boolean, two widgets composed, a mode
+  flag threaded through already-generic machinery) plus one bug fix - no
+  settled decision (OHD-1..9) reopened, matching the original design doc's own
+  sec 3.4 verdict.
+- **"Compare regions" stays untouched in spectral mode; a new, separate
+  "Overlay ROI spectra" action was added instead** (confirmed with the user)
+  - avoids a mode-dependent behavior change to an existing control.
+- **"Line spectra" (Part 5) = the already-shipped point-spectroscopy
+  `LINE_SCAN` view only; no new line-ROI-across-a-band-map feature this
+  milestone** (confirmed with the user) - no named workflow requires it and no
+  synthetic data motivates validating it (Rule 6/Rule 9).
+- **`rect_spectrum`/`polygon_spectrum` use a single vectorized masked mean**,
+  not a literal per-wavenumber-slice loop over `region_stats` - mathematically
+  equivalent, avoids `O(n_wavenumber)` redundant work, still built on the
+  unmodified `rect_mask`/`polygon_mask` primitive the design doc names as
+  reusable.
+- **The spectral-ROI result display reuses the Measure panel's existing
+  `pg.PlotWidget` (`self._profile`)**, relabeling axes per result type, rather
+  than embedding a third `SpectrumPlotView` instance as originally planned - a
+  spectrum is "one curve on an axis" exactly like a line profile is, so no new
+  widget was needed once implementation reached this point (a plan refinement,
+  not a deviation from it).
+- **Cross-measurement/Phase 2B comparison and publication-figure export stay
+  declined for hyperspectral this milestone** - both are real, separable
+  follow-ons with no named requirement in this milestone's six Parts; CSV + GSF
+  band export satisfy "export spectra and associated visualizations."
+
+### Issues Found
+- **A genuine bug caught by the architecture-validation pass itself, in scope
+  to fix**: `ExplorerModel.preview_operation`/`preview_recipe` unconditionally
+  built every focus channel's before/after pane via `viz.prepare_channel`,
+  which unconditionally requires `x`/`y` coordinates - for a `SPECTRUM`/
+  `LINE_SCAN`/`INTERFEROGRAM` focus channel (concretely: previewing Phase 5A's
+  own `spectrum.fft_interferogram` through the generic Processing Workspace)
+  this raised an uncaught `DatasetError` from a Qt slot (`window.py`'s
+  `_on_preview_requested` only caught `ProcessingError`, a sibling exception,
+  not a parent). This directly blocked this milestone's success criterion #5.
+  Fixed with a capability-aware `_view_kind` dispatch (`"image"`/
+  `"hyperspectral"`/`"spectral"`/`"none"`) in `_preview_panes`/`_before_panes`,
+  a new `spectral_panes` field on `OperationPreview` (default empty, every
+  existing call site unaffected), and window-level branching that reuses the
+  existing page-3 spectrum viewer via the new `show_curves` for a curve-shaped
+  preview - no new preview surface. `except ProcessingError` was also widened
+  to include `DatasetError` as defense-in-depth (the primary fix is the
+  capability-aware branching, not the wider catch).
+- **A second, related bug surfaced while fixing the first**: `_diff_summary`'s
+  `_shape_change_line` also unconditionally read `before.data.sizes["x"]`/
+  `["y"]` whenever a step changes array shape - true for `image.crop`, but also
+  true for `spectrum.fft_interferogram` (`opd` -> `wavenumber`), which has
+  neither. Fixed with a dims-presence check, falling back to a generic
+  "changes the data shape from (...) to (...)" description when `x`/`y` aren't
+  both present on both sides - the existing `image.crop` message is unchanged.
+- **A third, small gap found and fixed during Report integration**:
+  `_overlay_summary` was silently swallowing a shape-mismatch `ValueError` for
+  any hyperspectral session's saved rectangle/polygon records (caught by an
+  existing broad `except`) - not a crash, but a silent, honesty-violating drop
+  of a real measurement from the Experiment Report. Fixed with an
+  `is_hyperspectral` branch computing the correct spectral-ROI summary instead.
+- One test-design lesson, not a product bug: opening a *raw* `INTERFEROGRAM`
+  measurement in the full window (as opposed to previewing an operation on one)
+  still crashes via the pre-existing, deliberately out-of-scope "no
+  interferogram viewer exists yet" gap (`_show_single()`'s fallback assumes
+  `x`/`y`). Confirmed this is unreachable through any real workflow today (no
+  reader produces `INTERFEROGRAM` data; Phase 5C is blocked on real samples) and
+  scoped the regression test accordingly (swap the model in directly, bypassing
+  `_load()`, to isolate the Preview-handling fix from this unrelated,
+  already-flagged future gap) rather than building unneeded defensive UI for a
+  state nothing in the app can currently produce (Rule 7).
+
+### Tests / gates
+- 791 tests (up from 727, +64): `tests/test_viz_render_band.py` (8, `prepare_band`
+  known-answer + regression); `tests/test_gui_model.py` (+14, hyperspectral
+  dispatch/band/pixel/ROI methods, Rule-6 known-answer via the fixture's
+  embedded resonance); `tests/test_gui_workspace_model.py` (+2, the direct
+  Preview-crash regression at the Qt-free `ExplorerModel` level);
+  `tests/test_gui_spectrumview.py` (+7, `show_curves`); `tests/
+  test_gui_hyperspectral.py` (new, 18: widget-level + window-level, incl. the
+  save/reopen `wavenumber_index` round trip and the window-level Preview
+  regression); `tests/test_gui_measurement.py` (+17, spectral ROI measurements,
+  tool visibility, CSV export, wavenumber-invariance); `tests/test_gui_report.py`
+  (+4, per-band histogram + spectral overlay facts). `ruff` clean; `mypy
+  --strict` clean (135 files); Qt-free invariant green
+  (`test_backend_is_qt_free`); a synthetic hyperspectral cube's Zarr round trip
+  verified directly (capabilities/values preserved, zero store-layer change,
+  confirming the design doc's "to be confirmed by test" flag). Manual visual
+  verification via an offscreen-rendered, screenshotted live window (see
+  Completed) - the automated suite proves values/wiring, the screenshot proves
+  the actual rendered layout and geometric correctness (ROI placement, curve
+  shapes) match the known synthetic ground truth.
+
+### Documentation Updated
+- `docs/phase5-spectral-nanoftir.md` (status line; an "Implementation note" at
+  the end of sec 6.2 recording what shipped, the two Preview-path bugs found
+  and fixed, and the confirmed scope decisions - no research content
+  rewritten). `CLAUDE.md` (project status paragraph, the `gui` module bullet,
+  the `phase5-spectral-nanoftir.md` hierarchy-table row, test count 727 -> 791).
+  `LOG.md` (this entry). `NEXT.md` (refreshed). Two new Knowledge articles
+  `concept.hyperspectral_cube`, `concept.band_map`
+  (`src/snomniman/knowledge/library.py`).
+
+### Next Recommended Actions
+- **Phase 5C - Real-Data Readers remains hard-blocked** on real interferogram/
+  hyperspectral sample data `(user)` - no such files exist in the repository
+  today. This is the load-bearing blocker for turning either 5A or 5B into a
+  real researcher workflow against actual instrument data.
+- **Phase 5D's fact half** (a resonance/peak-identification diagnostic, reusing
+  `viz.measure.analyze_profile` verbatim - already proven generic enough for a
+  hyperspectral pixel/ROI curve, not just a line profile) can be validated
+  synthetically now. Its *recommendation* half stays in the permanent
+  Scientific Validation queue, unstarted.
+- `spectrum.reference_normalize` (still deferred from 5A) and cross-measurement
+  hyperspectral comparison (deferred from 5B) are both reasonable, well-scoped
+  follow-ons whenever a researcher workflow calls for either - neither is
+  needed for 5C/5D to proceed.
+- Run the Beta Readiness user-testing protocol with the now-complete
+  spectroscopy workflow available alongside the imaging one - real friction
+  (not further internal guessing) should order whatever comes next.

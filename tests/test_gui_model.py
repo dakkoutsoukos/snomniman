@@ -21,7 +21,7 @@ from snomniman.gui.model import (
     ExplorerModel,
     PaneSpec,
 )
-from snomniman.viz import AMPLITUDE, PHASE, REAL, prepare_channel
+from snomniman.viz import AMPLITUDE, PHASE, REAL, prepare_band, prepare_channel
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _GOLDEN_DIR = (
@@ -344,3 +344,126 @@ def test_comparison_does_not_mutate_dataset(golden_model: ExplorerModel) -> None
     for name, arr in before.items():
         np.testing.assert_array_equal(ds.channel(name).values, arr, err_msg=name)
         assert ds.channel(name).data.flags.writeable is False
+
+
+# --------------------------------------------------------------------------- #
+# Hyperspectral dispatch state + band/pixel/ROI spectrum extraction (Phase 5B)
+# --------------------------------------------------------------------------- #
+
+
+def test_is_hyperspectral_never_overlaps_is_spectral(
+    synthetic_dataset: Dataset, spectrum_dataset: Dataset, hyperspectral_dataset: Dataset
+) -> None:
+    image = ExplorerModel(synthetic_dataset)
+    point_spectrum = ExplorerModel(spectrum_dataset)
+    cube = ExplorerModel(hyperspectral_dataset)
+
+    assert image.is_hyperspectral is False and image.is_spectral is False
+    assert point_spectrum.is_hyperspectral is False and point_spectrum.is_spectral is True
+    # The load-bearing regression: is_spectral must NOT be True for a hyperspectral
+    # dataset (it has both SPATIAL_2D and SPECTRAL) - is_hyperspectral is a genuine
+    # third state, never an overload.
+    assert cube.is_hyperspectral is True and cube.is_spectral is False
+
+
+def test_wavenumber_axis(hyperspectral_dataset: Dataset) -> None:
+    model = ExplorerModel(hyperspectral_dataset)
+    wn = model.wavenumber_axis()
+    assert wn.shape == (25,)
+    assert wn[0] == pytest.approx(1700.0)
+    assert wn[12] == pytest.approx(1724.0)
+
+
+def test_band_map_matches_viz_prepare_band(hyperspectral_dataset: Dataset) -> None:
+    model = ExplorerModel(hyperspectral_dataset)
+    rd = model.band_map(12)
+    expected = prepare_band(hyperspectral_dataset, "O2", 12, AMPLITUDE)
+    np.testing.assert_allclose(rd.values, expected.values)
+
+
+def test_pixel_spectrum_recovers_the_known_resonance(hyperspectral_dataset: Dataset) -> None:
+    model = ExplorerModel(hyperspectral_dataset)
+    curve = model.pixel_spectrum(x_index=3, y_index=2)  # the fixture's known peak pixel
+    peak_idx = int(np.argmax(curve.values))
+    assert peak_idx == 12
+    assert curve.wavenumber_cm1[peak_idx] == pytest.approx(1724.0)
+
+
+def test_pixel_spectrum_off_peak_is_flat(hyperspectral_dataset: Dataset) -> None:
+    model = ExplorerModel(hyperspectral_dataset)
+    curve = model.pixel_spectrum(x_index=0, y_index=0)
+    np.testing.assert_allclose(curve.values, 0.2, atol=1e-6)
+
+
+def test_rect_spectrum_including_peak_recovers_it(hyperspectral_dataset: Dataset) -> None:
+    model = ExplorerModel(hyperspectral_dataset)
+    # The known peak pixel is (y=2, x=3); an ROI covering it recovers the bump
+    # even after averaging with three flat neighbours.
+    curve = model.rect_spectrum(x0=100.0, y0=75.0, x1=250.0, y1=175.0, label="ROI A")
+    assert int(np.argmax(curve.values)) == 12
+    assert curve.values.max() > 0.3  # diluted by neighbours, but still a clear bump
+
+
+def test_rect_spectrum_excluding_peak_is_flat(hyperspectral_dataset: Dataset) -> None:
+    model = ExplorerModel(hyperspectral_dataset)
+    curve = model.rect_spectrum(x0=0.0, y0=0.0, x1=50.0, y1=50.0)
+    np.testing.assert_allclose(curve.values, 0.2, atol=0.03)
+
+
+def test_rect_spectrum_full_frame_matches_independent_mean(hyperspectral_dataset: Dataset) -> None:
+    model = ExplorerModel(hyperspectral_dataset)
+    curve = model.rect_spectrum(x0=0.0, y0=0.0, x1=250.0, y1=200.0)
+    expected = np.mean(np.abs(hyperspectral_dataset.channel("O2").values), axis=(0, 1))
+    np.testing.assert_allclose(curve.values, expected, rtol=1e-6)
+
+
+def test_polygon_spectrum_recovers_the_known_resonance(hyperspectral_dataset: Dataset) -> None:
+    # A generously-sized polygon covering the known peak pixel (y=2, x=3). Exact
+    # numeric equality with rect_spectrum isn't assumed - rect_mask/polygon_mask
+    # can differ at pixel-center boundary inclusion (an existing, validated
+    # property of those primitives, not something this test should pin).
+    model = ExplorerModel(hyperspectral_dataset)
+    polygon = model.polygon_spectrum(
+        [(50.0, 50.0), (300.0, 50.0), (300.0, 200.0), (50.0, 200.0)]
+    )
+    assert int(np.argmax(polygon.values)) == 12
+
+
+def test_nearest_pixel_reuses_extent_lookup(hyperspectral_dataset: Dataset) -> None:
+    model = ExplorerModel(hyperspectral_dataset)
+    iy, ix, in_bounds = model.nearest_pixel(175.0, 125.0)  # near pixel (y=2, x=3)
+    assert in_bounds is True
+    assert (iy, ix) == (2, 3)
+    assert model.nearest_pixel(-1000.0, -1000.0)[2] is False
+
+
+def test_band_map_histogram_is_per_band_not_whole_cube(hyperspectral_dataset: Dataset) -> None:
+    model = ExplorerModel(hyperspectral_dataset)
+    peak_band = model.band_map_histogram(12)
+    off_band = model.band_map_histogram(0)
+    # A per-band histogram must differ between the peak band and a flat band -
+    # a whole-cube statistic would give the same (wrong) answer for both.
+    assert peak_band.maximum != pytest.approx(off_band.maximum)
+
+
+def test_band_dataset_is_a_plain_2d_image(hyperspectral_dataset: Dataset) -> None:
+    from snomniman.core import DataKind
+
+    model = ExplorerModel(hyperspectral_dataset)
+    band = model.band_dataset(12)
+    assert band.kind is DataKind.IMAGE
+    assert "wavenumber" not in band.coord_names
+    np.testing.assert_allclose(
+        band.channel("O2").values,
+        hyperspectral_dataset.channel("O2").isel(wavenumber=12).values,
+    )
+    assert band.provenance.inputs["primary"] is hyperspectral_dataset.provenance
+
+
+def test_band_dataset_rejects_a_channel_with_no_wavenumber(hyperspectral_dataset: Dataset) -> None:
+    from snomniman.core.exceptions import ProcessingError
+
+    model = ExplorerModel(hyperspectral_dataset)
+    model.set_channel("Z")
+    with pytest.raises(ProcessingError, match="wavenumber"):
+        model.band_dataset(0)

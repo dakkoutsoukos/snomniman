@@ -3,27 +3,34 @@
 Single source of truth for "what should the next session work on?" Keep current:
 when a task is done, move it to `LOG.md` and update this file.
 
-**Last updated:** 2026-07-02e (shipped **Phase 5A - Spectral Processing
-Foundations**: a new `processing.spectrum` subpackage with `spectrum.
-fft_interferogram` (apodization - boxcar/Hann/Hamming/3-term Blackman-Harris -
-zero-fill, Mertz phase correction, forward FFT), the first operation whose output
-`DataKind` differs from its input's (`INTERFEROGRAM` -> `SPECTRUM`); one additive
-`Capability.INTERFEROMETRIC` (from an `opd` coordinate, mirroring `SPECTRAL`) and
-one additive `Metadata.interferometer` field (mirroring `SpectralInfo`). Validated
-synthetically (Rule 6): a known-analytic Lorentzian round-tripped through
-inverse-FFT -> interferogram -> the new step recovers its position/width within a
-documented tolerance (`docs/phase5-spectral-nanoftir.md` Appendix A, made real).
-Caught and fixed one genuine numerics bug along the way - apodization windows must
-center on the zero-path-difference sample, not the array's geometric center, or a
-single-sided interferogram's highest-amplitude sample is silently zeroed. No GUI,
-viewer, reader, spectral diagnostics, or AI reasoning (deliberately out of scope;
-Phases 5B-5D remain design-only). See `LOG.md` entry "2026-07-02e". Earlier:
-Scientific Reporting (Phase 4C); Batch Processing (Phase 4B); Processing Recipes
-(Phase 4A, ADR-0031); Point Spectrum vertical slice (second data modality); Phase 3C
-region-aware ops; Phase 3B scientific analysis toolbox; Phase 3A core operations;
-Phase 2C multi-input/arithmetic; Phase 2B experiment analysis; Phase 2A
-multi-measurement projects; complete research workflow. Governance: the Scientific
-Validation Phase + Beta Readiness Review remain the planning systems)
+**Last updated:** 2026-07-02f (shipped **Phase 5B - Spectral Visualization &
+Hyperspectral Workspace**: a complete spectroscopy workflow, not just a plot -
+`ExplorerModel.is_hyperspectral` (a genuine third dispatch state, confirmed
+necessary from live source, never an overload of `is_spectral`); `band_map`/
+`pixel_spectrum`/`rect_spectrum`/`polygon_spectrum`; a new `HyperspectralView`
+widget (`gui/hyperspectral.py`) linking a band map (the **unmodified**
+`ChannelImageView`) to a spectrum plot (an additively multi-curve-extended
+`SpectrumPlotView`) - click a pixel, see its spectrum live; select an ROI, see
+the mean spectrum. The Measurements framework gained a `spectral` mode
+(`SpectralRegionReport`, a separate "Overlay ROI spectra" action, CSV export)
+so spectral ROIs are recorded/exportable exactly like image ones. Report/
+Export/Knowledge integration completes the loop (honest per-band facts, GSF
+band export, `wavenumber_index` persisted across save/reopen). **Found and
+fixed a real bug during implementation**: Preview crashed for any non-2-D-image
+focus channel (incl. Phase 5A's own `spectrum.fft_interferogram`) via an
+uncaught `DatasetError` - fixed with a capability-aware dispatch, reusing the
+existing spectrum viewer for curve-shaped previews (no new surface). Validated
+against a synthetic hyperspectral cube with a known embedded resonance (Rule 6)
+plus a manual visual verification via a live, screenshotted window. No AI
+reasoning, spectral diagnostics, resonance fitting, or vendor readers
+(deliberately out of scope). See `LOG.md` entry "2026-07-02f". Earlier: Phase 5A
+Spectral Processing Foundations; Scientific Reporting (Phase 4C); Batch
+Processing (Phase 4B); Processing Recipes (Phase 4A, ADR-0031); Point Spectrum
+vertical slice (second data modality); Phase 3C region-aware ops; Phase 3B
+scientific analysis toolbox; Phase 3A core operations; Phase 2C multi-input/
+arithmetic; Phase 2B experiment analysis; Phase 2A multi-measurement projects;
+complete research workflow. Governance: the Scientific Validation Phase + Beta
+Readiness Review remain the planning systems)
 
 ---
 
@@ -89,23 +96,32 @@ decision - only additive `Capability`/`Metadata` fields and new, precedented mod
   synthetically only; real-interferogram cross-validation stays `(user)`-gated.
   `spectrum.reference_normalize` (5A's other originally-scoped op) was **not**
   part of this increment - open for a follow-up. See `LOG.md` entry "2026-07-02e".
-- **Phase 5B - Hyperspectral Data Model & Viewer. NOT STARTED.** Independent of
-  5C; buildable/synthetically-validatable now against a synthetic hyperspectral
-  cube fixture. `ExplorerModel.is_hyperspectral` as a genuine third dispatch state
-  (never an overload of `is_spectral` - the design doc's central Section 1
-  finding), `band_map(wavenumber_index)`/`pixel_spectrum(x, y)`, a linked
-  band-map-image + per-pixel-spectrum viewer, multi-curve overlay.
+- **Phase 5B - Spectral Visualization & Hyperspectral Workspace. DONE
+  (2026-07-02f, no ADR).** `ExplorerModel.is_hyperspectral` confirmed as a
+  genuine third dispatch state (never an overload of `is_spectral`); `band_map`/
+  `pixel_spectrum`/`rect_spectrum`/`polygon_spectrum`; the new `HyperspectralView`
+  widget (linked band map + spectrum, click-to-inspect, multi-curve ROI
+  overlay); Measurements framework `spectral` mode (`SpectralRegionReport`,
+  "Overlay ROI spectra", CSV export); Report/Export/Knowledge integration
+  (honest per-band facts, GSF band export, `wavenumber_index` persisted across
+  save/reopen). Found and fixed a real Preview-crash bug (any non-2-D-image
+  focus channel, incl. `spectrum.fft_interferogram`) along the way. Validated
+  against a synthetic hyperspectral cube (Rule 6) + a manual visual check via a
+  live screenshotted window. See `LOG.md` entry "2026-07-02f".
 - **Phase 5C - Real-Data Readers. HARD-BLOCKED `(user)`.** No interferometric
   nano-FTIR or hyperspectral cube export exists anywhere in the repository today
   (only 3 imaging + 1 point-spectroscopy measurement are present) - needs a real
   vendor sample file to reverse-engineer the format from (Rule 6), exactly as
   blocked Phase 1 and the point-spectroscopy vertical slice until real samples
-  arrived.
+  arrived. This is the load-bearing blocker for turning either 5A or 5B into a
+  real researcher workflow against actual instrument data.
 - **Phase 5D - Spectral Diagnostics & Reasoning.** The *fact* half (a resonance/
-  peak-identification diagnostic, reusing `viz.measure.analyze_profile` verbatim)
-  can be validated synthetically once 5A produces real spectra to test against.
-  The *recommendation* half is a **Scientific Validation Phase candidate**, not a
-  direct product feature - enters the Validation Queue below, unstarted.
+  peak-identification diagnostic, reusing `viz.measure.analyze_profile` verbatim
+  - already proven generic enough for a hyperspectral pixel/ROI curve, not just
+  a line profile) can be validated synthetically now that 5A/5B produce real
+  spectra to test against. The *recommendation* half is a **Scientific
+  Validation Phase candidate**, not a direct product feature - enters the
+  Validation Queue below, unstarted.
 
 ---
 
@@ -232,12 +248,13 @@ The canonical queue lives in `docs/scientific-validation.md` Section 7.
 - **Whole modalities / batch.** Point spectroscopy (`SPECTRUM`/`LINE_SCAN`) is now
   shipped end-to-end (`docs/point-spectrum-discovery.md`); the interferogram -> FFT
   -> `SPECTRUM` math (`INTERFEROGRAM` -> FFT, distinct from the direct wavenumber
-  sweep already shipped) is now shipped too (Phase 5A, see "Spectral / nano-FTIR
-  track" above). Remaining: a full `HYPERSPECTRAL` cube reader/viewer (Phase 5B/5C).
-  The `snomniman.batch` engine is now **shipped** (Phase 4B, see "Workflow automation
-  track" above), built directly on the Phase 4A `Recipe` runner.
-  Deliberate future phases - no reader/viewer/AI work ahead of a real sample file
-  (Rule 6).
+  sweep already shipped) is shipped (Phase 5A); the `HYPERSPECTRAL` viewer/workspace
+  (band map + linked spectrum, ROI measurements) is shipped against synthetic data
+  too (Phase 5B, see "Spectral / nano-FTIR track" above). Remaining: real
+  interferogram/hyperspectral **readers** (Phase 5C, hard-blocked on real sample
+  data `(user)`). The `snomniman.batch` engine is now **shipped** (Phase 4B, see
+  "Workflow automation track" above), built directly on the Phase 4A `Recipe` runner.
+  Deliberate future phases - no reader/AI work ahead of a real sample file (Rule 6).
 - **Read-only refinements** - mirror a measurement overlay into every comparison pane; a
   measurement "snap to pixel" / numeric-entry mode; free-form comparison layout; "Learn
   more" deep-links from diagnostics rows / harmonics / provenance / metadata (mechanism

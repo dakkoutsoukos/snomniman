@@ -48,6 +48,7 @@ from .diagnostics import DiagnosticsPanel
 from .experiment import ExperimentModel, ExperimentTable
 from .experiment_view import ExperimentPanel
 from .export import ExperimentExportContext, experiment_table_to_csv
+from .hyperspectral import HyperspectralView
 from .imageview import ChannelImageView
 from .knowledge import KnowledgePanel
 from .measurement import MeasurementController, MeasurementPanel
@@ -126,6 +127,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._back_btn = QtWidgets.QPushButton()
         self._image = ChannelImageView()
         self._spectrum = SpectrumPlotView()
+        self._hyperspectral = HyperspectralView()
         self._comparison = ComparisonView()
         self._contact = ContactSheet()
         self._stack = QtWidgets.QStackedWidget()
@@ -139,9 +141,16 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._process = ProcessingWorkspace()
         self._knowledge = KnowledgePanel()
         self._experiment_panel = ExperimentPanel()
-        # Measurements are read-only observations placed on the single image; they
-        # report across the single view's channels (current + phase + topography).
-        self._measure = MeasurementController(model, self._image, model.single_view_specs)
+        # Measurements are read-only observations placed on the single image (or,
+        # for a hyperspectral measurement, the band map); they report across the
+        # active view's channels (current + phase + topography), or - in spectral
+        # mode - a mean spectrum per ROI.
+        initial_image_view = (
+            self._hyperspectral.band_view if model.is_hyperspectral else self._image
+        )
+        self._measure = MeasurementController(
+            model, initial_image_view, model.single_view_specs, spectral=model.is_hyperspectral
+        )
         self._measure_panel = MeasurementPanel(self._measure)
 
         self._build_menu()
@@ -239,6 +248,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._stack.addWidget(self._comparison)  # page 1: side-by-side comparison
         self._stack.addWidget(self._contact)  # page 2: harmonic contact sheet
         self._stack.addWidget(self._spectrum)  # page 3: point-spectroscopy curve
+        self._stack.addWidget(self._hyperspectral)  # page 4: hyperspectral band map + spectrum
         outer.addWidget(self._stack, 1)
         outer.addWidget(self._active)
         self.setCentralWidget(central)
@@ -340,6 +350,9 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         # Measurements live on the single image; adding one focuses that view.
         self._measure.measurementAdded.connect(self._show_channel_view)
         self._spectrum.positionChanged.connect(self._on_spectrum_position_changed)
+        self._hyperspectral.wavenumberChanged.connect(self._on_hyperspectral_wavenumber_changed)
+        self._hyperspectral.pixelClicked.connect(self._on_hyperspectral_pixel_clicked)
+        self._hyperspectral.band_view.cursorMoved.connect(self._on_hyperspectral_cursor_moved)
         # Processing signals (generic, registry-driven workspace)
         self._process.operationSelected.connect(self._on_operation_selected)
         self._process.previewRequested.connect(self._on_preview_requested)
@@ -383,7 +396,11 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         # measurement comparison reuses the image-only ComparisonView, so a spectral
         # active measurement always falls back to its own (spectrum) channel view.
         self._model.set_channel(canonical)  # the anchor measurement has this channel
-        if self._experiment_compare is not None and not self._model.is_spectral:
+        if (
+            self._experiment_compare is not None
+            and not self._model.is_spectral
+            and not self._model.is_hyperspectral
+        ):
             if canonical in self._experiment.shared_channels(list(self._experiment_compare)):
                 self._experiment_compare_channel = canonical
                 self._show_experiment_comparison()
@@ -394,7 +411,11 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
     def _on_representation_selected(self, representation: str) -> None:
         self._model.set_representation(representation)
-        if self._experiment_compare is not None and not self._model.is_spectral:
+        if (
+            self._experiment_compare is not None
+            and not self._model.is_spectral
+            and not self._model.is_hyperspectral
+        ):
             self._show_experiment_comparison()  # shared representation across panes
             return
         self._show_channel_view()
@@ -406,10 +427,20 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         if push_history:
             self._history.append(self._model)
         self._model = new_model
-        self._measure.set_model(new_model)
+        self._bind_measure(new_model)
         self._refresh_navigation()
         self._load()
         self._refresh_manager()
+
+    def _bind_measure(self, model: ExplorerModel) -> None:
+        """Rebind the Measurements controller + panel to *model*'s right image
+        view and mode (a hyperspectral <-> image session switch needs both the
+        bound ``ChannelImageView`` instance and the spectral flag to change)."""
+        image_view = self._hyperspectral.band_view if model.is_hyperspectral else self._image
+        self._measure.rebind(
+            model, image_view, model.single_view_specs, spectral=model.is_hyperspectral
+        )
+        self._measure_panel.set_spectral(model.is_hyperspectral)
 
     def _navigate_back(self) -> None:
         if not self._history:
@@ -427,17 +458,22 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
     # -- view switching -------------------------------------------------------
 
     def _show_channel_view(self) -> None:
-        """Show the active measurement's own per-channel view (image or spectrum)."""
+        """Show the active measurement's own per-channel view (image, spectrum,
+        or - a genuine third state, never an overload of ``is_spectral`` - the
+        linked band-map + spectrum view for a hyperspectral measurement)."""
         self._refresh_view_controls()
-        if self._model.is_spectral:
+        if self._model.is_hyperspectral:
+            self._show_hyperspectral()
+        elif self._model.is_spectral:
             self._show_spectrum()
         else:
             self._show_single()
 
     def _refresh_view_controls(self) -> None:
         """Enable/disable the image-only (comparison/contact-sheet) toolbar buttons."""
+        image_only = not (self._model.is_spectral or self._model.is_hyperspectral)
         for button in self._image_only_buttons:
-            button.setEnabled(not self._model.is_spectral)
+            button.setEnabled(image_only)
 
     def _show_single(self) -> None:
         self._experiment_compare = None  # any single view leaves cross-measurement compare
@@ -455,6 +491,57 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
     def _on_spectrum_position_changed(self, _index: int) -> None:
         self._refresh_spectrum()
+
+    def _show_hyperspectral(self) -> None:
+        """The hyperspectral analogue of :meth:`_show_single`/:meth:`_show_spectrum`:
+        a linked band-map + spectrum view, never the plain 2-D image path (which
+        would try to render the whole (y, x, wavenumber) cube as one image)."""
+        self._experiment_compare = None
+        self._hyperspectral.set_wavenumber_range(self._model.wavenumber_axis().size)
+        self._stack.setCurrentWidget(self._hyperspectral)
+        self._refresh_hyperspectral()
+
+    def _on_hyperspectral_wavenumber_changed(self, _index: int) -> None:
+        self._refresh_hyperspectral()
+
+    def _on_hyperspectral_pixel_clicked(self, x_nm: float, y_nm: float) -> None:
+        self._show_hyperspectral_pixel_spectrum(x_nm, y_nm)
+
+    def _on_hyperspectral_cursor_moved(self, x_nm: float, y_nm: float, in_bounds: bool) -> None:
+        if not in_bounds:
+            return
+        self._show_hyperspectral_pixel_spectrum(x_nm, y_nm, readout=True)
+
+    def _show_hyperspectral_pixel_spectrum(
+        self, x_nm: float, y_nm: float, *, readout: bool = False
+    ) -> None:
+        iy, ix, in_bounds = self._model.nearest_pixel(x_nm, y_nm)
+        if not in_bounds:
+            return
+        curve = self._model.pixel_spectrum(x_index=ix, y_index=iy)
+        self._hyperspectral.spectrum_view.show_curve(curve)
+        if readout:
+            self._hyperspectral.spectrum_view.set_readout(
+                f"pixel ({ix}, {iy})      {curve.label}"
+            )
+
+    def _refresh_hyperspectral(self) -> None:
+        self._browser.set_representations(
+            self._model.representations(), self._model.current_representation
+        )
+        index = self._hyperspectral.wavenumber_index()
+        render = self._model.band_map(index)
+        self._hyperspectral.band_view.show_render(render)
+        wn = self._model.wavenumber_axis()
+        wn_text = f"{wn[index]:.1f} cm^-1" if index < wn.size else ""
+        self._hyperspectral.set_wavenumber_readout(wn_text)
+        state = self._channel_state(render.channel)
+        self._active.setText(
+            f"Showing   {render.title}   at {wn_text}      state: {state}"
+        )
+        self._diagnostics.set_histogram(
+            self._model.band_map_histogram(index), render.vmin, render.vmax, render.title
+        )
 
     def _show_comparison(self, preset: str) -> None:
         self._experiment_compare = None  # a within-measurement preset, not a cross-measurement view
@@ -569,17 +656,33 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             else:
                 inputs = self._resolve_inputs()
                 preview = self._model.preview_operation(step_id, params, inputs)
-        except ProcessingError as exc:
+        except (ProcessingError, DatasetError) as exc:
             QtWidgets.QMessageBox.warning(self, "Preview failed", str(exc))
             return
 
         self._preview = preview
-        specs = [pane.spec for pane in preview.panes]
-        renders: dict[PaneSpec, RenderData] = {pane.spec: pane.render for pane in preview.panes}
-        self._comparison.set_panes(specs, renders.__getitem__)
-        self._stack.setCurrentWidget(self._comparison)
         header = preview.title if is_recipe else self._operation_title(step_id)
         self._active.setText(f"Preview: {header} — Accept to commit, Cancel to discard")
+        if preview.panes:
+            # Image-shaped preview (incl. a hyperspectral band-0 representative
+            # slice) - the existing comparison surface, unchanged.
+            specs = [pane.spec for pane in preview.panes]
+            renders: dict[PaneSpec, RenderData] = {
+                pane.spec: pane.render for pane in preview.panes
+            }
+            self._comparison.set_panes(specs, renders.__getitem__)
+            self._stack.setCurrentWidget(self._comparison)
+        elif preview.spectral_panes:
+            # Curve-shaped preview (a SPECTRUM/LINE_SCAN focus channel, or the
+            # freshly-FFT'd output of an operation like spectrum.fft_interferogram)
+            # - reuses the existing page-3 spectrum viewer's multi-curve overlay,
+            # no new preview surface needed.
+            curves = {p.label: p.curve for p in preview.spectral_panes}
+            self._spectrum.show_curves(curves)
+            self._stack.setCurrentWidget(self._spectrum)
+        # Neither: an honest decline (e.g. no 2-D/curve view for this focus
+        # channel yet) - the change summary in the Workspace still explains what
+        # would happen; nothing crashes.
         self._process.show_preview(preview)
         self._process.set_preview_mode(True)
 
@@ -594,7 +697,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
     def _on_preview_cancelled(self) -> None:
         self._preview = None
         self._process.set_preview_mode(False)
-        self._show_single()
+        self._show_channel_view()  # returns to whichever view the active model needs
 
     def _operation_title(self, step_id: str) -> str:
         return self._model.operation_option(step_id).title
@@ -1071,15 +1174,19 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             return
         # Cross-measurement comparison reuses the image-only ComparisonView (each pane
         # is rendered through a per-measurement ``render_spec``); a point-spectroscopy
-        # measurement has no such rendering yet, so it is excluded here rather than
-        # left to crash when a shared channel name happens to line up.
-        image_only = [i for i in chosen if not self._sessions[i].model.is_spectral]
+        # or hyperspectral measurement has no such rendering yet, so both are excluded
+        # here rather than left to crash when a shared channel name happens to line up.
+        image_only = [
+            i for i in chosen
+            if not self._sessions[i].model.is_spectral
+            and not self._sessions[i].model.is_hyperspectral
+        ]
         if len(image_only) < 2:
             QtWidgets.QMessageBox.information(
                 self,
                 "Compare measurements",
-                "Point-spectroscopy measurements cannot be compared in this view yet; "
-                "select two or more image measurements.",
+                "Point-spectroscopy and hyperspectral measurements cannot be compared "
+                "in this view yet; select two or more image measurements.",
             )
             return
         chosen = image_only
@@ -1270,7 +1377,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         self._comparison_preset = None
         self._preview = None
         self._process.set_preview_mode(False)
-        self._measure.set_model(s.model)
+        self._bind_measure(s.model)
         self._refresh_navigation()
         self._load()
         self._restore_view_and_measurements(s)
@@ -1285,12 +1392,19 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             mode = "contact"
         elif current is self._spectrum:
             mode = "spectrum"
-        return {
+        elif current is self._hyperspectral:
+            mode = "hyperspectral"
+        state: dict[str, Any] = {
             "channel": self._model.current_channel,
             "representation": self._model.current_representation,
             "mode": mode,
             "preset": self._comparison_preset,
         }
+        if mode == "hyperspectral":
+            # The spectrum is a first-class object: the band a researcher was
+            # looking at survives save/reopen, exactly like channel/representation.
+            state["wavenumber_index"] = self._hyperspectral.wavenumber_index()
+        return state
 
     def _restore_view_and_measurements(self, s: MeasurementSession) -> None:
         """Restore the active view (channel / representation / mode) and overlays."""
@@ -1302,7 +1416,9 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             if isinstance(representation, str) and representation in self._model.representations():
                 self._model.set_representation(representation)
             self._browser.select(channel)
-            if self._model.is_spectral:
+            if self._model.is_hyperspectral:
+                self._refresh_hyperspectral()
+            elif self._model.is_spectral:
                 self._refresh_spectrum()
             else:
                 self._refresh_channel()
@@ -1311,10 +1427,17 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         if has_measurements:
             self._measure.load_records(records)
         # Measurements and multi-pane comparison/contact views are image-only; a
-        # spectral active measurement always restores into its own channel view.
+        # spectral or hyperspectral active measurement always restores into its
+        # own channel view.
         mode = view.get("mode", "single")
         preset = view.get("preset")
-        if self._model.is_spectral:
+        if self._model.is_hyperspectral:
+            self._show_channel_view()  # sets the wavenumber range + shows band 0
+            wavenumber_index = view.get("wavenumber_index")
+            if isinstance(wavenumber_index, int):
+                self._hyperspectral.set_wavenumber_index(wavenumber_index)
+                self._refresh_hyperspectral()
+        elif self._model.is_spectral:
             self._show_channel_view()
         elif not has_measurements and mode == "comparison" and isinstance(preset, str):
             self._show_comparison(preset)
@@ -1348,7 +1471,12 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         )
 
     def _export_channel_gsf(self) -> None:
-        """Export the channel/representation on screen as a Gwyddion Simple Field grid."""
+        """Export the channel/representation on screen as a Gwyddion Simple Field grid.
+
+        For a hyperspectral measurement, exports the *currently displayed band* -
+        one wavenumber slice is an ordinary 2-D grid, so this reuses the unmodified
+        image exporter via ``ExplorerModel.band_dataset`` rather than a new format.
+        """
         if self._model.is_spectral:
             QtWidgets.QMessageBox.information(
                 self, "Not available",
@@ -1358,7 +1486,14 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             return
         channel = self._model.current_channel
         representation = self._model.current_representation
-        default = f"{self._model.title}_{channel}_{representation}.gsf"
+        if self._model.is_hyperspectral:
+            index = self._hyperspectral.wavenumber_index()
+            dataset = self._model.band_dataset(index)
+            wn = self._model.wavenumber_axis()[index]
+            default = f"{self._model.title}_{channel}_{representation}_{wn:.0f}cm-1.gsf"
+        else:
+            dataset = self._model.dataset
+            default = f"{self._model.title}_{channel}_{representation}.gsf"
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self, "Export channel (GSF)", default, "Gwyddion Simple Field (*.gsf)"
         )
@@ -1366,9 +1501,9 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             return
         try:
             gsf_path, provenance_path = export_channel_gsf(
-                self._model.dataset, channel, path, representation=representation
+                dataset, channel, path, representation=representation
             )
-        except (OSError, DatasetError) as exc:
+        except (OSError, DatasetError, ProcessingError) as exc:
             QtWidgets.QMessageBox.warning(self, "Export failed", str(exc))
             return
         QtWidgets.QMessageBox.information(
@@ -1420,11 +1555,12 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         return kind, [(current_spec, self._image.levels)], overlays
 
     def _export_figure(self) -> None:
-        if self._model.is_spectral:
+        if self._model.is_spectral or self._model.is_hyperspectral:
             QtWidgets.QMessageBox.information(
                 self, "Not available",
                 "Publication figure export is not yet available for a point-spectroscopy "
-                "measurement. Use Export -> Processed Data (Zarr) to export the dataset.",
+                "or hyperspectral measurement. Use Export -> Processed Data (Zarr) or "
+                "Export -> Channel (GSF) instead.",
             )
             return
         kind, panels, overlays = self._figure_inputs()

@@ -24,7 +24,7 @@ if TYPE_CHECKING:  # avoid an import cycle: model imports ExportContext from her
     from snomniman.viz import RegionComparison
 
     from .experiment import ExperimentTable
-    from .model import ProfileSet, RegionReport
+    from .model import ProfileSet, RegionReport, SpectralRegionReport
 
 
 @dataclass(frozen=True)
@@ -86,6 +86,23 @@ def region_to_csv(report: RegionReport, context: ExportContext, *, delimiter: st
             _fmt(s.rms), _fmt(s.p25), _fmt(s.p75),
             str(s.count), _fmt(s.area_nm2),
         ])
+    return buffer.getvalue()
+
+
+def spectral_region_to_csv(
+    report: SpectralRegionReport, context: ExportContext, *, delimiter: str = ","
+) -> str:
+    """Render a hyperspectral ROI's mean spectrum as CSV: a provenance header then
+    one row per wavenumber - the spectral analogue of :func:`region_to_csv`."""
+    buffer = StringIO()
+    region = f"{report.count} pixels; area {report.area_nm2:.6g} nm^2"
+    _write_header(buffer, f"{report.kind} region spectrum", context, extra=[("Region", region)])
+
+    writer = csv.writer(buffer, delimiter=delimiter, lineterminator="\n")
+    curve = report.curve
+    writer.writerow(["wavenumber_cm1", f"{curve.label} [{curve.unit}]"])
+    for wn, value in zip(curve.wavenumber_cm1, curve.values, strict=True):
+        writer.writerow([_fmt(wn), _fmt(value)])
     return buffer.getvalue()
 
 
@@ -179,4 +196,5 @@ __all__ = [
     "experiment_table_to_csv",
     "profile_to_csv",
     "region_to_csv",
+    "spectral_region_to_csv",
 ]

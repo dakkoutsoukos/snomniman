@@ -259,6 +259,64 @@ def test_overlay_with_bad_geometry_is_skipped_not_raised(topography_dataset: Dat
 
 
 # --------------------------------------------------------------------------- #
+# Hyperspectral sessions (Phase 5B): a real fact must be reported, not silently
+# dropped - is_spectral stays False for a hyperspectral session, so it always
+# flowed through these code paths; the fix is what they compute, not whether.
+# --------------------------------------------------------------------------- #
+
+
+def test_hyperspectral_overlay_rectangle_reports_a_spectrum_peak(
+    hyperspectral_dataset: Dataset,
+) -> None:
+    record = {
+        "kind": "rectangle",
+        "name": "ROI A",
+        "visible": True,
+        "geometry": {"pos": [100.0, 75.0], "size": [150.0, 100.0]},  # covers the known peak
+    }
+    session = _session(
+        hyperspectral_dataset, mid="measurement-0001", title="Cube", measure_records=[record]
+    )
+    report = ReportModel([session], "Test Project").experiment_report()
+    overlays = next(s for s in report.sections if s.title == "Region/profile measurements")
+    assert any(
+        "ROI A" in line and "rectangle" in line and "cm^-1" in line for line in overlays.lines
+    )
+
+
+def test_hyperspectral_overlay_with_bad_geometry_is_skipped_not_raised(
+    hyperspectral_dataset: Dataset,
+) -> None:
+    record = {"kind": "rectangle", "name": "bad", "visible": True, "geometry": {}}
+    session = _session(
+        hyperspectral_dataset, mid="measurement-0001", title="Cube", measure_records=[record]
+    )
+    report = ReportModel([session], "Test Project").experiment_report()
+    assert not any(s.title == "Region/profile measurements" for s in report.sections)
+
+
+def test_hyperspectral_histogram_line_is_per_band_not_whole_cube(
+    hyperspectral_dataset: Dataset,
+) -> None:
+    session = _session(hyperspectral_dataset, mid="measurement-0001", title="Cube")
+    session.view_state = {"wavenumber_index": 12}  # the fixture's known peak band
+    report = ReportModel([session], "Test Project").experiment_report()
+    dist = next(s for s in report.sections if s.title == "Value distribution (current channel)")
+    line = next(line for line in dist.lines if "Cube" in line)
+    assert "1724.0 cm^-1" in line
+
+
+def test_hyperspectral_histogram_defaults_to_band_zero_without_view_state(
+    hyperspectral_dataset: Dataset,
+) -> None:
+    session = _session(hyperspectral_dataset, mid="measurement-0001", title="Cube")
+    report = ReportModel([session], "Test Project").experiment_report()
+    dist = next(s for s in report.sections if s.title == "Value distribution (current channel)")
+    line = next(line for line in dist.lines if "Cube" in line)
+    assert "1700.0 cm^-1" in line
+
+
+# --------------------------------------------------------------------------- #
 # Reproducibility Report (Part 3)
 # --------------------------------------------------------------------------- #
 

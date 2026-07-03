@@ -234,3 +234,60 @@ def test_preview_does_not_mutate_source(synthetic_dataset: Dataset) -> None:
     for name, arr in before.items():
         np.testing.assert_array_equal(model.dataset.channel(name).values, arr, err_msg=name)
         assert model.dataset.channel(name).data.flags.writeable is False
+
+
+# --------------------------------------------------------------------------- #
+# Preview on a non-2D-image dataset (regression: this used to crash with an
+# uncaught DatasetError - viz.prepare_channel unconditionally requires x/y).
+# --------------------------------------------------------------------------- #
+
+
+def test_preview_on_hyperspectral_dataset_uses_band_panes(
+    hyperspectral_dataset: Dataset,
+) -> None:
+    # normalize_amplitude requires only COMPLEX_OPTICAL (not SPATIAL_2D), so it
+    # already applies to a hyperspectral cube's O2 channel unmodified - this
+    # exercises the "hyperspectral" _view_kind branch of _preview_panes.
+    model = ExplorerModel(hyperspectral_dataset)
+    preview = model.preview_operation("image.normalize_amplitude", {"channel": "O2"})
+    assert preview.panes  # a representative band-0 pane, not a crash
+    assert preview.spectral_panes == ()
+    for pane in preview.panes:
+        assert pane.render.values.ndim == 2  # a single band slice, not the whole cube
+
+
+def test_preview_on_interferogram_dataset_uses_spectral_panes() -> None:
+    # spectrum.fft_interferogram turns an INTERFEROGRAM (no x/y) into a SPECTRUM
+    # (no x/y either) - the direct regression test for the confirmed crash.
+    ds = _interferogram_dataset()
+    model = ExplorerModel(ds)
+    preview = model.preview_operation(
+        "spectrum.fft_interferogram", {"channel": "O2"}
+    )
+    assert preview.panes == ()
+    assert len(preview.spectral_panes) >= 1
+    assert preview.dataset.channel_names == ["O2"]
+    assert preview.spectral_panes[0].curve.wavenumber_cm1.size > 0
+
+
+def _interferogram_dataset() -> Dataset:
+    """A minimal real-valued INTERFEROGRAM Dataset for the preview-fix regression."""
+    import xarray as xr
+
+    from snomniman.core import ChannelInfo, DataKind, Metadata, ProvenanceNode, StepRecord
+
+    n = 256
+    opd = np.arange(n, dtype=np.float64) * 1e-4  # cm
+    signal = np.cos(2.0 * np.pi * 50.0 * opd) * np.exp(-opd * 200.0)
+    data = xr.Dataset(
+        {"O2": ("opd", signal.astype(np.float64))},
+        coords={"opd": ("opd", opd, {"unit": "cm"})},
+    )
+    metadata = Metadata(
+        data_kind=DataKind.INTERFEROGRAM,
+        channels=(ChannelInfo("O2", "optical", "signal", "float64", amplitude_unit="a.u."),),
+    )
+    node = ProvenanceNode(
+        node_id="n0", record=StepRecord(step_id="io.read", step_version=1, deterministic=True)
+    )
+    return Dataset(data, kind=DataKind.INTERFEROGRAM, metadata=metadata, provenance=node)

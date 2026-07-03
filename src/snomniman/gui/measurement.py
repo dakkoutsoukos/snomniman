@@ -31,9 +31,17 @@ from .export import (
     comparison_to_csv,
     profile_to_csv,
     region_to_csv,
+    spectral_region_to_csv,
 )
 from .imageview import ChannelImageView
-from .model import ExplorerModel, PaneSpec, ProfileSet, RegionReport
+from .model import (
+    ExplorerModel,
+    PaneSpec,
+    ProfileSet,
+    RegionReport,
+    SpectralRegionReport,
+    SpectrumCurve,
+)
 
 SpecsProvider = Callable[[], Sequence[PaneSpec]]
 
@@ -52,7 +60,7 @@ class _Measurement:
         self.name = name
         self.visible = True
         self.roi = roi
-        self.result: ProfileSet | RegionReport | None = None
+        self.result: ProfileSet | RegionReport | SpectralRegionReport | None = None
 
 
 class MeasurementController(QtCore.QObject):
@@ -63,15 +71,27 @@ class MeasurementController(QtCore.QObject):
     measurementAdded = QtCore.Signal()  # a new measurement was placed (focus its surface)
 
     def __init__(
-        self, model: ExplorerModel, image_view: ChannelImageView, specs: SpecsProvider
+        self,
+        model: ExplorerModel,
+        image_view: ChannelImageView,
+        specs: SpecsProvider,
+        *,
+        spectral: bool = False,
     ) -> None:
         super().__init__()
         self._model = model
         self._image = image_view
         self._specs = specs
+        self._spectral = spectral
         self._items: list[_Measurement] = []
         self._active: _Measurement | None = None
         self._next = 1
+
+    @property
+    def spectral(self) -> bool:
+        """True when bound to a hyperspectral band map: ROIs measure a mean
+        spectrum (SpectralRegionReport) instead of per-channel statistics."""
+        return self._spectral
 
     # -- history --------------------------------------------------------------
 
@@ -84,6 +104,11 @@ class MeasurementController(QtCore.QObject):
         return self._active
 
     def add_line(self) -> None:
+        # No line-ROI-across-a-band-map this milestone (a deliberate scope cut,
+        # not a gap): "line spectra" is satisfied by the already-shipped point-
+        # spectroscopy LINE_SCAN view, not a new line-across-a-cube feature.
+        if self._spectral:
+            return
         self._add("line")
 
     def add_rectangle(self) -> None:
@@ -126,11 +151,29 @@ class MeasurementController(QtCore.QObject):
 
         Clears all session measurements — their geometry is still valid but
         the result values must be recomputed against the new dataset, and the
-        old overlays belong to the previous view.
+        old overlays belong to the previous view. Keeps the current image view/
+        spectral mode; use :meth:`rebind` to also change those (a hyperspectral
+        <-> image session switch).
         """
+        self.rebind(model, self._image, model.single_view_specs, spectral=self._spectral)
+
+    def rebind(
+        self,
+        model: ExplorerModel,
+        image_view: ChannelImageView,
+        specs: SpecsProvider,
+        *,
+        spectral: bool,
+    ) -> None:
+        """Generalizes :meth:`set_model` to also swap the bound image view and
+        spectral mode (a hyperspectral <-> image session switch): the same
+        ``ChannelImageView`` widget class hosts both a plain image and a
+        hyperspectral band map, so only the *instance* changes."""
         self.clear()
         self._model = model
-        self._specs = model.single_view_specs
+        self._image = image_view
+        self._specs = specs
+        self._spectral = spectral
 
     def refresh(self) -> None:
         """Recompute every measurement (e.g. after the active channel changed)."""
@@ -208,6 +251,17 @@ class MeasurementController(QtCore.QObject):
             return None
         return self._model.profile_features(item.result)
 
+    def spectral_region_curves(self) -> dict[str, SpectrumCurve]:
+        """Every visible spectral-ROI measurement's mean curve, keyed by its name
+        (feeds "Overlay ROI spectra" - a separate action from "Compare regions",
+        which stays untouched: it only ever matches RegionReport results, so it
+        degrades to its existing "place two regions" message in spectral mode)."""
+        return {
+            item.name: item.result.curve
+            for item in self._items
+            if item.visible and isinstance(item.result, SpectralRegionReport)
+        }
+
     def compare_recent_regions(self) -> RegionComparison | None:
         """Compare the two most recently placed regions (most recent A vs previous B)."""
         reports: list[tuple[str, RegionReport]] = []
@@ -254,6 +308,8 @@ class MeasurementController(QtCore.QObject):
         if item.kind == "line":
             p0, p1 = _line_points(item.roi, view_box)
             item.result = self._model.line_profile(specs, p0, p1)
+        elif self._spectral:
+            item.result = self._spectral_result(item, view_box)
         elif item.kind == "rectangle":
             x0, y0, x1, y1 = _rect_bounds(item.roi)
             item.result = self._model.rect_statistics(specs, x0, y0, x1, y1)
@@ -261,6 +317,14 @@ class MeasurementController(QtCore.QObject):
             item.result = self._model.polygon_statistics(specs, _poly_vertices(item.roi, view_box))
         if emit and item is self._active:
             self.resultChanged.emit()
+
+    def _spectral_result(self, item: _Measurement, view_box: Any) -> SpectralRegionReport:
+        if item.kind == "rectangle":
+            x0, y0, x1, y1 = _rect_bounds(item.roi)
+            return self._model.rect_spectral_region(x0, y0, x1, y1, label=item.name)
+        return self._model.polygon_spectral_region(
+            _poly_vertices(item.roi, view_box), label=item.name
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -353,8 +417,10 @@ class MeasurementPanel(QtWidgets.QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
 
         tools = QtWidgets.QHBoxLayout()
+        self._line_btn = QtWidgets.QPushButton("+ Line")
+        self._line_btn.clicked.connect(controller.add_line)
+        tools.addWidget(self._line_btn)
         for label, slot in (
-            ("+ Line", controller.add_line),
             ("+ Rectangle", controller.add_rectangle),
             ("+ Polygon", controller.add_polygon),
             ("Clear all", controller.clear),
@@ -401,6 +467,14 @@ class MeasurementPanel(QtWidgets.QWidget):
         copy_cmp_btn.clicked.connect(self._copy_comparison)
         analysis_row.addWidget(compare_btn)
         analysis_row.addWidget(copy_cmp_btn)
+        # A separate action for spectral ROIs (does not repurpose "Compare regions",
+        # which stays exactly as it is - it simply finds no RegionReport-typed
+        # measurements in spectral mode and degrades to its existing message).
+        self._overlay_btn = QtWidgets.QPushButton("Overlay ROI spectra")
+        self._overlay_btn.setToolTip("Overlay every visible spectral ROI's mean spectrum")
+        self._overlay_btn.clicked.connect(self._overlay_spectra)
+        self._overlay_btn.setVisible(False)
+        analysis_row.addWidget(self._overlay_btn)
         analysis_row.addStretch(1)
         layout.addLayout(analysis_row)
 
@@ -434,6 +508,15 @@ class MeasurementPanel(QtWidgets.QWidget):
 
         controller.resultChanged.connect(self._refresh_result)
         controller.historyChanged.connect(self._refresh_history)
+        self.set_spectral(controller.spectral)
+
+    def set_spectral(self, spectral: bool) -> None:
+        """Show/hide the tools that only make sense in one mode: no line-ROI-
+        across-a-band-map (spectral); no ROI-spectrum overlay (image). Call
+        whenever the bound controller's mode changes (a hyperspectral <-> image
+        session switch)."""
+        self._line_btn.setVisible(not spectral)
+        self._overlay_btn.setVisible(spectral)
 
     # -- history list ---------------------------------------------------------
 
@@ -488,11 +571,15 @@ class MeasurementPanel(QtWidgets.QWidget):
             return
         if isinstance(active.result, ProfileSet):
             self._show_profile(active.result)
+        elif isinstance(active.result, SpectralRegionReport):
+            self._show_spectral_region(active.result)
         else:
             self._show_statistics(active.result)
 
     def _show_profile(self, profile: ProfileSet) -> None:
         self._result_stack.setCurrentWidget(self._profile)
+        self._profile.setLabel("bottom", "distance", units="nm")
+        self._profile.setLabel("left", "normalized value")
         for curve in self._curves:
             self._profile.removeItem(curve)
         self._curves = []
@@ -570,6 +657,54 @@ class MeasurementPanel(QtWidgets.QWidget):
         )
         self._analysis.setText("")
 
+    def _show_spectral_region(self, report: SpectralRegionReport) -> None:
+        """A hyperspectral ROI's mean spectrum - the curve-shaped analogue of
+        :meth:`_show_statistics`, reusing the same profile plot as
+        :meth:`_show_profile` (a spectrum is "one curve on an axis" too, just
+        wavenumber instead of distance)."""
+        self._result_stack.setCurrentWidget(self._profile)
+        self._profile.setLabel("bottom", "wavenumber", units="cm-1")
+        curve = report.curve
+        self._profile.setLabel("left", curve.label, units=curve.unit or None)
+        for item in self._curves:
+            self._profile.removeItem(item)
+        self._curves = []
+        self._clear_peak_markers()
+        pen = pg.mkPen(_CURVE_COLORS[0], width=2)
+        self._curves.append(self._profile.plot(curve.wavenumber_cm1, curve.values, pen=pen))
+        self._readout.setText(
+            f"{report.kind.capitalize()} region:   {report.count} pixels   "
+            f"area {report.area_nm2:.0f} nm&sup2;"
+        )
+        self._analysis.setText("")
+
+    def _overlay_spectra(self) -> None:
+        """Overlay every visible spectral ROI's mean spectrum (Part 3: "compare
+        multiple ROIs") - a separate action from "Compare regions" by design."""
+        curves = self._c.spectral_region_curves()
+        if len(curves) < 2:
+            self._analysis.setText(
+                "Place two or more spectral ROIs (rectangle / polygon), "
+                "then Overlay ROI spectra."
+            )
+            return
+        self._result_stack.setCurrentWidget(self._profile)
+        self._profile.setLabel("bottom", "wavenumber", units="cm-1")
+        for item in self._curves:
+            self._profile.removeItem(item)
+        self._curves = []
+        self._clear_peak_markers()
+        legend: list[str] = []
+        first = next(iter(curves.values()))
+        self._profile.setLabel("left", first.label, units=first.unit or None)
+        for index, (name, curve) in enumerate(curves.items()):
+            color = _CURVE_COLORS[index % len(_CURVE_COLORS)]
+            pen = pg.mkPen(color, width=2)
+            self._curves.append(self._profile.plot(curve.wavenumber_cm1, curve.values, pen=pen))
+            legend.append(f'<span style="color:{color}">&#9632; {name}</span>')
+        self._readout.setText(f"Overlaying {len(curves)} ROI spectra:   {'   '.join(legend)}")
+        self._analysis.setText("")
+
     def _clear_peak_markers(self) -> None:
         for marker in self._peak_markers:
             self._profile.removeItem(marker)
@@ -637,6 +772,8 @@ class MeasurementPanel(QtWidgets.QWidget):
         context = self._c.export_context()
         if isinstance(active.result, ProfileSet):
             return profile_to_csv(active.result, context, delimiter=delimiter)
+        if isinstance(active.result, SpectralRegionReport):
+            return spectral_region_to_csv(active.result, context, delimiter=delimiter)
         return region_to_csv(active.result, context, delimiter=delimiter)
 
 

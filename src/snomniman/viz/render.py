@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
+import xarray as xr
 
 from snomniman.core import ChannelInfo, Dataset
 
@@ -80,28 +81,69 @@ def prepare_channel(
     dataset: Dataset, channel: str, representation: str | None = None
 ) -> RenderData:
     """Build display-ready :class:`RenderData` for ``channel`` (default rep if unset)."""
+    rep, da, unit, colormap, cyclic = _representation(dataset, channel, representation)
+    values = np.asarray(da.values, dtype=np.float64)
+    return _finalize_render(dataset, channel, rep, values, unit, colormap, cyclic)
+
+
+def prepare_band(
+    dataset: Dataset,
+    channel: str,
+    wavenumber_index: int,
+    representation: str | None = None,
+) -> RenderData:
+    """Build display-ready :class:`RenderData` for one wavenumber slice of ``channel``.
+
+    The hyperspectral analogue of :func:`prepare_channel`: identical colormap/
+    levels/extent/scale-bar logic, applied to a single ``(y, x)`` band instead of
+    the whole ``(y, x, wavenumber)`` cube. ``channel`` must itself vary with
+    wavenumber (raises :class:`ValueError` otherwise - e.g. a real topography
+    channel in a hyperspectral dataset has no band to slice; an honest refusal,
+    not a crash on a shape mismatch).
+    """
+    rep, da, unit, colormap, cyclic = _representation(dataset, channel, representation)
+    if "wavenumber" not in da.dims:
+        raise ValueError(f"channel {channel!r} has no wavenumber dimension to slice a band from")
+    values = np.asarray(da.isel(wavenumber=wavenumber_index).values, dtype=np.float64)
+    return _finalize_render(dataset, channel, rep, values, unit, colormap, cyclic)
+
+
+def _representation(
+    dataset: Dataset, channel: str, representation: str | None
+) -> tuple[str, xr.DataArray, str, str, bool]:
+    """Resolve ``representation`` to ``(rep, DataArray, unit, colormap, cyclic)`` (full-dim)."""
     rep = representation or default_representation(dataset, channel)
     allowed = available_representations(dataset, channel)
     if rep not in allowed:
         raise ValueError(f"channel {channel!r} has no {rep!r} view; choose from {allowed}")
 
     if rep == AMPLITUDE:
-        values = np.asarray(dataset.amplitude(channel).values, dtype=np.float64)
+        da = dataset.amplitude(channel)
         unit = _amplitude_unit(dataset, channel)
-        vmin, vmax = _robust_range(values)
         colormap, cyclic = _CMAP_AMPLITUDE, False
     elif rep == PHASE:
-        values = np.asarray(dataset.phase(channel).values, dtype=np.float64)
+        da = dataset.phase(channel)
         unit = "rad"
-        vmin, vmax = -np.pi, np.pi  # phase is angular; fixed honest range
         colormap, cyclic = _CMAP_PHASE, True
     else:  # REAL
-        values = np.asarray(dataset.channel(channel).values, dtype=np.float64)
+        da = dataset.channel(channel)
         unit = _real_unit(dataset, channel)
-        vmin, vmax = _robust_range(values)
         colormap = _CMAP_TOPOGRAPHY if _is_topography(dataset, channel) else _CMAP_AMPLITUDE
         cyclic = False
+    return rep, da, unit, colormap, cyclic
 
+
+def _finalize_render(
+    dataset: Dataset,
+    channel: str,
+    rep: str,
+    values: npt.NDArray[np.float64],
+    unit: str,
+    colormap: str,
+    cyclic: bool,
+) -> RenderData:
+    # Phase is angular; use a fixed, honest range instead of a data-derived percentile clip.
+    vmin, vmax = (-np.pi, np.pi) if rep == PHASE else _robust_range(values)
     label = f"{channel} {rep}" if rep != REAL else channel
     title = f"{label} ({unit})" if unit else label
     return RenderData(
@@ -223,5 +265,6 @@ __all__ = [
     "default_representation",
     "level_range",
     "pick_scale_bar",
+    "prepare_band",
     "prepare_channel",
 ]
