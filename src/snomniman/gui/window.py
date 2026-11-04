@@ -41,7 +41,7 @@ from snomniman.pipeline import (
     save_project,
     save_recipe,
 )
-from snomniman.viz import RenderData
+from snomniman.viz import LineshapeFit, RenderData
 
 from .briefing import BriefingPanel
 from .comparison import ComparisonView, ContactSheet
@@ -122,6 +122,12 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         # not persisted provenance.
         self._batch_runs: list[tuple[Recipe, BatchResult]] = []
         self._exported_figures: list[tuple[Path, Path]] = []
+        # The Explorer's one active point-spectrum lineshape fit (Phase 6, no
+        # history - docs/phase6-spectral-lineshape-analysis.md sec 4):
+        # (measurement title, channel/representation label, result). Cleared
+        # whenever the spectrum curve is redrawn (mirrors SpectrumPlotView's
+        # own "a new curve clears the fit result" rule).
+        self._active_lineshape_fit: tuple[str, str, LineshapeFit] | None = None
 
         self._title = QtWidgets.QLabel()
         self._facts = QtWidgets.QLabel()
@@ -357,6 +363,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         # Measurements live on the single image; adding one focuses that view.
         self._measure.measurementAdded.connect(self._show_channel_view)
         self._spectrum.positionChanged.connect(self._on_spectrum_position_changed)
+        self._spectrum.fitRequested.connect(self._on_spectrum_fit_requested)
         self._hyperspectral.wavenumberChanged.connect(self._on_hyperspectral_wavenumber_changed)
         self._hyperspectral.pixelClicked.connect(self._on_hyperspectral_pixel_clicked)
         self._hyperspectral.band_view.cursorMoved.connect(self._on_hyperspectral_cursor_moved)
@@ -505,6 +512,20 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
 
     def _on_spectrum_position_changed(self, _index: int) -> None:
         self._refresh_spectrum()
+
+    def _on_spectrum_fit_requested(self, lo: float, hi: float) -> None:
+        """Fit a Lorentzian + linear baseline within the widget's chosen window
+        (docs/phase6-spectral-lineshape-analysis.md sec 3.3-3.4). A user-invoked,
+        read-only analysis - it never mutates the dataset or touches provenance."""
+        position = self._spectrum.position()
+        try:
+            result = self._model.fit_spectrum_lineshape((lo, hi), position_index=position)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.information(self, "Fit failed", str(exc))
+            return
+        self._spectrum.show_fit(result)
+        curve_label = self._model.spectrum_curve(position_index=position).label
+        self._active_lineshape_fit = (self._model.title, curve_label, result)
 
     def _show_hyperspectral(self) -> None:
         """The hyperspectral analogue of :meth:`_show_single`/:meth:`_show_spectrum`:
@@ -1073,6 +1094,7 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
             batch_runs=self._batch_runs,
             exported_figures=self._exported_figures,
             experiment_stats=self._experiment_stats,
+            active_lineshape_fit=self._active_lineshape_fit,
         )
 
     def _write_report(self, report: Report, path: Path, fmt: str) -> None:
@@ -1631,7 +1653,8 @@ class MeasurementExplorerWindow(QtWidgets.QMainWindow):
         )
         position = self._spectrum.position()
         curve = self._model.spectrum_curve(position_index=position)
-        self._spectrum.show_curve(curve)
+        self._spectrum.show_curve(curve)  # also clears any fit overlay - mirror that here
+        self._active_lineshape_fit = None
         state = self._channel_state(curve.channel)
         position_note = (
             f"      position {position + 1}/{self._model.spectrum_position_count()}"

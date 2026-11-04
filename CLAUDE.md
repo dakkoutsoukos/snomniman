@@ -217,6 +217,82 @@ rather than repeating them.
 > full day) and the **Scientific Validation Phase** (`docs/scientific-validation.md`, the
 > permanent *scientific* methodology: how a capability is proposed, validated, and only
 > then implemented). Future work happens at their intersection - *needed* and *validated*.
+> **SNOMNIMAN can now be installed like an ordinary Windows application**
+> (2026-07-03, user-commissioned): `docs/deployment-strategy.md` designed the
+> path (PyInstaller onedir + Inno Setup + staged updates); Phase 1
+> (`docs/packaging-notes.md`) shipped a real standalone `SNOMNIMAN.exe`; the
+> same-day **release-readiness audit** (`docs/release-readiness-v1.md`, "try
+> to prove it is NOT ready") found and fixed two real defects (a missing
+> Windows version resource; no installer yet) and then shipped **Phase 2** -
+> a working Inno Setup installer (per-user, no admin, Desktop + Start Menu
+> shortcuts, a proper uninstall entry) verified through a real install ->
+> launch -> uninstall cycle. Verdict: ready for its first external (mentor)
+> recipient, with code signing (removes the expected SmartScreen warning)
+> and a literal second-machine test as the next, non-blocking steps.
+> **Phase 6 - Spectral Lineshape Analysis is shipped** (2026-07-14,
+> `docs/phase6-spectral-lineshape-analysis.md`, user-commissioned from a
+> real research figure a mentor shared): the ratio -> smooth -> fit -> report
+> workflow a researcher needs to extract a reportable peak center/FWHM from
+> point spectroscopy. `spectrum.ratio` (2-input amplitude ratio between two
+> spectral measurements - the second real consumer of the 2-input `InputSpec`
+> pattern, ADR-0030) and `spectrum.savgol_smooth` (Savitzky-Golay smoothing)
+> are new `processing.spectrum` steps; `viz.measure.fit_lineshape` is a new
+> Lorentzian + linear-baseline joint-fit **analysis** (deliberately not a
+> `ProcessingStep` - it reports a fact about a spectrum, not a new immutable
+> object to chain from); the Explorer gained a wavenumber/wavelength dual
+> axis and an interactive fit-window on the point-spectrum plot (built as an
+> additive `SpectrumPlotView` capability, not a `MeasurementController` mode,
+> once that class turned out to be concretely ROI/image-shaped rather than
+> generic); the Explorer keeps exactly **one** active fit (an explicit user
+> decision, no history/session list) which flows automatically into a new
+> "Spectral peak fit (active)" Experiment Report / Publication Package
+> section, plus a new Knowledge article and Manual page. Validated
+> synthetically (a known-good Lorentzian recovery and a known-bad double-peak
+> case that fails honestly) and live-verified against real point-spectroscopy
+> sample data. Deliberately deferred, by explicit scope decision: N-ary
+> spectrum averaging, Gaussian/Voigt/multi-peak fitting, and any
+> auto-recommendation (stays behind the Scientific Validation Phase gate -
+> this whole track is user-invoked Category-A tooling). 865 tests pass.
+> **Phases 7A-C/8A/9A-C are shipped** (2026-07-20, `docs/phase7-9-master-roadmap.md`,
+> ADR-0033): the parts of the master roadmap ready to build without a data or
+> literature-verification blocker. **Phase 7** (Automated Scientific Feature
+> Analysis) needed **no new architecture** - `image.threshold_segment` (Otsu/
+> percentile/fixed thresholding + `scipy.ndimage` connected-component labeling,
+> watershed deliberately deferred - a new dependency) is a registered
+> `ProcessingStep`; per-feature morphology/statistics (area, diameter, perimeter,
+> aspect ratio, orientation, per-region source-channel stats, a size-distribution
+> histogram) land as a new `diagnostics.FeatureDiagnostics` descriptor; cross-
+> measurement comparison extends `gui.experiment.ExperimentModel`
+> (`feature_table`) and reporting extends `gui.report.ReportModel` (a new
+> "Feature analysis" section) - the same reuse-only pattern Line Flatten and
+> Phase 3B/3C already established. **Phase 9A/9B/9C** (the Scientific Assistant)
+> likewise added no new module: `ai.experiment` (`build_experiment_briefing` +
+> deterministic `detect_outliers`, a plain z-score statistic, never a claim about
+> *why*) extends `snomniman.ai` with a new `ai -> pipeline` dependency edge,
+> deliberately independent of `gui.experiment.ExperimentModel` (a presentation
+> aggregator, not a reasoning layer); the single-measurement Briefing was
+> extended to narrate Phase 7 features, validating the "AI's vocabulary is
+> exactly the deterministic engine's vocabulary" claim for a second time. **Phase
+> 8A** did add one new module, `snomniman.physics` (ADR-0033) - a shared Drude/
+> Lorentz-oscillator dielectric-model fit (`fit_dielectric_model`) against a
+> measured complex near-field spectrum, the same justification weight as
+> `describe`/`diagnostics`/`ai` each earning their own module. **A real
+> identifiability finding, caught by Rule-6 synthetic testing before it shipped,
+> not a hedge:** the Drude plasma frequency, the Lorentz oscillator strength, and
+> `eps_inf` each contribute to the model only as a scalar prefactor, exactly
+> degenerate with the fit's free complex scale/offset (which absorb the near-
+> field signal's unknown, uncalibrated proportionality) - so `DielectricFit`
+> reports **no such fields**, only the genuinely shape-identifiable Drude
+> `gamma` and Lorentz `omega_to`/`gamma`. This is also precisely why a future
+> finite dipole model (Phase 8B, **not implemented** - it and carrier-density
+> estimation, Phase 8C, remain designed-only, honestly deferred pending real
+> reference data / tip-geometry metadata this repo does not have) is
+> scientifically *necessary*, not merely more accurate, for the plasma
+> frequency/carrier density. No GUI panel yet for physics fitting (backend-only,
+> matching the Phase 5A precedent); no `ReasoningRule` anywhere in this
+> increment - every new capability is researcher-initiated, never auto-
+> recommended. 925 tests pass; `ruff`, `mypy --strict`, and the Qt-free
+> invariant green.
 
 This is documentation-driven development: keep `/docs` authoritative and in sync
 with code.
@@ -591,6 +667,11 @@ surface automatically. See `docs/roadmap.md` for the current priority order.
 | `docs/knowledge-center.md` | **Knowledge Center** (`snomniman.knowledge`; ADR-0024): a living, in-app scientific knowledge base - philosophy (teach the science while performing it; ground the AI), architecture (a Qt-free leaf), the structured `Article` model, the Explorer panel + "Learn more" deep-links, AI integration, the integrity/no-drift guarantees, and future expansion. |
 | `docs/manual-system.md` | **The Manual** (`snomniman.manual`; ADR-0032): the Knowledge Center's how-to-use-it counterpart - philosophy (how vs. why, never duplicating each other), architecture (a second Qt-free leaf, deliberately **no import edge** with `knowledge` - cross-links are plain string ids, checked by a dedicated cross-package test), the structured `ManualPage` model, ranked search, the Explorer **Manual** tab (the tab itself is the primary entry point) + context-sensitive entry points (per-operation buttons, `Help > Manual`/F1), the integrity/no-drift guarantees, the honest Settings page, the documented toolbar/dialog-level scope boundary, and future expansion. |
 | `docs/point-spectrum-discovery.md` | **Point Spectrum Discovery** - the second-modality analogue of `measurement-discovery.md`: what the real point-spectroscopy sample actually is (a 100-position line of spectra, not one isolated spectrum), why `DataKind.SPECTRUM`/`LINE_SCAN` + `Capability.SPECTRAL`/`SPATIAL_1D` (already anticipated in `data-model.md`) needed **no redesign**, the one additive `Metadata` field (`SpectralInfo`), the diagnostics gating bug the new modality surfaced and fixed, and the documented GUI scope boundary (image-only affordances decline gracefully for a spectral measurement). |
+| `docs/phase6-spectral-lineshape-analysis.md` | **Phase 6 - Spectral Lineshape Analysis - SHIPPED (stages 1-4, 2026-07-14)** - a real workflow from the user's mentor's own research (a CdO nanoparticle point-spectroscopy figure): an amplitude ratio between two point-spectra (`spectrum.ratio`, the second real consumer of the 2-input `InputSpec` pattern, ADR-0030), Savitzky-Golay smoothing (`spectrum.savgol_smooth`), and a Lorentzian + linear-baseline lineshape fit (`viz.measure.fit_lineshape`, an **analysis** alongside `analyze_profile`, not a `ProcessingStep` - expanding Phase 5D's original narrower scope), plus the fitting UI and reporting integration. Deliberately defers N-ary spectrum averaging (no second consumer yet for an `InputSpec` extension beyond 2, Rule 7), Gaussian/Voigt/multi-peak fitting, a separate baseline-subtraction step, and any auto-recommendation (stays behind the full Scientific Validation Phase gate). |
+| `docs/phase7-9-master-roadmap.md` | **Phases 7-9 Master Roadmap - Automated Feature Analysis, Physics Modeling, the Scientific Assistant** (2026-07-20; renumbered from the commissioning brief's "6/7/8" since Phase 6 was already shipped, see the doc's own Section 0) - the full research/design blueprint, plus its own status record of what shipped from it same-session: **Phase 7 (7A-7C) and Phase 9 (9A-9C) shipped with no new architecture** (`image.threshold_segment`, `diagnostics.FeatureDiagnostics`, `ExperimentModel`/`ReportModel` extensions; `ai.experiment` extending `snomniman.ai` with a new `ai -> pipeline` edge); **Phase 8A shipped** (`snomniman.physics`, ADR-0033, a Drude/Lorentz dielectric-model fit) with a real parameter-identifiability finding caught by synthetic testing before it shipped (`eps_inf`/`omega_p`/`strength` are not recoverable from a practical near-field fit - exactly why Phase 8B/FDM is scientifically necessary, not just more accurate). **Phase 8B (finite dipole model), 8C (carrier-density estimation), 7D/7E (watershed, hyperspectral segmentation), and every Phase 9D auto-recommendation rule remain designed, not implemented** - honestly deferred pending real reference data, tip-geometry metadata, or their own Scientific Validation study. |
+| `docs/deployment-strategy.md` | **Deployment Strategy - Version 1** (Research & Design, no ADR yet) - the user-commissioned plan for turning SNOMNIMAN from a developer-run Python project into an installable Windows desktop application: investigates and recommends **PyInstaller (`--onedir`)** for freezing and **Inno Setup** (per-user install, no admin) for the installer, a staged **update roadmap** (manual -> in-app GitHub-Releases check -> deferred background auto-update, deliberately never silent mid-session), Windows-convention **application-data layout** (Program Files/`%LOCALAPPDATA%\Programs` for the install; `%APPDATA%`/`%LOCALAPPDATA%` for settings/cache/logs; user-chosen paths for projects - uninstall never touches the latter two by default), **SemVer + stable/beta release channels**, and a five-phase roadmap (standalone exe -> installer, minting v1.0.0 -> auto-update checking -> code signing -> on-demand enterprise/MSI deployment). No packaging code written; the ADR(s) land when Phase 1/2 are actually implemented. |
+| `docs/packaging-notes.md` | **Packaging Notes - Phase 1 (Standalone Executable)** - the implementation record for `deployment-strategy.md` Phase 1: `packaging/snomniman.spec` (PyInstaller onedir, windowed, icon-bearing), the new `packaging/snomniman_entry.py` freeze entry point + `[project.gui-scripts]` + a generated `packaging/snomniman.ico` (the two prerequisites the strategy doc flagged). Finding: almost no manual hidden-import work was needed - `pyinstaller-hooks-contrib` already ships maintained hooks for every nonstandard dependency (`h5py`/`numcodecs`/`pyqtgraph`/`xarray`/`zarr`), and SNOMNIMAN's own registry pattern (explicit `import snomniman.processing.image` etc.) is fully static-analysis-friendly. Validated live against real neaSNOM sample data (not synthetic) via UI-Automation-driven screenshots: CdO imaging load, point-spectroscopy (second modality) load, Diagnostics, Scientific Briefing, a full Processing Workspace Preview->Accept cycle (provenance recorded), Knowledge Center, Manual, and the Export dialog opening correctly (write-to-completion left as a documented quick follow-up). ~300 MB onedir build, ~4-5 s cold start. Explicitly not the installer milestone - no shortcuts/uninstaller/auto-update/signing yet (Phase 2+). |
+| `docs/release-readiness-v1.md` | **Release Readiness Audit - v1** - the adversarial pre-first-external-deployment QA pass (user-commissioned: "try to prove it is NOT ready"), and the implementation record for Phase 2 (the Inno Setup installer). Found and fixed two real defects: the frozen exe had **no Windows version resource at all** (blank publisher/version - a real red flag on a researcher's Properties dialog; fixed via new `packaging/make_version_info.py` generating `version_info.txt` from `pyproject.toml`), and **no installer existed yet** (built `packaging/snomniman.iss`: per-user install/no admin via `PrivilegesRequired=lowest` + `{autopf}`, Desktop + Start Menu shortcuts, a proper Apps-and-Features uninstall entry, the existing icon, one version identity via `make_iss_version.py`). Verified a full real install -> launch (from the actual Start Menu shortcut) -> uninstall cycle (files/shortcuts/registry all confirmed gone after uninstall). Closed Phase 1's two open validation gaps: a sanitized-PATH launch + a 278-loaded-module origin audit (only Windows Defender's own DLL was external) substitutes for a literal second machine; the zarr **and** figure exports were driven to completion and the zarr store was independently reloaded and checked. Verdict: **READY TO SEND** (to the one mentor this milestone targets), with the SmartScreen warning (unsigned exe, Phase 4) flagged as the one thing to warn the recipient about in advance, and a literal second-machine test named as the sole still-open Recommended item. |
 | `docs/phase4-workflow-automation.md` | **Phase 4 - Workflow Automation (Research & Design)** - the user-commissioned blueprint for automating repeated processing across a multi-scan session: a workflow survey (Gwyddion/MountainsMap/WSxM/ImageJ/neaPLOT), the Recipe design (a re-bindable projection of the provenance DAG, not a second engine - Option B, confirmed and implemented as ADR-0031), the Phase 4A/4B/4C roadmap (Recipes -> Batch -> Reporting), and the explicit deferrals (auto-recipe-selection stays validation-gated; no scripting/macro language). Phase 4A (Recipes, ADR-0031), 4B (Batch), and 4C (Reporting) are all now **shipped**, completing the workflow automation track (Define -> Execute -> Document). |
 | `docs/phase5-spectral-nanoftir.md` | **Phase 5 - Spectral & nano-FTIR Support (Research & Design; the authoritative Phase 5 planning artifact, superseding the stale `roadmap.md` placeholder of the same name)** - a workflow survey (W1-W9, hyperspectral mapping/interferogram FFT/spectral comparison/resonance ID ranked by scientific importance), the architecture analysis (the data model already handles hyperspectral + interferometric capabilities with one additive `Capability`/`Metadata` field each - no redesign), the data model design for `INTERFEROGRAM`/`HYPERSPECTRAL`, and the four-milestone roadmap (5A Processing Foundations, 5B Hyperspectral Viewer, 5C Real-Data Readers - `(user)`-blocked, 5D Spectral Diagnostics - validation-gated). **5A** (`processing.spectrum.fft_interferogram`; sec 6.1 implementation note) and **5B** (`HyperspectralView`, `ExplorerModel.is_hyperspectral`; sec 6.2 implementation note) are now **shipped** exactly per this design, each with one genuine implementation-time finding not anticipated by the design (5A: apodization windows must center on the ZPD sample, not the array; 5B: the Processing Workspace's Preview path crashed for any non-2-D-image focus channel, fixed with a capability-aware dispatch). 5C stays `(user)`-blocked on real sample data; 5D stays a Scientific Validation queue candidate. |
 

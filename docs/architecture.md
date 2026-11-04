@@ -87,17 +87,37 @@ adds nothing to the provenance DAG. Full detail: `docs/diagnostics-engine.md`
 (ADR-0019).
 
 **AI Scientist:** `snomniman.ai` is a Qt-free layer (depends on `describe` +
-`diagnostics` + `core`) whose first capability is **measurement orientation** - a
-Scientific Briefing that turns the deterministic Description + Diagnostics facts into
-an expert explanation. Its facts are always deterministic and authoritative; an
-optional natural-language interpretation is rendered by a `NarrativeProvider` when one
-is configured (no model SDK is bundled yet - only the provider seam). It consumes only
-the deterministic layers, never raw arrays/Qt/Explorer state; it never mutates a
-dataset and adds nothing to the provenance DAG (a briefing is read-only text, not a
-derivation). Two permanent principles: the AI reasons only over deterministic facts
-SNOMNIMAN produced, and every AI feature has a useful deterministic fallback (AI
-enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
-(ADR-0020); principles in `CLAUDE.md` (AI Architecture Principles).
+`diagnostics` + `core`, plus, since Phase 9A, `pipeline` for experiment-level
+reasoning) whose capabilities are **measurement orientation** (a Scientific Briefing
+that turns the deterministic Description + Diagnostics facts into an expert
+explanation) and, at the whole-project level, an **Experiment Briefing** +
+deterministic **outlier detection** (`ai.experiment`, operating directly on a
+`pipeline.Project`'s measurements - deliberately independent of `gui.experiment.
+ExperimentModel`, which is a presentation-layer aggregator, not a reasoning layer;
+see `docs/phase7-9-master-roadmap.md` Section 5.2). Its facts are always deterministic
+and authoritative; an optional natural-language interpretation is rendered by a
+`NarrativeProvider` when one is configured (no model SDK is bundled yet - only the
+provider seam). It consumes only the deterministic layers, never raw arrays/Qt/
+Explorer state; it never mutates a dataset and adds nothing to the provenance DAG (a
+briefing is read-only text, not a derivation). Two permanent principles: the AI
+reasons only over deterministic facts SNOMNIMAN produced, and every AI feature has a
+useful deterministic fallback (AI enhances understanding, never gates it). Full
+detail: `docs/ai-scientist-v1.md` (ADR-0020); principles in `CLAUDE.md` (AI
+Architecture Principles).
+
+**Physics (material-parameter extraction):** `snomniman.physics` (Phase 8A,
+ADR-0033) is a Qt-free leaf module depending only on `numpy`/`scipy` over plain
+arrays (no `core`/`processing` dependency - the same boundary `viz.measure` uses: it
+operates on already-extracted spectral arrays a caller supplies). It fits
+physically-named resonance models (Drude, Lorentz oscillator) directly to a measured
+complex near-field spectrum, returning a frozen `DielectricFit`. It exists because a
+fitted physical parameter is a genuinely new class of derived knowledge - the output
+of inverting a physical *model* through the data - not a statistic about the array
+(`diagnostics`) or a metadata projection (`describe`), the same category of decision
+that justified `describe`/`diagnostics`/`ai` each getting their own module. Every
+capability is a plain, researcher-initiated analysis (never an auto-recommendation);
+`docs/phase7-9-master-roadmap.md` Section 4 has the full design, including a real
+parameter-identifiability finding synthetic testing caught before it shipped.
 
 ## 3. Module responsibilities
 
@@ -198,7 +218,7 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
   guessed (Rule 6). The future `ai` layer composes these facts with `describe`.
 - **Implemented.** See `docs/diagnostics-engine.md` (ADR-0019).
 
-### `snomniman.ai` - the AI Scientist (depends on `describe`, `diagnostics`, `core`)
+### `snomniman.ai` - the AI Scientist (depends on `describe`, `diagnostics`, `core`, `pipeline`)
 - First capability: **measurement orientation** - `build_briefing(dataset)` composes
   the Description API + Diagnostics Engine into a `Briefing` with three deterministic
   **fact** sections (Summary, Observations, Enables; each statement source-tagged) plus
@@ -213,7 +233,47 @@ enhances understanding, never gates it). Full detail: `docs/ai-scientist-v1.md`
   text). Grounding is by construction: the provider gets only the facts payload
   (`BriefingContext`), which the briefing stores for audit. Orientation only - **no
   recommendations, no execution** (a later milestone).
-- **Implemented (v1).** See `docs/ai-scientist-v1.md` (ADR-0020).
+- **Experiment-level reasoning (implemented, Phase 9A/9B):** `ai.experiment` -
+  `build_experiment_briefing(project)` composes every measurement's `describe`/
+  `diagnostics` facts (plus, once Phase 7 features exist on a measurement, those too -
+  Phase 9C) into a whole-project orientation, using the same source-tagged
+  `BriefingStatement` contract; `detect_outliers(project)` is a plain descriptive
+  statistic (z-score against the project's own metric distribution) flagging a
+  measurement that sits numerically apart from its siblings - never a claim about
+  *why*, that stays a Scientific-Validation-gated judgement if ever automated. This is
+  the one place `ai` depends on `pipeline` (a `Project`'s measurements), deliberately
+  independent of `gui.experiment.ExperimentModel` (a presentation-layer aggregator
+  that lives in `gui` because its only present consumer is the Explorer, Rule 7 -
+  experiment-level *reasoning* is a judgement, so it belongs in the backend).
+- **Implemented (v1 + Phase 9A/9B).** See `docs/ai-scientist-v1.md` (ADR-0020);
+  `docs/phase7-9-master-roadmap.md` Section 5 for the Phase 9 design.
+
+### `snomniman.physics` - deterministic material-parameter extraction (depends on nothing internal; `numpy`/`scipy` only)
+- **Phase 8A (implemented, ADR-0033):** `fit_dielectric_model(wavenumber_cm1, signal,
+  kind="drude"|"lorentz")` fits a Drude free-carrier or Lorentz-oscillator resonance
+  **shape** directly to a measured complex near-field spectrum (`scipy.optimize.
+  least_squares` over the stacked real/imaginary residual), returning a frozen
+  `DielectricFit`. A read-only **analysis** (like `viz.measure.fit_lineshape`), not a
+  `ProcessingStep` - it reports a fitted parameter set, not a new dataset to chain
+  from.
+- **A real identifiability finding, not a hedge:** `eps_inf`, the Drude plasma
+  frequency `omega_p`, and the Lorentz oscillator `strength` each contribute to the
+  model only as a scalar prefactor, exactly degenerate with the fit's free complex
+  scale/offset (which absorb the near-field signal's unknown, uncalibrated
+  proportionality). `DielectricFit` therefore has **no such fields** - only the
+  genuinely shape-identifiable `gamma` (Drude) / `omega_to` + `gamma` (Lorentz) are
+  ever reported, caught and fixed via synthetic round-trip testing (Rule 6) before it
+  shipped. This is also precisely why a future finite dipole model (Phase 8B, not yet
+  implemented) is scientifically *necessary*, not merely more accurate, for
+  `omega_p`/carrier density.
+- No `core`/`processing` dependency (operates on plain arrays a caller extracts, the
+  same boundary `viz.measure` uses); no GUI panel yet (backend-only, matching the
+  Phase 5A precedent). Every capability is researcher-initiated - **no
+  auto-recommendation rule** is registered anywhere in this module.
+- **Implemented (Phase 8A only).** Phase 8B (finite dipole model) and 8C
+  (carrier-density estimation) are designed, not implemented - both need real
+  reference data or tip-geometry metadata this repository does not yet have. See
+  `docs/phase7-9-master-roadmap.md` Section 4 (ADR-0033).
 
 ### `snomniman.pipeline` - reproducibility engine (depends on `io`, `processing`, `core`)
 - The **provenance DAG** (OHD-2): nodes are operations with named inputs, allowing
@@ -444,6 +504,9 @@ both **extends an existing abstraction** (Rule 7). The mapping is fixed:
 | An **export / persistence** path | `snomniman.io`, `snomniman.viz`, `snomniman.pipeline` | a writer the GUI calls; project bundles via `pipeline` over `io` (ADR-0027, **shipped**) |
 | A reusable **processing workflow** | `snomniman.pipeline` | a `Recipe` (a projection of the provenance DAG, not a new engine) (ADR-0031, **shipped**) |
 | A deterministic **report/document** | `snomniman.gui` (`report.py`) | a `ReportModel` composing existing facts (no ADR, **shipped**, Phase 4C) |
+| Whole-project **presentation aggregation** | `snomniman.gui.experiment` (`ExperimentModel`) | a new aggregate table/section (no ADR, **shipped**, ADR-0029/Phase 7C) |
+| Whole-project deterministic **reasoning** | `snomniman.ai` (`ai.experiment`) | a new function over a `pipeline.Project` (no ADR, **shipped**, Phase 9A/9B) |
+| A fitted **physical material parameter** | `snomniman.physics` | a new fitting function + frozen result type (ADR-0033, **shipped**, Phase 8A) |
 
 Because the Diagnostics panel, the AI Scientist panel, the Processing Workspace, and
 the Knowledge Center are **generic and registry-driven**, a capability registered in

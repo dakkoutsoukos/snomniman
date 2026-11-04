@@ -37,11 +37,18 @@ def test_panel_renders_sections(qapp: Any, synthetic_dataset: Dataset) -> None:
 
     panel = BriefingPanel()
     briefing = ExplorerModel(synthetic_dataset).scientific_briefing()
+    def section_titles() -> list[str]:
+        return [
+            panel._facts_layout.itemAt(i).widget().text()
+            for i in range(panel._facts_layout.count())
+            if panel._facts_layout.itemAt(i).widget().font().bold()
+        ]
+
     panel.set_briefing(briefing)
-    assert panel._tree.topLevelItemCount() == len(briefing.sections)
+    assert section_titles() == [section.title for section in briefing.sections]
     # Re-rendering replaces rather than appends.
     panel.set_briefing(briefing)
-    assert panel._tree.topLevelItemCount() == len(briefing.sections)
+    assert section_titles() == [section.title for section in briefing.sections]
 
 
 def test_panel_copy_text_includes_facts(qapp: Any, synthetic_dataset: Dataset) -> None:

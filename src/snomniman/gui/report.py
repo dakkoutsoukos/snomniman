@@ -14,9 +14,13 @@ processing history and the machine-readable appendix from the provenance DAG
 representation); recipe identity from ``pipeline.matching_recipe_name``; batch
 outcomes from an already-run :class:`~snomniman.batch.BatchResult`; region/profile/
 histogram numbers from the validated ``viz.measure`` methods each ``ExplorerModel``
-already exposes. A report is data (:class:`Report`/:class:`ReportSection`, both
-frozen and JSON-adjacent); :func:`render_markdown`/:func:`render_html` are pure
-formatters over that one shared structure - two presentations, not two data models.
+already exposes; the currently active point-spectrum lineshape fit (Phase 6, if
+any - the Explorer keeps exactly one, per docs/phase6-spectral-lineshape-
+analysis.md sec 4) from an already-computed :class:`~snomniman.viz.LineshapeFit`
+the window hands in, not recomputed here. A report is data
+(:class:`Report`/:class:`ReportSection`, both frozen and JSON-adjacent);
+:func:`render_markdown`/:func:`render_html` are pure formatters over that one
+shared structure - two presentations, not two data models.
 
 PDF export is deliberately not implemented: a laid-out multi-page PDF document
 (text + tables + images, not just one figure) would need a new, heavy dependency
@@ -43,6 +47,7 @@ from snomniman.batch import BatchResult
 from snomniman.core import current_software, serialize_dag
 from snomniman.core.exceptions import ProcessingError
 from snomniman.pipeline import Recipe, matching_recipe_name
+from snomniman.viz import LineshapeFit
 
 from .experiment import (
     ExperimentCell,
@@ -105,6 +110,7 @@ class ReportModel:
         batch_runs: Sequence[tuple[Recipe, BatchResult]] = (),
         exported_figures: Sequence[tuple[Path, Path]] = (),
         experiment_stats: ExperimentTable | None = None,
+        active_lineshape_fit: tuple[str, str, LineshapeFit] | None = None,
     ) -> None:
         self._sessions = list(sessions)
         self._project_title = project_title
@@ -112,6 +118,11 @@ class ReportModel:
         self._batch_runs = list(batch_runs)
         self._exported_figures = list(exported_figures)
         self._experiment_stats = experiment_stats
+        # (measurement title, channel/representation label, result) - the Explorer
+        # keeps exactly one active fit (no history, docs/
+        # phase6-spectral-lineshape-analysis.md sec 4); ``None`` if none has been
+        # run this session.
+        self._active_lineshape_fit = active_lineshape_fit
         self._experiment = ExperimentModel(self._sessions)
 
     # -- Part 1: Experiment Report --------------------------------------------
@@ -122,11 +133,13 @@ class ReportModel:
             self._project_section(),
             self._measurements_section(),
             self._diagnostics_section(),
+            self._feature_analysis_section(),
             self._processing_history_section(),
             self._applied_recipes_section(),
             *self._batch_sections(),
             self._generated_datasets_section(),
             *self._overlay_sections(),
+            self._lineshape_fit_section(),
         ]
         return self._report(f"Experiment Report - {self._project_title}", sections)
 
@@ -138,10 +151,12 @@ class ReportModel:
             self._project_section(),
             self._measurements_section(),
             self._metadata_section(),
+            self._feature_analysis_section(),
             self._processing_history_section(),
             self._applied_recipes_section(),
             *self._batch_sections(),
             *self._overlay_sections(),
+            self._lineshape_fit_section(),
             self._figures_section(),
         ]
         return self._report(f"Publication Package - {self._project_title}", sections)
@@ -252,6 +267,20 @@ class ReportModel:
     def _diagnostics_section(self) -> ReportSection:
         return ReportSection("Diagnostics summary", table=self._experiment.diagnostics_table())
 
+    def _feature_analysis_section(self) -> ReportSection | None:
+        """Phase 7 detected particles/domains, aggregated across measurements.
+
+        Reuses ``ExperimentModel.feature_table()`` (itself composed from
+        already-computed ``diagnostics.FeatureDiagnostics`` - no new science here).
+        Absent, not empty, when no measurement in this project has been segmented
+        (``image.threshold_segment`` not applied to any of them) - the same
+        "absent not empty" discipline ``_lineshape_fit_section`` already follows.
+        """
+        table = self._experiment.feature_table()
+        if not any(row.cells[1].text != "-" for row in table.rows):
+            return None
+        return ReportSection("Feature analysis", table=table)
+
     def _metadata_section(self) -> ReportSection:
         facts = tuple(
             DiagnosticRow(session.title, _identity_line(session.model))
@@ -304,6 +333,38 @@ class ReportModel:
             for session in self._sessions
         )
         return ReportSection("Generated datasets", facts=facts)
+
+    def _lineshape_fit_section(self) -> ReportSection | None:
+        """The Explorer's one active point-spectrum lineshape fit, if any (Phase 6,
+        docs/phase6-spectral-lineshape-analysis.md sec 4) - composed verbatim from
+        the already-computed :class:`~snomniman.viz.LineshapeFit`, never recomputed.
+        """
+        if self._active_lineshape_fit is None:
+            return None
+        title, curve_label, fit = self._active_lineshape_fit
+        lo, hi = fit.window
+        facts = (
+            DiagnosticRow("Measurement", title),
+            DiagnosticRow("Channel", curve_label),
+            DiagnosticRow("Lineshape", f"{fit.shape} + {fit.baseline} baseline"),
+            DiagnosticRow("Fit window", f"{lo:.1f}-{hi:.1f} cm^-1 (n={fit.n_window})"),
+            DiagnosticRow(
+                "Center",
+                f"{fit.center:.2f} +/- {fit.center_stderr:.2f} cm^-1 "
+                f"({1e4 / fit.center:.4f} um)",
+            ),
+            DiagnosticRow("FWHM", f"{fit.fwhm:.2f} +/- {fit.fwhm_stderr:.2f} cm^-1"),
+            DiagnosticRow("Amplitude", f"{fit.amplitude:.4g} +/- {fit.amplitude_stderr:.4g}"),
+            DiagnosticRow(
+                "Baseline", f"{fit.baseline_slope:.4g}*x + {fit.baseline_intercept:.4g}"
+            ),
+            DiagnosticRow(
+                "Fit quality",
+                f"R^2 = {fit.r_squared:.4f}, SSR/dof = {fit.ssr_per_dof:.4g}, "
+                f"RMS = {fit.rms:.4g}",
+            ),
+        )
+        return ReportSection("Spectral peak fit (active)", facts=facts)
 
     def _figures_section(self) -> ReportSection | None:
         if not self._exported_figures:

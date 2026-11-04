@@ -776,6 +776,25 @@ class ExplorerModel:
         curve = self.spectrum_curve(position_index)
         return histogram(curve.values, unit=curve.unit)
 
+    def fit_spectrum_lineshape(
+        self,
+        window: tuple[float, float],
+        *,
+        position_index: int = 0,
+        shape: str = viz.LINESHAPE_LORENTZIAN,
+        baseline: str = viz.BASELINE_LINEAR,
+    ) -> viz.LineshapeFit:
+        """Fit a lineshape + baseline to the currently displayed point-spectrum
+        curve within *window* (read-only; docs/phase6-spectral-lineshape-
+        analysis.md sec 3.3-3.4). Reuses whatever channel/representation is
+        currently selected, so fitting an amplitude ratio produced by
+        ``spectrum.ratio`` + ``spectrum.savgol_smooth`` needs no separate API."""
+        curve = self.spectrum_curve(position_index)
+        return viz.fit_lineshape(
+            curve.wavenumber_cm1, curve.values, window=window, shape=shape,
+            baseline=baseline, unit=curve.unit,
+        )
+
     # -- hyperspectral (SPATIAL_2D + SPECTRAL together, read-only) ------------
 
     @property

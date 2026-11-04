@@ -592,6 +592,41 @@ Phase-2B comparison for hyperspectral remain explicitly out of scope for 5B.
   PSP sample arrived - the same discipline applies here, without exception,
   `(user)` action needed (acquire or export a real interferogram/cube file).
 
+**Revisit note (2026-07-02g, no code, no architectural deviation).** Re-ran the
+full data-validation step this milestone requires before any implementation:
+re-inventoried `SNOM Sample Files/2026-06-16 14928/` end to end (all four
+measurement directories) and searched the whole repository for any
+interferogram/hyperspectral-shaped file that might have arrived since 5B. The
+inventory is unchanged from Section 6.3's original blocker:
+
+| Directory | Type (from the `.txt` header) | Format | Exercises |
+|---|---|---|---|
+| `...190234 PH CdO Dense ROI 2` | `Scan: 2D (PsHet)`, 150x150 px, 10x10 um | GSF dir, 30 channels (`Z`+`M0-5`+`O0-5` A/P), `<name> raw.gsf` | `SPATIAL_2D` imaging (Phase 1 golden fixture) |
+| `...205123 PH CdO Dense ROI 2` | `Scan: 2D (PsHet)`, 400x300 px, 2x1.5 um (zoomed re-scan) | same | `SPATIAL_2D` imaging (proves dims aren't hardcoded) |
+| `...221115 PH CdO Dense ROI 2` | `Scan: 2D (PsHet)`, 400x300 px | same | `SPATIAL_2D` imaging (third repeat run) |
+| `...212518 PH PSP CdO Dense ROI 2` | `Scan: Point Spectroscopy (PsHet)`, 100 positions x 201 wavenumbers - a **direct wavenumber sweep**, confirmed **not** interferometric (no `opd` column; the tabular header is `Row Column Omega Wavenumber Z O0A O0P ...`) | GSF dir (no `raw` suffix; adds an `M.gsf` position-index file), `.txt` with a tabular per-row header | `SPECTRAL`+`SPATIAL_1D` (`LINE_SCAN`) - already the point-spectroscopy golden fixture |
+
+No file anywhere carries an `opd`/mirror-position axis (`INTERFEROGRAM`) or
+both a spatial and a spectral axis together (`HYPERSPECTRAL`). Both target
+capabilities for this milestone remain **unimplementable without inventing an
+unvalidated format** - exactly the outcome Rule 6 exists to prevent.
+
+Architecture validation was re-run rather than assumed: the full suite (791
+tests) passes unchanged, including the real-data golden tests in
+`tests/test_io_neasnom_spectrum.py` that already exercise the one real
+spectral fixture available (the PSP `LINE_SCAN`) through the reader registry,
+`Dataset`, `describe`, `diagnostics`, the AI Briefing, the GUI model, and
+(via the wider suite) `Measurement`/`Project`/`ExperimentModel`/`ReportModel`.
+Nothing needed to change for any of those layers to keep holding against real
+data - reconfirming Section 3's architecture verdict rather than adding to it.
+
+**Conclusion: Phase 5C stays hard-blocked, unchanged.** No reader was
+implemented this session (there is nothing real to validate one against); no
+code, tests, or ADR resulted. The unblock condition is exactly as before: a
+real vendor interferogram export and/or hyperspectral cube export must arrive
+`(user)` before 5C can start. See `LOG.md` entry "2026-07-02g" for the full
+session record.
+
 ### 6.4 Phase 5D - Spectral Diagnostics & Reasoning - a Scientific Validation Phase candidate
 
 - **Objective.** A resonance/peak-identification **diagnostic** (position,

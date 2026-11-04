@@ -34,7 +34,11 @@ from snomniman import viz
 from snomniman.batch import STATUS_SUCCESS, BatchResult
 from snomniman.core import Dataset
 from snomniman.diagnostics import diagnose
-from snomniman.diagnostics.descriptors import HARMONIC_SIGNAL, MeasurementDiagnostics
+from snomniman.diagnostics.descriptors import (
+    HARMONIC_SIGNAL,
+    FeatureDiagnostics,
+    MeasurementDiagnostics,
+)
 from snomniman.pipeline import Recipe
 from snomniman.viz import RenderData
 
@@ -249,6 +253,35 @@ class ExperimentModel:
         )
         return ExperimentTable("Experiment diagnostics", columns, rows)
 
+    # -- feature analysis (Phase 7C: reuses diagnose's FeatureDiagnostics, cached) --
+
+    def feature_table(self) -> ExperimentTable:
+        """Cross-measurement particle/domain feature comparison (Phase 7C).
+
+        Aggregates every measurement's Phase 7 ``diagnostics.FeatureDiagnostics``
+        (one row per measurement) into the same generic ``ExperimentTable`` shape
+        every other comparison view already uses - no new results widget. A
+        measurement with no segmented channel (``image.threshold_segment`` not
+        applied) reports "-" cells: honest, not an error, since most measurements in
+        a project may never be segmented.
+        """
+        columns = (
+            ExperimentColumn("Label channel(s)"),
+            ExperimentColumn("Feature count"),
+            ExperimentColumn("Total area", "nm^2"),
+            ExperimentColumn("Coverage", "%"),
+            ExperimentColumn("Mean diameter", "nm"),
+        )
+        rows = tuple(
+            ExperimentTableRow(
+                measurement_id=s.measurement_id,
+                title=s.title,
+                cells=_feature_cells(self._diagnostics(s.model.dataset).features),
+            )
+            for s in self._sessions
+        )
+        return ExperimentTable("Feature analysis", columns, rows)
+
     # -- cross-measurement statistics (Part 5: reuses viz.measure) ------------
 
     def compare_region(
@@ -461,6 +494,39 @@ def _signal_harmonics_cell(diag: MeasurementDiagnostics) -> ExperimentCell:
 def _reference_cell(ds: Dataset) -> ExperimentCell:
     has = _has_reference(ds)
     return ExperimentCell("yes" if has else "no", 1.0 if has else 0.0)
+
+
+def _feature_cells(features: tuple[FeatureDiagnostics, ...]) -> tuple[ExperimentCell, ...]:
+    """The five ``feature_table`` cells for one measurement's Phase 7 facts.
+
+    A measurement may (rarely) carry more than one labeled channel (e.g. one
+    segmentation on ``Z`` and another on an optical amplitude); this flattens all of
+    them into one comparable row rather than adding columns per label channel.
+    """
+    if not features:
+        return tuple(ExperimentCell("-", None) for _ in range(5))
+
+    names = ", ".join(f.label_channel for f in features)
+    total_count = sum(f.count for f in features)
+    areas = [f.total_area_nm2 for f in features if f.total_area_nm2 is not None]
+    total_area = float(sum(areas)) if areas else None
+    coverages = [f.coverage_fraction for f in features if f.coverage_fraction is not None]
+    coverage_pct = float(np.mean(coverages)) * 100.0 if coverages else None
+    diameters = [
+        p.equivalent_diameter_nm
+        for f in features
+        for p in f.features
+        if p.equivalent_diameter_nm is not None
+    ]
+    mean_diameter = float(np.mean(diameters)) if diameters else None
+
+    return (
+        ExperimentCell(names, None),
+        ExperimentCell(str(total_count), float(total_count)),
+        _num_cell(total_area),
+        _num_cell(coverage_pct),
+        _num_cell(mean_diameter),
+    )
 
 
 def _num_cell(value: float | None, fmt: str = "{:.4g}") -> ExperimentCell:

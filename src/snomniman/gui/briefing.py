@@ -61,18 +61,18 @@ class BriefingPanel(QtWidgets.QWidget):
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body = QtWidgets.QWidget()
         self._body = QtWidgets.QVBoxLayout(body)
         self._body.setContentsMargins(0, 0, 0, 0)
         scroll.setWidget(body)
         outer.addWidget(scroll, 1)
 
-        self._tree = QtWidgets.QTreeWidget()
-        self._tree.setHeaderHidden(True)
-        self._tree.setRootIsDecorated(True)
-        self._tree.setWordWrap(True)
-        self._tree.setMinimumHeight(220)
-        self._body.addWidget(self._tree)
+        self._facts_box = QtWidgets.QWidget()
+        self._facts_layout = QtWidgets.QVBoxLayout(self._facts_box)
+        self._facts_layout.setContentsMargins(0, 0, 0, 0)
+        self._facts_layout.setSpacing(8)
+        self._body.addWidget(self._facts_box)
 
         self._suggest_box = QtWidgets.QGroupBox("Suggested next steps")
         self._suggest_layout = QtWidgets.QVBoxLayout(self._suggest_box)
@@ -102,17 +102,17 @@ class BriefingPanel(QtWidgets.QWidget):
 
     def set_briefing(self, briefing: Briefing) -> None:
         self._briefing = briefing
-        self._tree.clear()
+        _clear_layout(self._facts_layout)
         for section in briefing.sections:
-            header = QtWidgets.QTreeWidgetItem([section.title])
-            header.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
-            font = header.font(0)
+            title = QtWidgets.QLabel(section.title)
+            font = title.font()
             font.setBold(True)
-            header.setFont(0, font)
-            self._tree.addTopLevelItem(header)
+            title.setFont(font)
+            self._facts_layout.addWidget(title)
             for st in section.statements:
-                header.addChild(QtWidgets.QTreeWidgetItem([st.text]))
-            header.setExpanded(True)
+                label = QtWidgets.QLabel(f"• {st.text}")
+                label.setWordWrap(True)
+                self._facts_layout.addWidget(label)
 
         if briefing.interpretation is not None:
             self._interpretation.setText(briefing.interpretation)

@@ -24,6 +24,7 @@ the provenance DAG. See ``docs/ai-scientist-v1.md`` (ADR-0020).
 from __future__ import annotations
 
 from .briefing import build_briefing
+from .experiment import build_experiment_briefing, detect_outliers
 from .provider import (
     ORIENTATION_SYSTEM,
     MockNarrativeProvider,
@@ -49,6 +50,10 @@ from .report import (
     BriefingContext,
     BriefingSection,
     BriefingStatement,
+    ExperimentBriefing,
+    ExperimentBriefingContext,
+    OutlierMetric,
+    OutlierReport,
     Recommendation,
     RecommendationEvidence,
     WorkflowSuggestions,
@@ -66,8 +71,12 @@ __all__ = [
     "BriefingContext",
     "BriefingSection",
     "BriefingStatement",
+    "ExperimentBriefing",
+    "ExperimentBriefingContext",
     "MockNarrativeProvider",
     "NarrativeProvider",
+    "OutlierMetric",
+    "OutlierReport",
     "ReasoningContext",
     "ReasoningRule",
     "Recommendation",
@@ -75,7 +84,9 @@ __all__ = [
     "RuleOutcome",
     "WorkflowSuggestions",
     "build_briefing",
+    "build_experiment_briefing",
     "build_orientation_prompt",
+    "detect_outliers",
     "iter_rules",
     "list_rules",
     "recommend_workflow",

@@ -1,6 +1,6 @@
 [project]
 name = "snomniman"
-version = "0.1.0"
+version = "0.2.0"
 description = "SNOMNIMAN - reproducible analysis of scattering-type SNOM (s-SNOM) and nano-FTIR data"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,12 +29,25 @@ gui = [
     "pyqtgraph>=0.13",
 ]
 
+# The frozen-executable entry point (deployment-strategy.md Phase 1). A
+# `gui-scripts` entry (not `console_scripts`) so an installed launcher has no
+# console window, matching how the frozen exe itself will behave.
+[project.gui-scripts]
+snomniman-gui = "snomniman.gui.app:run"
+
 # Dev tooling (PEP 735). `uv sync` installs this group by default.
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
     "mypy>=1.10",
+]
+# PyInstaller freeze tooling (deployment-strategy.md Phase 1). Not part of the
+# default `dev` group - only pulled in with `uv sync --group packaging --extra
+# gui` when actually building a distributable, so ordinary backend dev/CI never
+# installs it.
+packaging = [
+    "pyinstaller>=6.10",
 ]
 
 [build-system]

@@ -81,8 +81,42 @@ def test_ai_vocabulary_grows_with_new_operations(synthetic_dataset: Dataset) -> 
         "image.reference_normalize",
         "image.phase_unwrap",
         "image.crop",
+        "image.threshold_segment",  # Phase 7 - no AI-specific change was needed either
     ):
         assert step_id in text, f"AI briefing did not gain vocabulary for {step_id}"
+
+
+def test_observations_narrate_detected_features(synthetic_dataset: Dataset) -> None:
+    # Phase 7 (docs/phase7-9-master-roadmap.md Section 5.3.4): once a measurement has
+    # been segmented, the Briefing narrates the detected features - the same
+    # "AI's vocabulary is exactly the deterministic engine's vocabulary" claim,
+    # extended from operations/harmonics to Phase 7 facts.
+    from snomniman.processing.image.threshold_segment import ThresholdSegment
+
+    segmented = ThresholdSegment(channel="Z", method="otsu", min_pixels=1).apply(
+        {"primary": synthetic_dataset}
+    )
+    obs = next(
+        s for s in build_briefing(segmented).sections if s.title == "Scientific Observations"
+    )
+    text = " ".join(st.text for st in obs.statements)
+    assert "feature(s) detected in 'Z_labels'" in text
+    assert "from 'Z'" in text
+
+
+def test_observations_omit_feature_statement_when_zero_features(synthetic_dataset: Dataset) -> None:
+    # An empty segmentation (nothing crossed the threshold) is honestly silent, not a
+    # spurious "0 features detected" statement.
+    from snomniman.processing.image.threshold_segment import ThresholdSegment
+
+    segmented = ThresholdSegment(
+        channel="Z", method="fixed", threshold=1e9, polarity="above", min_pixels=1
+    ).apply({"primary": synthetic_dataset})
+    obs = next(
+        s for s in build_briefing(segmented).sections if s.title == "Scientific Observations"
+    )
+    text = " ".join(st.text for st in obs.statements)
+    assert "feature(s) detected" not in text
 
 
 def test_observations_note_plane_level_not_yet_applied(synthetic_dataset: Dataset) -> None:

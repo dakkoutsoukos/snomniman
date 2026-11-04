@@ -18,8 +18,11 @@ import pytest
 
 from snomniman.core import Dataset
 from snomniman.gui.model import ExplorerModel
+from snomniman.viz import LineshapeFit, fit_lineshape
 
 pytest.importorskip("PySide6")
+
+from PySide6 import QtWidgets
 
 from snomniman.gui.model import SpectrumCurve
 from snomniman.gui.spectrumview import SpectrumPlotView
@@ -211,3 +214,169 @@ def test_show_curves_empty_mapping_clears_the_plot(qapp: Any) -> None:
     x, _ = view._curve_item.getData()
     assert x is None or len(x) == 0
     assert view._overlay_items == []
+
+
+# --------------------------------------------------------------------------- #
+# Dual wavenumber/wavelength axis (Phase 6 stage 3,
+# docs/phase6-spectral-lineshape-analysis.md sec 3.5)
+# --------------------------------------------------------------------------- #
+
+
+def test_top_axis_is_the_wavelength_conversion(qapp: Any) -> None:
+    view = SpectrumPlotView()
+    top = view._plot.getAxis("top")
+    assert top.labelText == "wavelength"
+    # Same tick *positions* as wavenumber (shared ViewBox); only the label text
+    # is the nonlinear 1e4/wavenumber conversion.
+    assert top.tickStrings([2000.0, 5000.0], 1.0, 1.0) == ["5.00", "2.00"]
+    assert top.tickStrings([0.0], 1.0, 1.0) == [""]
+
+
+# --------------------------------------------------------------------------- #
+# Lineshape fitting interaction (Phase 6 stage 3,
+# docs/phase6-spectral-lineshape-analysis.md sec 3.3-3.4)
+# --------------------------------------------------------------------------- #
+
+
+def _lorentzian_curve() -> SpectrumCurve:
+    wn = np.arange(5800.0, 6401.0, 1.0)
+    lorentzian = 2.0 / (1.0 + ((wn - 6095.0) / (42.4 / 2.0)) ** 2)
+    return SpectrumCurve(
+        channel="O2_ratio", representation="amplitude", wavenumber_cm1=wn,
+        values=lorentzian + 1.0, unit="a.u.", cyclic=False,
+    )
+
+
+def _fit_result(curve: SpectrumCurve, window: tuple[float, float]) -> LineshapeFit:
+    return fit_lineshape(curve.wavenumber_cm1, curve.values, window=window, unit=curve.unit)
+
+
+def test_fit_checkbox_shows_a_default_window_region(qapp: Any) -> None:
+    view = SpectrumPlotView()
+    view.show_curve(_lorentzian_curve())
+    assert view.fit_window_bounds() is None
+    assert view._fit_btn.isHidden() is True
+    view._fit_checkbox.setChecked(True)
+    bounds = view.fit_window_bounds()
+    assert bounds is not None
+    lo, hi = bounds
+    assert 5800.0 <= lo < hi <= 6401.0
+    assert view._fit_btn.isHidden() is False
+
+
+def test_unchecking_fit_removes_the_region_and_result(qapp: Any) -> None:
+    view = SpectrumPlotView()
+    curve = _lorentzian_curve()
+    view.show_curve(curve)
+    view._fit_checkbox.setChecked(True)
+    view.show_fit(_fit_result(curve, (5900.0, 6300.0)))
+    assert view._residual_plot.isHidden() is False
+    view._fit_checkbox.setChecked(False)
+    assert view.fit_window_bounds() is None
+    assert view._residual_plot.isHidden() is True
+    assert view._fit_readout.text() == ""
+
+
+def test_fit_button_emits_fit_requested_with_the_window_bounds(qapp: Any) -> None:
+    view = SpectrumPlotView()
+    view.show_curve(_lorentzian_curve())
+    view._fit_checkbox.setChecked(True)
+    view._fit_region.setRegion((5900.0, 6300.0))
+    received: list[tuple[float, float]] = []
+    view.fitRequested.connect(lambda lo, hi: received.append((lo, hi)))
+    view._fit_btn.click()
+    assert len(received) == 1
+    assert received[0] == pytest.approx((5900.0, 6300.0))
+
+
+def test_show_fit_populates_curve_residual_and_readout(qapp: Any) -> None:
+    view = SpectrumPlotView()
+    curve = _lorentzian_curve()
+    view.show_curve(curve)
+    view._fit_checkbox.setChecked(True)
+    result = _fit_result(curve, (5900.0, 6300.0))
+    view.show_fit(result)
+    assert view._fit_curve_item is not None
+    fit_x, fit_y = view._fit_curve_item.getData()
+    np.testing.assert_allclose(fit_x, result.wavenumber_cm1)
+    np.testing.assert_allclose(fit_y, result.fit_curve)
+    _residual_x, residual_y = view._residual_curve.getData()
+    np.testing.assert_allclose(residual_y, result.residuals)
+    assert view._residual_plot.isHidden() is False
+    assert "Lorentzian fit" in view._fit_readout.text()
+    assert f"{result.center:.1f}" in view._fit_readout.text()
+
+
+def test_new_curve_clears_the_fit_result_but_keeps_the_window(qapp: Any) -> None:
+    view = SpectrumPlotView()
+    curve = _lorentzian_curve()
+    view.show_curve(curve)
+    view._fit_checkbox.setChecked(True)
+    view.show_fit(_fit_result(curve, (5900.0, 6300.0)))
+    bounds_before = view.fit_window_bounds()
+
+    view.show_curve(_lorentzian_curve())  # e.g. a channel/position switch
+
+    assert view._fit_curve_item is None
+    assert view._residual_plot.isHidden() is True
+    assert view._fit_readout.text() == ""
+    assert view.fit_window_bounds() == pytest.approx(bounds_before)
+
+
+def test_window_wires_fit_requested_to_the_model(window: MeasurementExplorerWindow) -> None:
+    curve = window._model.spectrum_curve(position_index=0)
+    lo, hi = float(curve.wavenumber_cm1[5]), float(curve.wavenumber_cm1[-5])
+    window._on_spectrum_fit_requested(lo, hi)
+    assert window._spectrum._fit_readout.text() != ""
+    assert window._spectrum._fit_curve_item is not None
+
+
+def test_window_shows_a_message_instead_of_crashing_for_a_too_narrow_window(
+    window: MeasurementExplorerWindow, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *a, **k: None)
+    curve = window._model.spectrum_curve(position_index=0)
+    lo, hi = float(curve.wavenumber_cm1[0]), float(curve.wavenumber_cm1[1])
+    window._on_spectrum_fit_requested(lo, hi)  # must not raise
+    assert window._spectrum._fit_readout.text() == ""
+
+
+# --------------------------------------------------------------------------- #
+# The Explorer's one active lineshape fit, for reporting (Phase 6 stage 4,
+# docs/phase6-spectral-lineshape-analysis.md sec 4 - no history, by design)
+# --------------------------------------------------------------------------- #
+
+
+def test_window_tracks_the_active_lineshape_fit(window: MeasurementExplorerWindow) -> None:
+    assert window._active_lineshape_fit is None
+    curve = window._model.spectrum_curve(position_index=0)
+    lo, hi = float(curve.wavenumber_cm1[5]), float(curve.wavenumber_cm1[-5])
+    window._on_spectrum_fit_requested(lo, hi)
+    assert window._active_lineshape_fit is not None
+    title, label, result = window._active_lineshape_fit
+    assert title == window._model.title
+    assert label == curve.label
+    assert result.window == (lo, hi)
+
+
+def test_changing_position_clears_the_active_lineshape_fit(
+    window: MeasurementExplorerWindow,
+) -> None:
+    curve = window._model.spectrum_curve(position_index=0)
+    lo, hi = float(curve.wavenumber_cm1[5]), float(curve.wavenumber_cm1[-5])
+    window._on_spectrum_fit_requested(lo, hi)
+    assert window._active_lineshape_fit is not None
+
+    window._spectrum._position_spin.setValue(3)  # a new curve is now displayed
+
+    assert window._active_lineshape_fit is None
+
+
+def test_build_report_model_includes_the_active_fit(window: MeasurementExplorerWindow) -> None:
+    curve = window._model.spectrum_curve(position_index=0)
+    lo, hi = float(curve.wavenumber_cm1[5]), float(curve.wavenumber_cm1[-5])
+    window._on_spectrum_fit_requested(lo, hi)
+
+    report = window._build_report_model().experiment_report()
+
+    assert "Spectral peak fit (active)" in [s.title for s in report.sections]

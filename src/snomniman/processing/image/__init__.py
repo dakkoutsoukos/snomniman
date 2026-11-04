@@ -15,6 +15,7 @@ from .plane_level import PlaneLevel
 from .reference_normalize import ReferenceNormalize
 from .region_amplitude_reference import RegionAmplitudeReference
 from .region_phase_reference import RegionPhaseReference
+from .threshold_segment import ThresholdSegment
 
 __all__ = [
     "Arithmetic",
@@ -28,4 +29,5 @@ __all__ = [
     "ReferenceNormalize",
     "RegionAmplitudeReference",
     "RegionPhaseReference",
+    "ThresholdSegment",
 ]

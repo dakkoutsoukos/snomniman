@@ -6,6 +6,12 @@ build/
 dist/
 .eggs/
 
+# Packaging build/installer outputs (packaging/snomniman.spec + .iss + the
+# entry point/icon/version-info scripts ARE committed; only build artifacts
+# aren't). packaging/build/ and packaging/dist/ already match the patterns
+# above; installer_dist/ needs its own entry since it isn't named "dist".
+packaging/installer_dist/
+
 # Environments
 .venv/
 venv/
@@ -39,3 +45,6 @@ Thumbs.db
 *.h5
 *.hdf5
 *.nc
+
+# Real lab measurement data and screenshots: never published.
+/SNOM Sample Files/

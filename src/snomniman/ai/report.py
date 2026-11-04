@@ -15,6 +15,7 @@ narrative - can be audited against the deterministic facts that grounded it.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -181,6 +182,93 @@ class WorkflowSuggestions:
         return {k: _jsonify(v) for k, v in asdict(self).items()}
 
 
+# --------------------------------------------------------------------------- #
+# Experiment-level Scientific Assistant - data types (Phase 9A/9B). Produced by
+# ``ai.experiment``; parallel to the single-measurement types above, composing
+# many measurements' facts rather than one.
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class ExperimentBriefingContext:
+    """The exact per-measurement facts an :class:`ExperimentBriefing` was built from.
+
+    ``per_measurement`` holds each measurement's own already-serialized
+    :class:`BriefingContext` (``.to_dict()``), keyed by ``measurement_id`` - the
+    same grounding a single-measurement :class:`Briefing` carries, just one per
+    measurement, so any experiment-level statement can be traced back to the exact
+    measurement and deterministic layer that produced it.
+    """
+
+    measurement_ids: tuple[str, ...]
+    per_measurement: Mapping[str, dict[str, Any]]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: _jsonify(v) for k, v in asdict(self).items()}
+
+
+@dataclass(frozen=True)
+class ExperimentBriefing:
+    """A whole-project orientation: deterministic fact sections over every measurement.
+
+    Structurally parallel to :class:`Briefing` (same ``sections``/``BriefingStatement``
+    contract - every statement is source-tagged) but composed from every measurement
+    in a :class:`~snomniman.pipeline.Project` instead of one dataset's facts.
+    """
+
+    title: str | None
+    n_measurements: int
+    sections: tuple[BriefingSection, ...]
+    context: ExperimentBriefingContext
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: _jsonify(v) for k, v in asdict(self).items()}
+
+
+@dataclass(frozen=True)
+class OutlierMetric:
+    """One measurement's value for one metric, relative to its project's own distribution.
+
+    A plain descriptive statistic (a z-score against the project's own mean/std for
+    this metric) - never a claim about *why* a measurement differs or whether it is
+    instrumentally bad (CLAUDE.md AI rule 1). ``flagged`` is ``True`` iff
+    ``abs(z_score)`` is at least the report's ``threshold``.
+    """
+
+    metric: str
+    unit: str | None
+    measurement_id: str
+    measurement_title: str
+    value: float
+    project_mean: float
+    project_std: float
+    z_score: float
+    flagged: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: _jsonify(v) for k, v in asdict(self).items()}
+
+
+@dataclass(frozen=True)
+class OutlierReport:
+    """Deterministic outlier flags across a project, for every metric that could be compared.
+
+    ``metrics`` carries every (measurement, metric) pair that had enough data to be
+    compared; ``flagged`` is the subset that crossed ``threshold``. ``note`` explains
+    a metric skipped for having too few computable measurements to form a meaningful
+    distribution, when that happened.
+    """
+
+    title: str | None
+    threshold: float
+    metrics: tuple[OutlierMetric, ...]
+    flagged: tuple[OutlierMetric, ...]
+    note: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: _jsonify(v) for k, v in asdict(self).items()}
+
+
 def _jsonify(obj: Any) -> Any:
     """Recursively convert tuples to lists so the result is JSON-round-trippable."""
     if isinstance(obj, dict):
@@ -200,6 +288,10 @@ __all__ = [
     "BriefingContext",
     "BriefingSection",
     "BriefingStatement",
+    "ExperimentBriefing",
+    "ExperimentBriefingContext",
+    "OutlierMetric",
+    "OutlierReport",
     "Recommendation",
     "RecommendationEvidence",
     "WorkflowSuggestions",

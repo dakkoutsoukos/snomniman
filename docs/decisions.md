@@ -1,6 +1,6 @@
 # Decisions (ADR log)
 
-**Status:** Living document - **Last updated:** 2026-06-29 (ADR-0027: project persistence + data/measurement export)
+**Status:** Living document - **Last updated:** 2026-07-20 (ADR-0033: `snomniman.physics`, Phase 8A dielectric-model fitting)
 
 Architecture Decision Records, lightweight. Each entry: context -> decision ->
 alternatives -> consequences -> status. New major decisions are appended here in
@@ -896,6 +896,100 @@ initial pages), one additive field on `knowledge.Article`, one new GUI panel
 presentation and teaching-content infrastructure only. 818 tests pass (27 new:
 `test_manual.py`, `test_manual_knowledge_links.py`, `test_gui_manual.py`); `ruff`,
 `mypy --strict`, and the Qt-free invariant green.
+
+---
+
+## ADR-0033 - `snomniman.physics`: a new module for deterministic material-parameter extraction  [ACCEPTED]
+**Context.** `docs/phase7-9-master-roadmap.md` (2026-07-20, research/design) planned
+Phase 7 (Automated Scientific Feature Analysis), Phase 8 (Physics Modeling), and Phase
+9 (the Scientific Assistant) as one integrated blueprint, then this milestone
+implemented the parts of it ready to build without a data or literature-verification
+blocker: Phase 7 in full (`image.threshold_segment`, `diagnostics.FeatureDiagnostics`,
+`ExperimentModel`/`ReportModel` extensions - all shipped with **no new architecture**,
+so none of it needed its own ADR, per the design doc's own Section 3.4 finding), Phase
+9's Experiment Briefing + deterministic outlier detection (`ai.experiment`, extending
+`snomniman.ai` - also no new architecture), and Phase 8A: a shared Drude/Lorentz
+dielectric-model fitting primitive. Phase 8A is the one piece that does add new
+architecture - a fitted physical resonance parameter (a Drude damping rate, a Lorentz
+oscillator's resonance frequency and linewidth) is a genuinely new class of derived
+scientific knowledge (inverting a physical *model* through the data), not a statistic
+about an array (`diagnostics`) or a projection of existing metadata (`describe`) - the
+same category of decision that justified `describe` (ADR-0018), `diagnostics`
+(ADR-0019), and `ai` (ADR-0020) each getting their own module.
+**Decision.** Add a new Qt-free backend leaf module, `snomniman.physics`
+(`dielectric.py`/`__init__.py`), depending only on `numpy`/`scipy` over plain arrays -
+no dependency on `core`/`processing`, the same boundary `snomniman.viz.measure`
+already uses (it operates on already-extracted spectral arrays a caller supplies, not
+a `Dataset`). `fit_dielectric_model(wavenumber_cm1, signal, kind="drude"|"lorentz")`
+fits a Drude free-carrier or Lorentz-oscillator resonance **shape** directly to a
+measured complex near-field spectrum via `scipy.optimize.least_squares` over the
+stacked real/imaginary residual (the standard technique for a real-valued optimizer
+on complex data), returning a frozen, JSON-serializable `DielectricFit`. Every
+capability is split exactly as the project always splits new science (Section 4.1 of
+the design doc): *"can a researcher run this fit, previewed, on a spectrum they
+chose"* (Category A, the standard operation Definition of Done - synthetic round-trip
+validation, Rule 6) versus *"should the engine auto-recommend or auto-assert a
+physical model"* (Category B, gated by the Scientific Validation Phase). This ADR and
+this milestone ship **only** the former - no `ReasoningRule` is registered anywhere in
+`physics`, and none is proposed.
+**A real identifiability finding surfaced by testing, and the resulting design.** An
+initial implementation let `eps_inf` (and, separately, the Drude plasma frequency
+`omega_p` / the Lorentz oscillator `strength`) float as free fit parameters inside the
+model. Synthetic round-trip testing (Rule 6) caught that this is **not** merely
+hard-to-converge - it is mathematically unidentifiable: each of `eps_inf`, `omega_p`,
+and `strength` contributes to the model **only** as a scalar prefactor on a function
+of the other parameters, so it is exactly degenerate with the fit's free complex
+`scale`/`offset` terms (which exist to absorb the near-field signal's unknown,
+uncalibrated proportionality and background). No amount of data or SNR can break this
+degeneracy; least-squares silently converges to an arbitrary point along the
+degenerate manifold. The shipped design therefore fits **only** the genuinely
+shape-identifiable parameters - `gamma` (Drude damping rate) alone; `omega_to`
+(resonance/TO-phonon frequency) and `gamma` (linewidth) for Lorentz - and
+`DielectricFit` has **no `eps_inf`/`omega_p`/`strength` fields at all**: their absence
+is a mathematical fact this practical fit can defend, not a missing feature (the
+project maxim: "a missing capability is preferable to an unjustified one"). This also
+makes precise *why* Phase 8B (the finite dipole model, a future milestone, not
+implemented by this ADR) is scientifically necessary rather than merely more accurate:
+it is the only path to a calibrated amplitude, and hence to `omega_p`/carrier density
+at all. A second, purely numerical issue also surfaced during validation: the
+shape-only functions can be many orders of magnitude smaller than the data near a
+narrow resonance (their prefactor is fixed at 1, unlike the true unrecoverable
+oscillator strength), which starts a naive `scale0=1` initial guess in a badly
+conditioned basin; fixed by estimating `scale0` from the data's amplitude relative to
+the shape function evaluated at the initial guess, plus `x_scale="jac"` on the
+`least_squares` call (scipy's built-in adaptive parameter scaling for exactly this
+class of problem).
+**Alternatives.** (a) Land the fit inside `snomniman.viz.measure` alongside
+`fit_lineshape` - rejected: `viz.measure` is display-ready-data + generic geometric
+analysis (line profiles, ROI stats, a phenomenological lineshape fit with no physical
+units); a *physically-named* material-response model is a qualitatively different kind
+of knowledge, and conflating them would make `viz.measure` responsible for judging
+physical model applicability, which is not its job (Rule 2). (b) Fold it into
+`snomniman.diagnostics` as a new descriptor - rejected: `diagnostics` computes facts
+*about the array as measured* (statistics, tilt, harmonic content); a fitted physical
+model is a *hypothesis tested against* the data, a different epistemic category (the
+same "computation vs. hypothesis" line `ai`'s ADR-0020 drew for the Briefing). (c) Ship
+`eps_inf`/`omega_p`/`strength` anyway, with a giant caveat in the docstring - rejected
+outright once testing proved they are not merely *imprecise* but *mathematically
+arbitrary*; reporting a number from a flat degenerate manifold is exactly the
+"unjustified feature" the project maxim exists to prevent, no caveat makes it honest.
+**Consequences.** Net new surface: one leaf module (`snomniman.physics`:
+`dielectric.py`/`__init__.py`), zero new dependency edges from existing backend
+modules (later Phase 9 work may add `ai -> physics`, not part of this ADR), zero
+`core`/`processing`/persistence changes. No GUI panel yet (deliberately, matching the
+Phase 5A precedent of shipping a backend capability with "no GUI... out of scope for
+this milestone" when a concrete UI integration has not yet been designed) - callable
+from a script or a future Explorer panel identically. Phase 8B (finite dipole model)
+and 8C (carrier-density estimation) remain designed, not implemented - both need
+either real reference data or tip-geometry metadata this repository does not yet have
+(`docs/phase7-9-master-roadmap.md` Section 4.4/6.2), and attempting them without the
+same round-trip rigor that caught the identifiability bug above would risk shipping a
+plausible-looking but unverified result - an explicit, honest deferral, not an
+oversight. 925 tests pass (Phase 7: `image.threshold_segment`,
+`diagnostics.FeatureDiagnostics`, `ExperimentModel.feature_table`,
+`ReportModel._feature_analysis_section`; Phase 8A: `physics.fit_dielectric_model`;
+Phase 9A/9B/9C: `ai.build_experiment_briefing`, `ai.detect_outliers`, Briefing feature
+narration); `ruff`, `mypy --strict`, and the Qt-free invariant green.
 
 ---
 

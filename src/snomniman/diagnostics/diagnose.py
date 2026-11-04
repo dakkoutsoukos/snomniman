@@ -18,6 +18,7 @@ import math
 
 import numpy as np
 import numpy.typing as npt
+from scipy import ndimage
 
 from snomniman.core import Capability, Dataset
 from snomniman.processing import get_step, list_steps
@@ -29,11 +30,13 @@ from .descriptors import (
     HARMONIC_UNKNOWN,
     HARMONIC_WEAK,
     ChannelStatistics,
+    FeatureDiagnostics,
     HarmonicAmplitude,
     HarmonicDiagnostics,
     HistogramData,
     MeasurementDiagnostics,
     OperationApplicability,
+    ParticleFeature,
     TopographyDiagnostics,
 )
 
@@ -337,6 +340,164 @@ def _spatial_snr(
     return float(signal / noise_sigma)
 
 
+#: A pixel-coordinate covariance matrix needs at least this many pixels to be a
+#: meaningfully invertible shape estimate (Phase 7B, docs/phase7-9-master-roadmap.md
+#: Section 3.5).
+_MIN_PIXELS_FOR_SHAPE = 3
+#: Below this, a covariance eigenvalue is treated as degenerate (collinear pixels),
+#: not a genuine shape - reported as "unknown", never guessed.
+_DEGENERATE_EIGENVALUE_EPS = 1e-12
+
+
+def _pixel_area_nm2(dataset: Dataset) -> float | None:
+    px = dataset.metadata.scan.pixel_size_nm
+    if px is None:
+        return None
+    dx, dy = px
+    if dx <= 0.0 or dy <= 0.0:
+        return None
+    return dx * dy
+
+
+def feature_diagnostics(dataset: Dataset, label_channel: str) -> FeatureDiagnostics | None:
+    """Per-feature morphology + statistics from one labeled channel (Phase 7B).
+
+    ``label_channel`` must be a channel with ``ChannelInfo.kind == "label"`` (produced
+    by ``image.threshold_segment``); its source channel is read from the
+    ``derived_from`` attribute the operation records. Returns ``None`` when
+    ``label_channel`` is absent, not a label channel, or not a genuine 2-D spatial map
+    (never raises - an inapplicable request is a fact, not an error, matching every
+    other diagnostics function).
+    """
+    if label_channel not in dataset.channel_names:
+        return None
+    info_map = {c.canonical: c for c in dataset.metadata.channels}
+    info = info_map.get(label_channel)
+    if info is None or info.kind != "label" or Capability.SPATIAL_2D not in dataset.capabilities:
+        return None
+
+    labels = np.asarray(dataset.channel(label_channel).values, dtype=np.float64)
+    if labels.ndim != 2:
+        return None
+
+    attrs = dataset.data[label_channel].attrs
+    source_channel = str(attrs.get("derived_from", "") or "")
+    source_values: npt.NDArray[np.float64] | None = None
+    source_unit: str | None = None
+    if source_channel and source_channel in dataset.channel_names and not dataset.is_complex(
+        source_channel
+    ):
+        source_values = np.asarray(dataset.channel(source_channel).values, dtype=np.float64)
+        source_info = info_map.get(source_channel)
+        source_unit = source_info.value_unit if source_info else None
+    elif not source_channel:
+        source_channel = "unknown"
+
+    x = np.asarray(dataset.coordinate("x").values, dtype=np.float64)
+    y = np.asarray(dataset.coordinate("y").values, dtype=np.float64)
+    xx, yy = np.meshgrid(x, y)
+
+    pixel_area = _pixel_area_nm2(dataset)
+    px_size = dataset.metadata.scan.pixel_size_nm
+    mean_px_size = (px_size[0] + px_size[1]) / 2.0 if px_size is not None else None
+
+    ids = sorted(int(v) for v in np.unique(labels) if v > 0)
+    features: list[ParticleFeature] = []
+    diameters: list[float] = []
+    total_area = 0.0
+    any_area = False
+
+    for label_id in ids:
+        mask = labels == label_id
+        count = int(mask.sum())
+
+        area = pixel_area * count if pixel_area is not None else None
+        if area is not None:
+            total_area += area
+            any_area = True
+        diameter = 2.0 * math.sqrt(area / math.pi) if area is not None else None
+        if diameter is not None:
+            diameters.append(diameter)
+
+        perimeter = None
+        if mean_px_size is not None:
+            eroded = ndimage.binary_erosion(mask, border_value=0)
+            boundary_count = int(np.sum(mask & ~eroded))
+            perimeter = float(boundary_count) * mean_px_size
+
+        aspect_ratio: float | None = None
+        orientation: float | None = None
+        if count >= _MIN_PIXELS_FOR_SHAPE:
+            xs, ys = xx[mask], yy[mask]
+            cov = np.cov(np.stack([xs, ys]))
+            eigvals, eigvecs = np.linalg.eigh(cov)  # ascending order
+            lam_minor, lam_major = float(eigvals[0]), float(eigvals[1])
+            if lam_minor > _DEGENERATE_EIGENVALUE_EPS and lam_major > _DEGENERATE_EIGENVALUE_EPS:
+                aspect_ratio = math.sqrt(lam_major / lam_minor)
+                vx, vy = eigvecs[0, 1], eigvecs[1, 1]  # major-axis eigenvector
+                orientation = math.degrees(math.atan2(vy, vx)) % 180.0
+
+        mean_v = min_v = max_v = None
+        if source_values is not None:
+            region_values = source_values[mask]
+            finite = region_values[np.isfinite(region_values)]
+            if finite.size:
+                mean_v = float(finite.mean())
+                min_v = float(finite.min())
+                max_v = float(finite.max())
+
+        features.append(
+            ParticleFeature(
+                label=label_id,
+                pixel_count=count,
+                area_nm2=area,
+                equivalent_diameter_nm=diameter,
+                perimeter_nm=perimeter,
+                aspect_ratio=aspect_ratio,
+                orientation_deg=orientation,
+                centroid_x_nm=float(xx[mask].mean()),
+                centroid_y_nm=float(yy[mask].mean()),
+                source_channel=source_channel,
+                source_unit=source_unit,
+                mean_value=mean_v,
+                minimum_value=min_v,
+                maximum_value=max_v,
+            )
+        )
+
+    coverage: float | None = None
+    field = dataset.metadata.scan.size_nm
+    if any_area and field is not None:
+        fx, fy = field
+        if fx > 0.0 and fy > 0.0:
+            coverage = total_area / (fx * fy)
+
+    size_hist = histogram(np.array(diameters), unit="nm") if diameters else None
+
+    return FeatureDiagnostics(
+        label_channel=label_channel,
+        source_channel=source_channel,
+        count=len(features),
+        total_area_nm2=total_area if any_area else None,
+        coverage_fraction=coverage,
+        features=tuple(features),
+        size_histogram=size_hist,
+    )
+
+
+def all_feature_diagnostics(dataset: Dataset) -> tuple[FeatureDiagnostics, ...]:
+    """:func:`feature_diagnostics` for every labeled channel present in *dataset*."""
+    label_channels = [
+        c.canonical for c in dataset.metadata.channels if c.kind == "label"
+    ]
+    out: list[FeatureDiagnostics] = []
+    for name in label_channels:
+        result = feature_diagnostics(dataset, name)
+        if result is not None:
+            out.append(result)
+    return tuple(out)
+
+
 def operation_applicability(dataset: Dataset) -> tuple[OperationApplicability, ...]:
     """Structural applicability of every *registered* operation to this dataset.
 
@@ -375,6 +536,7 @@ def diagnose(dataset: Dataset, *, title: str | None = None) -> MeasurementDiagno
         topography=topography_diagnostics(dataset),
         harmonics=harmonic_diagnostics(dataset),
         applicability=operation_applicability(dataset),
+        features=all_feature_diagnostics(dataset),
     )
 
 
@@ -403,9 +565,12 @@ def _fit_plane(
 
 
 __all__ = [
+    "all_feature_diagnostics",
     "channel_statistics",
     "diagnose",
+    "feature_diagnostics",
     "harmonic_diagnostics",
+    "histogram",
     "operation_applicability",
     "topography_diagnostics",
 ]

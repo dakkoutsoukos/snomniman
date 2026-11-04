@@ -163,6 +163,66 @@ class HarmonicDiagnostics:
 
 
 @dataclass(frozen=True)
+class ParticleFeature:
+    """One labeled connected region's morphology and per-channel value statistics.
+
+    Computed from a labeled channel (produced by ``image.threshold_segment``, Phase 7)
+    plus the channel it was derived from. ``area_nm2``/``equivalent_diameter_nm``/
+    ``perimeter_nm`` use the dataset's physical pixel size (canonical nm, OHD-6) -
+    never a raw pixel count alone; they are ``None`` when the scan's pixel size is
+    unknown. ``aspect_ratio``/``orientation_deg`` come from the region's second-order
+    pixel-coordinate covariance (the same closed-form construction
+    ``skimage.measure.regionprops`` uses internally, computed directly with numpy - no
+    new dependency); both are ``None`` for a region smaller than 3 pixels or whose
+    pixels are exactly collinear (a covariance matrix is not meaningfully invertible),
+    never guessed. ``perimeter_nm`` is a standard discrete-boundary estimate (boundary
+    pixel count x mean pixel size), an approximation for a pixelated region.
+    """
+
+    label: int
+    pixel_count: int
+    area_nm2: float | None
+    equivalent_diameter_nm: float | None
+    perimeter_nm: float | None
+    aspect_ratio: float | None
+    orientation_deg: float | None
+    centroid_x_nm: float
+    centroid_y_nm: float
+    source_channel: str
+    source_unit: str | None
+    mean_value: float | None
+    minimum_value: float | None
+    maximum_value: float | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: _jsonify(v) for k, v in asdict(self).items()}
+
+
+@dataclass(frozen=True)
+class FeatureDiagnostics:
+    """All detected features from one labeled channel, plus a size-distribution summary.
+
+    ``label_channel`` names the labeled channel (e.g. ``"Z_labels"``, produced by
+    ``image.threshold_segment``); ``source_channel`` is the channel it was computed
+    from. ``size_histogram`` reuses :class:`HistogramData` verbatim over
+    ``equivalent_diameter_nm`` across every feature - the same descriptor its own
+    docstring already anticipated reusing for "experiment-level comparison... without
+    redesign" (Phase 7C, ``docs/phase7-9-master-roadmap.md`` Section 3.6).
+    """
+
+    label_channel: str
+    source_channel: str
+    count: int
+    total_area_nm2: float | None
+    coverage_fraction: float | None
+    features: tuple[ParticleFeature, ...]
+    size_histogram: HistogramData | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: _jsonify(v) for k, v in asdict(self).items()}
+
+
+@dataclass(frozen=True)
 class OperationApplicability:
     """Whether a registered operation structurally applies to this dataset.
 
@@ -199,6 +259,7 @@ class MeasurementDiagnostics:
     topography: TopographyDiagnostics | None
     harmonics: HarmonicDiagnostics | None
     applicability: tuple[OperationApplicability, ...]
+    features: tuple[FeatureDiagnostics, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {k: _jsonify(v) for k, v in asdict(self).items()}
@@ -220,10 +281,12 @@ __all__ = [
     "HARMONIC_UNKNOWN",
     "HARMONIC_WEAK",
     "ChannelStatistics",
+    "FeatureDiagnostics",
     "HarmonicAmplitude",
     "HarmonicDiagnostics",
     "HistogramData",
     "MeasurementDiagnostics",
     "OperationApplicability",
+    "ParticleFeature",
     "TopographyDiagnostics",
 ]

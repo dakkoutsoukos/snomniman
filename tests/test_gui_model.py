@@ -467,3 +467,48 @@ def test_band_dataset_rejects_a_channel_with_no_wavenumber(hyperspectral_dataset
     model.set_channel("Z")
     with pytest.raises(ProcessingError, match="wavenumber"):
         model.band_dataset(0)
+
+
+# --------------------------------------------------------------------------- #
+# Point-spectrum lineshape fitting (Phase 6 stage 3,
+# docs/phase6-spectral-lineshape-analysis.md sec 3.3-3.4)
+# --------------------------------------------------------------------------- #
+
+
+def test_fit_spectrum_lineshape_uses_the_displayed_curve(spectrum_dataset: Dataset) -> None:
+    model = ExplorerModel(spectrum_dataset)
+    curve = model.spectrum_curve(position_index=0)
+    lo, hi = float(curve.wavenumber_cm1[5]), float(curve.wavenumber_cm1[-5])
+    result = model.fit_spectrum_lineshape((lo, hi), position_index=0)
+    assert result.window == (lo, hi)
+    assert result.wavenumber_cm1.shape == curve.wavenumber_cm1.shape
+    assert result.unit == curve.unit
+
+
+def test_fit_spectrum_lineshape_reflects_channel_and_representation(
+    spectrum_dataset: Dataset,
+) -> None:
+    model = ExplorerModel(spectrum_dataset)
+    model.set_channel("O2")
+    model.set_representation("phase")
+    curve = model.spectrum_curve(position_index=0)
+    lo, hi = float(curve.wavenumber_cm1[5]), float(curve.wavenumber_cm1[-5])
+    result = model.fit_spectrum_lineshape((lo, hi), position_index=0)
+    np.testing.assert_allclose(result.wavenumber_cm1, curve.wavenumber_cm1)
+
+
+def test_fit_spectrum_lineshape_uses_the_requested_position(spectrum_dataset: Dataset) -> None:
+    model = ExplorerModel(spectrum_dataset)
+    curve0 = model.spectrum_curve(position_index=0)
+    lo, hi = float(curve0.wavenumber_cm1[5]), float(curve0.wavenumber_cm1[-5])
+    result0 = model.fit_spectrum_lineshape((lo, hi), position_index=0)
+    result3 = model.fit_spectrum_lineshape((lo, hi), position_index=3)
+    assert not np.allclose(result0.fit_curve, result3.fit_curve)
+
+
+def test_fit_spectrum_lineshape_raises_for_too_narrow_a_window(spectrum_dataset: Dataset) -> None:
+    model = ExplorerModel(spectrum_dataset)
+    curve = model.spectrum_curve(position_index=0)
+    lo, hi = float(curve.wavenumber_cm1[0]), float(curve.wavenumber_cm1[1])
+    with pytest.raises(ValueError, match="finite sample"):
+        model.fit_spectrum_lineshape((lo, hi), position_index=0)

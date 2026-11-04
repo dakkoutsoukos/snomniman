@@ -5,7 +5,11 @@ registry so they are discoverable via ``get_step("spectrum.*")``.
 """
 
 from .fft_interferogram import FftInterferogram
+from .ratio import SpectrumRatio
+from .savgol_smooth import SavgolSmooth
 
 __all__ = [
     "FftInterferogram",
+    "SavgolSmooth",
+    "SpectrumRatio",
 ]

@@ -35,6 +35,10 @@ _HARRIS = (
     "Harris, Proc. IEEE 66(1), 51 (1978) - on the use of windows for harmonic "
     "analysis with the DFT (apodization window definitions)."
 )
+_SAVITZKY_GOLAY = (
+    "Savitzky & Golay, Anal. Chem. 36(8), 1627 (1964) - smoothing and "
+    "differentiation of data by simplified least-squares procedures."
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -390,6 +394,73 @@ _CONCEPTS = (
         ),
         related_manual_pages=("getting_started.opening_a_spectrum",),
         references=(_HUTH,),
+    ),
+    Article(
+        article_id="concept.lorentzian_lineshape",
+        category=CONCEPT,
+        title="Lorentzian lineshape fitting",
+        summary=(
+            "Fitting a symmetric Lorentzian resonance plus a linear baseline - jointly, "
+            "not baseline-subtracted first - to a point-spectrum curve, to extract a "
+            "peak's center, width, and amplitude with honest uncertainties."
+        ),
+        explanation=(
+            "A Lorentzian lineshape L(k) = A / (1 + ((k - k0) / (w/2))^2) is the classical "
+            "response of a damped, homogeneously-broadened resonance - the textbook model for "
+            "a single vibrational/phonon feature in a spectrum. SNOMNIMAN fits it together "
+            "with a linear baseline a*k + b in one simultaneous least-squares step (not a "
+            "separate baseline-subtraction pass), over a wavenumber window the researcher "
+            "chooses interactively on the point-spectrum plot - so the fit only 'sees' the "
+            "region around the feature of interest, and the baseline is estimated from "
+            "exactly the same data the peak is fit against."
+        ),
+        scientific_background=(
+            "This is a standard, general-purpose spectroscopic fitting method, not a "
+            "near-field-specific one - it applies wherever a single, symmetric resonance "
+            "sits on a smooth, roughly linear background. It is deliberately *not* a claim "
+            "that every near-field spectral feature is Lorentzian: real resonances can be "
+            "asymmetric, overlap with a neighboring feature, or ride on a curved background, "
+            "in which case this model under-fits and should be read as such (see Common "
+            "mistakes) rather than trusted."
+        ),
+        mathematical_background=(
+            "The fit is nonlinear least squares (bounds keep the width positive and the "
+            "center inside the chosen window) over five free parameters: center, FWHM "
+            "(the 'w' above), amplitude, and the baseline's slope and intercept. Reported "
+            "uncertainties are one standard error from the fit's covariance matrix - "
+            "'NaN' rather than a fabricated number when the fit is too ill-conditioned to "
+            "estimate one. Fit quality is reported three ways, each answering a different "
+            "question: R^2 (how much of the *variance* in the window is explained), "
+            "SSR/dof (the *typical squared* residual per degree of freedom), and RMS (the "
+            "*typical* size of a residual, in the curve's own units) - all computed over "
+            "the chosen window only, not the whole displayed curve."
+        ),
+        practical_guidance=(
+            "Choose a window that brackets the peak with enough flat-looking baseline on "
+            "both sides to constrain the linear term - too narrow a window starves the "
+            "baseline of the data it needs and can make the fit unstable. After fitting, "
+            "read the residual plot before trusting the numbers: scattered, structureless "
+            "residuals support the model; a residual with its own visible shape (a dip, a "
+            "second bump, a systematic curve) means the Lorentzian-plus-linear model is "
+            "missing something real in the data, and the reported R^2 will usually be "
+            "visibly lower than a genuinely good fit's."
+        ),
+        common_mistakes=(
+            "Trusting a low-R^2 or visibly-structured-residual fit as if it were a good "
+            "one - both are the tool honestly reporting that a single symmetric Lorentzian "
+            "does not describe this feature (e.g. it is a doublet, asymmetric, or the "
+            "window caught part of a second resonance).",
+            "Picking a fit window so narrow it barely spans the peak - the baseline term "
+            "becomes poorly constrained and the reported uncertainties become optimistic.",
+            "Comparing center/FWHM values fit over very different window widths or "
+            "positions without first checking both fits actually converged well - the "
+            "window choice itself is a researcher judgment call, not something the tool "
+            "picks for you.",
+        ),
+        related_concepts=("concept.point_spectrum",),
+        related_operations=("spectrum.ratio", "spectrum.savgol_smooth"),
+        related_manual_pages=("explorer.spectrum_lineshape_fit",),
+        references=(),
     ),
     Article(
         article_id="concept.spectral_axis",
@@ -1273,6 +1344,176 @@ _OPERATIONS = (
         related_manual_pages=("workspace.spectrum.fft_interferogram",),
         references=(_GRIFFITHS, _MERTZ, _HARRIS, _HUTH),
     ),
+    Article(
+        article_id="operation.spectrum.ratio",
+        category=OPERATION,
+        title="Spectrum Ratio (two-spectrum)",
+        summary=(
+            "Divides one channel's amplitude of two compatible spectral measurements "
+            "(A / B) - e.g. a point spectrum on a feature divided by one on the bare "
+            "substrate - producing a new derived, real-valued ratio channel."
+        ),
+        explanation=(
+            "The spectral analogue of image.arithmetic (ADR-0030): it takes two "
+            "spectral measurements as input, evaluates the amplitude view of the "
+            "chosen channel in each, and divides A by B pointwise along wavenumber. "
+            "Both parent measurements are recorded in the result's provenance. This "
+            "is deliberately distinct from image.reference_normalize, which divides a "
+            "signal channel by its matching reference channel captured "
+            "*simultaneously within the same measurement* - this operation instead "
+            "compares two separate acquisitions (two different point-spectroscopy "
+            "positions, or a sample versus a reference standard). The two "
+            "measurements must share the same wavenumber sampling and the chosen "
+            "channel; mismatches are refused rather than reconciled, because "
+            "resampling one spectrum onto another's axis is a separate, explicit "
+            "operation this step does not perform."
+        ),
+        scientific_background=(
+            "Dividing a near-field spectrum by a reference spectrum acquired under "
+            "matched conditions is the standard way to normalize out common "
+            "instrumental and illumination factors and expose the sample's own "
+            "spectral contrast - the same normalization logic nano-FTIR literature "
+            "applies (Huth et al.), here between two separately acquired point "
+            "spectra rather than a same-scan reference channel."
+        ),
+        mathematical_background=(
+            "For the chosen channel with amplitude views a(k) and b(k) over shared "
+            "wavenumber samples k: ratio(k) = a(k) / b(k). For a complex channel the "
+            "value view is the amplitude |.|; the result is real-valued and inherits "
+            "A's wavenumber coordinate."
+        ),
+        practical_guidance=(
+            "Open both measurements in the same project; make the spectrum of "
+            "interest (e.g. on-nanoparticle) the primary (A) input and the reference "
+            "spectrum (e.g. on-substrate) the secondary (B) input. The result is a "
+            "normal derived dataset in A's history - a typical next step is "
+            "spectrum.savgol_smooth, then a lineshape fit."
+        ),
+        common_mistakes=(
+            "Confusing this with image.reference_normalize - that operation divides "
+            "by a same-measurement reference channel (R_O{n}); this one compares two "
+            "different measurements.",
+            "Expecting two spectra with different wavenumber sampling (e.g. different "
+            "acquisition settings) to combine automatically - they are refused with a "
+            "clear reason, never silently resampled.",
+        ),
+        related_concepts=("concept.point_spectrum",),
+        related_operations=("image.arithmetic", "image.reference_normalize"),
+        related_manual_pages=("workspace.spectrum.ratio",),
+        references=(_HUTH,),
+    ),
+    Article(
+        article_id="operation.spectrum.savgol_smooth",
+        category=OPERATION,
+        title="Savitzky-Golay Smooth",
+        summary=(
+            "Smooths a real-valued spectral channel by fitting a low-order "
+            "polynomial across a sliding window along wavenumber - noise reduction "
+            "that better preserves peak shape than a plain moving average."
+        ),
+        explanation=(
+            "Within each window of 'window_length' samples, a least-squares "
+            "polynomial of degree 'polyorder' is fit and evaluated (scipy's "
+            "'interp' edge handling fits and evaluates the same way at the "
+            "boundaries, rather than padding or reflecting the data). It acts on "
+            "one real-valued channel and leaves every other channel unchanged; a "
+            "complex channel is refused - smoothing a complex optical signal's real "
+            "and imaginary parts independently would not correspond to smoothing its "
+            "amplitude or phase, so this step expects a channel that is already real "
+            "(typically the output of spectrum.ratio)."
+        ),
+        scientific_background=(
+            "Savitzky-Golay filtering is the standard smoothing method for "
+            "spectroscopic data specifically because, unlike a moving average, it is "
+            "exact for polynomials up to its own order - a narrow real peak is "
+            "attenuated far less than by an equivalent-width boxcar average."
+        ),
+        mathematical_background=(
+            "For an odd window_length and polyorder < window_length, the filter "
+            "reproduces any polynomial of degree <= polyorder exactly (a defining, "
+            "testable property); for real data it acts as a local low-pass filter "
+            "whose effective bandwidth is set jointly by window_length and "
+            "polyorder."
+        ),
+        practical_guidance=(
+            "Choose window_length wide enough to average over the noise but "
+            "narrower than the narrowest real feature you want to keep resolved; "
+            "polyorder 2-3 is a common starting point. Run it after spectrum.ratio "
+            "(which produces the real-valued channel this step needs) and before a "
+            "lineshape fit."
+        ),
+        common_mistakes=(
+            "Choosing window_length comparable to or larger than a real peak's "
+            "width - it visibly flattens and broadens the peak, exactly the "
+            "distortion this operation is meant to avoid.",
+            "Applying it directly to a complex optical channel - refused; smooth an "
+            "already-real channel (e.g. spectrum.ratio's output) instead.",
+        ),
+        related_concepts=("concept.point_spectrum",),
+        related_operations=("spectrum.ratio",),
+        related_manual_pages=("workspace.spectrum.savgol_smooth",),
+        references=(_SAVITZKY_GOLAY,),
+    ),
+    Article(
+        article_id="operation.image.threshold_segment",
+        category=OPERATION,
+        title="Threshold Segment",
+        summary=(
+            "Thresholds a channel and labels each connected foreground region - "
+            "turning visible particles or domains into a countable, measurable set "
+            "of features."
+        ),
+        explanation=(
+            "Threshold Segment separates a real-valued channel (topography or an "
+            "optical amplitude/phase view) into foreground and background by a "
+            "chosen cut, then labels each connected foreground region with a "
+            "distinct integer id (background stays 0). The result is a new "
+            "channel, '{channel}_labels', appended alongside the untouched "
+            "original - the first step of automated feature analysis: once a "
+            "channel is labeled, the Diagnostics Engine can report each region's "
+            "size, shape, and per-channel statistics as deterministic facts "
+            "(see the Feature Analysis diagnostic)."
+        ),
+        scientific_background=(
+            "Threshold-and-label particle/grain analysis is decades-old, standard "
+            "SPM/image-analysis practice (Gwyddion's 'Grain marking' module is the "
+            "direct precedent); Otsu's method is the standard parameter-free "
+            "threshold choice for a bimodal foreground/background histogram."
+        ),
+        mathematical_background=(
+            "Otsu's threshold maximizes the between-class variance of the "
+            "channel's histogram (a closed-form, deterministic criterion; no "
+            "fitting). 'above'/'below' polarity selects whether foreground is "
+            "values >= or <= the cut. Connected foreground pixels are grouped by "
+            "4-connectivity labeling (scipy.ndimage.label); a region smaller than "
+            "min_pixels is dropped and the surviving ids are renumbered "
+            "contiguously."
+        ),
+        practical_guidance=(
+            "Start with the 'otsu' default on a channel with a clear "
+            "foreground/background separation (e.g. particles taller than the "
+            "substrate). Use 'percentile' when you know roughly what fraction of "
+            "the field is foreground, or 'fixed' when a specific physical cut "
+            "(e.g. a known height datum) is already established. Raise min_pixels "
+            "to drop noise specks."
+        ),
+        common_mistakes=(
+            "Expecting touching/overlapping particles to be separated - "
+            "connected-component labeling merges them into one region "
+            "(watershed splitting is not implemented; a documented limitation).",
+            "Segmenting a complex (optical) channel directly - choose a real "
+            "value view (e.g. the amplitude) first; the operation requires a "
+            "real-valued channel.",
+            "Treating the labeled channel's own value statistics as meaningful - "
+            "the ids are arbitrary labels, not a physical quantity; the per-region "
+            "statistics come from the *source* channel, reported by the Feature "
+            "Analysis diagnostic.",
+        ),
+        related_concepts=("concept.topography",),
+        related_diagnostics=("feature_analysis",),
+        related_manual_pages=("workspace.image.threshold_segment",),
+        references=(_GWYDDION,),
+    ),
 )
 
 
@@ -1414,6 +1655,56 @@ _DIAGNOSTICS = (
             "are in arbitrary units until referenced).",
         ),
         related_concepts=("concept.complex_signals",),
+        related_manual_pages=("explorer.diagnostics",),
+    ),
+    Article(
+        article_id="diagnostic.feature_analysis",
+        category=DIAGNOSTIC,
+        title="Feature analysis (detected particles/domains)",
+        summary=(
+            "Per-region morphology and statistics computed from a labeled channel "
+            "(produced by Threshold Segment): count, area, equivalent diameter, "
+            "aspect ratio, orientation, and per-feature source-channel values."
+        ),
+        explanation=(
+            "Once a channel has been threshold-segmented into labeled regions, "
+            "this diagnostic reports, for each region: its pixel count and "
+            "physical area (using the scan's real pixel size, never a raw pixel "
+            "count alone), an equivalent diameter, an approximate perimeter, and "
+            "- for regions of at least 3 pixels - an aspect ratio and orientation "
+            "from the region's second-order pixel-coordinate covariance (the same "
+            "closed-form construction standard region-property tools use). It "
+            "also reports the mean/min/max of the *source* channel's values "
+            "within each region, the project's total covered area and coverage "
+            "fraction, and a size-distribution histogram reusing the same "
+            "Histogram diagnostic. It is purely descriptive: it never judges "
+            "whether a detected region is a real particle, an artifact, or "
+            "noise - that remains the researcher's call."
+        ),
+        mathematical_background=(
+            "area = pixel_count * pixel_size_x * pixel_size_y; equivalent "
+            "diameter = 2*sqrt(area/pi); aspect ratio = sqrt(lambda_major / "
+            "lambda_minor), the ratio of the region's covariance-matrix "
+            "eigenvalues (None if the region is smaller than 3 pixels or its "
+            "pixels are exactly collinear - not meaningfully invertible)."
+        ),
+        practical_guidance=(
+            "Run Threshold Segment first; this diagnostic then appears "
+            "automatically for the labeled channel it produced, in the same "
+            "Diagnostics panel as every other fact - no separate step. Compare "
+            "feature populations across a project in the Experiment tab's "
+            "Feature analysis table."
+        ),
+        common_mistakes=(
+            "Comparing feature counts across measurements segmented with "
+            "different thresholds/methods as if the same physical criterion was "
+            "applied - the threshold choice itself is not part of this fact.",
+            "Reading a None aspect ratio as zero or as circular - it means the "
+            "region was too small or too degenerate to estimate a shape, not "
+            "that its shape is unknown-but-round.",
+        ),
+        related_concepts=("concept.histogram",),
+        related_operations=("image.threshold_segment",),
         related_manual_pages=("explorer.diagnostics",),
     ),
 )

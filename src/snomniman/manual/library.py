@@ -308,6 +308,38 @@ _EXPLORER: tuple[ManualPage, ...] = (
         related_pages=("explorer.diagnostics", "export.csv"),
         related_knowledge_articles=("concept.profile_analysis", "concept.region_comparison"),
     ),
+    ManualPage(
+        page_id="explorer.spectrum_lineshape_fit",
+        category=EXPLORER,
+        title="Fit a lineshape (point spectroscopy)",
+        summary=(
+            "Fit a Lorentzian + linear baseline to a point-spectrum curve within a "
+            "wavenumber window you choose."
+        ),
+        purpose=(
+            "Turns a point spectrum into a reportable number - a peak's center and "
+            "width, with an honest uncertainty and fit quality - directly on the "
+            "spectrum plot. Point spectroscopy has no 2-D image, so this lives on the "
+            "spectrum view itself rather than the (image-only) Measure tab."
+        ),
+        steps=(
+            "Open a point-spectroscopy measurement (no 2-D grid) so the spectrum plot "
+            "is shown; pick the channel/representation and position, if more than one.",
+            "Check 'Fit window' to show a draggable shaded region on the curve; drag "
+            "its edges to bracket the peak you want to fit.",
+            "Click 'Fit Lorentzian'. A red fit curve, a residual plot below it, and a "
+            "summary (center in both cm^-1 and its wavelength equivalent, FWHM, "
+            "amplitude, baseline, R^2, SSR/dof, RMS) appear.",
+            "Changing channel, position, or measurement clears the fit result (the "
+            "window region itself stays) - click 'Fit Lorentzian' again to re-fit.",
+            "The Explorer keeps exactly one active fit at a time; running a new one "
+            "replaces it. If a fit is active when you generate an Experiment Report or "
+            "Publication Package, it is included automatically as a 'Spectral peak fit "
+            "(active)' section.",
+        ),
+        related_pages=("getting_started.opening_a_spectrum", "export.reports"),
+        related_knowledge_articles=("concept.lorentzian_lineshape", "concept.point_spectrum"),
+    ),
 )
 
 # --------------------------------------------------------------------------- #
@@ -660,6 +692,81 @@ _WORKSPACE_OPERATIONS: tuple[ManualPage, ...] = (
             "concept.apodization",
         ),
         related_operations=("spectrum.fft_interferogram",),
+    ),
+    ManualPage(
+        page_id="workspace.spectrum.ratio",
+        category=WORKSPACE,
+        title="Spectrum Ratio (how to use it)",
+        summary="Divide one channel's amplitude of two point spectra (A / B).",
+        purpose=(
+            "Computes an amplitude ratio between two different spectral "
+            "measurements - e.g. a spectrum on a feature divided by a spectrum on "
+            "the substrate - the second input picked from another open measurement, "
+            "same two-input pattern as Arithmetic."
+        ),
+        steps=(
+            "Open (or Add) both spectral measurements you want to combine into the "
+            "same project.",
+            "Select 'spectrum.ratio' in the tree; the 'Inputs' group appears.",
+            "Pick 'Measurement A' (numerator) and 'Measurement B' (denominator) from "
+            "the dropdowns.",
+            "Set 'channel'.",
+            "Preview and Accept/Cancel; the result is recorded in the primary "
+            "measurement's history with both parents in its provenance.",
+        ),
+        related_pages=("workspace.overview", "workspace.image.arithmetic"),
+        related_knowledge_articles=("operation.spectrum.ratio",),
+        related_operations=("spectrum.ratio",),
+    ),
+    ManualPage(
+        page_id="workspace.spectrum.savgol_smooth",
+        category=WORKSPACE,
+        title="Savitzky-Golay Smooth (how to use it)",
+        summary="Smooth a real-valued spectral channel with a Savitzky-Golay filter.",
+        purpose=(
+            "Reduces noise in a spectrum (typically an amplitude ratio from "
+            "spectrum.ratio) before fitting a lineshape, while preserving real peak "
+            "shape better than a plain moving average."
+        ),
+        steps=(
+            "Select 'spectrum.savgol_smooth' in the tree.",
+            "Set 'channel' to a real-valued channel (e.g. an '..._ratio' channel "
+            "produced by spectrum.ratio - a complex channel is refused).",
+            "Set 'window_length' (odd, no default - pick a value narrower than the "
+            "feature you want to keep) and 'polyorder' (default 3).",
+            "Preview and Accept/Cancel.",
+        ),
+        related_pages=("workspace.overview", "workspace.spectrum.ratio"),
+        related_knowledge_articles=("operation.spectrum.savgol_smooth",),
+        related_operations=("spectrum.savgol_smooth",),
+    ),
+    ManualPage(
+        page_id="workspace.image.threshold_segment",
+        category=WORKSPACE,
+        title="Threshold Segment (how to use it)",
+        summary="Threshold a channel and label connected regions (particles/domains).",
+        purpose=(
+            "The first step of feature analysis: turns visible particles or domains "
+            "into a labeled channel, so the Diagnostics panel can then report each "
+            "region's size, shape, and statistics as a Feature Analysis fact - no "
+            "further steps needed to see them."
+        ),
+        steps=(
+            "Select 'image.threshold_segment' in the tree.",
+            "Set 'channel' to a real-valued channel (e.g. 'Z', or an amplitude view).",
+            "Choose 'method': 'otsu' (parameter-free default), 'percentile', or "
+            "'fixed'; set 'threshold' or 'percentile' if needed.",
+            "Choose 'polarity' ('above' for particles taller/brighter than the "
+            "background, 'below' for pits/inverted contrast).",
+            "Raise 'min_pixels' to drop noise specks.",
+            "Preview and Accept/Cancel; the result adds a new "
+            "'{channel}_labels' channel - open Diagnostics to see the detected "
+            "features.",
+        ),
+        related_pages=("workspace.overview", "explorer.diagnostics"),
+        related_knowledge_articles=("operation.image.threshold_segment",),
+        related_operations=("image.threshold_segment",),
+        related_diagnostics=("feature_analysis",),
     ),
 )
 

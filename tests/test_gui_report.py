@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import snomniman.processing.image  # noqa: F401  (registers image ops)
@@ -31,6 +32,8 @@ from snomniman.gui.report import (
 from snomniman.pipeline import Recipe, RecipeStep, capture_recipe
 from snomniman.processing.image.fix_zero import FixZero
 from snomniman.processing.image.plane_level import PlaneLevel
+from snomniman.processing.image.threshold_segment import ThresholdSegment
+from snomniman.viz import LineshapeFit
 
 
 def _session(
@@ -84,6 +87,8 @@ def test_experiment_report_includes_expected_sections(
     # No recipes/batch runs were given, so those sections are honestly absent.
     assert "Applied recipes" not in titles
     assert not any(t.startswith("Batch run:") for t in titles)
+    # Neither session has been segmented (Phase 7) - honestly absent, not empty.
+    assert "Feature analysis" not in titles
 
 
 def test_experiment_report_project_section_facts(two_sessions: list[MeasurementSession]) -> None:
@@ -140,6 +145,31 @@ def test_experiment_report_value_distribution_present_when_finite(
     report = ReportModel(two_sessions, "Test Project").experiment_report()
     titles = [s.title for s in report.sections]
     assert "Value distribution (current channel)" in titles
+
+
+def test_experiment_report_includes_feature_analysis_when_segmented(
+    topography_dataset: Dataset,
+) -> None:
+    segmented = ThresholdSegment(channel="Z", method="otsu", min_pixels=1).apply(
+        {"primary": topography_dataset}
+    )
+    session = _session(segmented, mid="measurement-0001", title="Scan 1")
+    report = ReportModel([session], "Test Project").experiment_report()
+    section = next(s for s in report.sections if s.title == "Feature analysis")
+    assert section.table is not None
+    assert section.table.rows[0].cells[0].text == "Z_labels"
+
+
+def test_publication_package_includes_feature_analysis_when_segmented(
+    topography_dataset: Dataset,
+) -> None:
+    segmented = ThresholdSegment(channel="Z", method="otsu", min_pixels=1).apply(
+        {"primary": topography_dataset}
+    )
+    session = _session(segmented, mid="measurement-0001", title="Scan 1")
+    report = ReportModel([session], "Test Project").publication_package()
+    titles = [s.title for s in report.sections]
+    assert "Feature analysis" in titles
 
 
 # --------------------------------------------------------------------------- #
@@ -224,6 +254,73 @@ def test_publication_package_omits_figures_section_when_none_exported(
 ) -> None:
     report = ReportModel(two_sessions, "Test Project").publication_package()
     assert "Exported figures this session" not in [s.title for s in report.sections]
+
+
+# --------------------------------------------------------------------------- #
+# Active point-spectrum lineshape fit (Phase 6 stage 4,
+# docs/phase6-spectral-lineshape-analysis.md sec 4)
+# --------------------------------------------------------------------------- #
+
+
+def _sample_fit() -> LineshapeFit:
+    wn = np.linspace(5800.0, 6400.0, 10)
+    return LineshapeFit(
+        shape="lorentzian",
+        baseline="linear",
+        window=(5900.0, 6300.0),
+        center=6095.0,
+        center_stderr=3.2,
+        fwhm=42.4,
+        fwhm_stderr=1.9,
+        amplitude=2.069,
+        amplitude_stderr=0.059,
+        baseline_intercept=1.351,
+        baseline_slope=-1.556e-3,
+        r_squared=0.82,
+        ssr_per_dof=5.87e-2,
+        rms=0.878,
+        n_window=401,
+        unit="a.u.",
+        wavenumber_cm1=wn,
+        fit_curve=np.zeros_like(wn),
+        residuals=np.zeros_like(wn),
+    )
+
+
+def test_experiment_report_omits_lineshape_fit_section_when_none_run(
+    two_sessions: list[MeasurementSession],
+) -> None:
+    report = ReportModel(two_sessions, "Test Project").experiment_report()
+    assert "Spectral peak fit (active)" not in [s.title for s in report.sections]
+
+
+def test_experiment_report_includes_the_active_lineshape_fit(
+    two_sessions: list[MeasurementSession],
+) -> None:
+    fit = _sample_fit()
+    report = ReportModel(
+        two_sessions, "Test Project",
+        active_lineshape_fit=("CdO full", "O2 amplitude", fit),
+    ).experiment_report()
+    section = next(s for s in report.sections if s.title == "Spectral peak fit (active)")
+    facts = {f.label: f.value for f in section.facts}
+    assert facts["Measurement"] == "CdO full"
+    assert facts["Channel"] == "O2 amplitude"
+    assert facts["Lineshape"] == "lorentzian + linear baseline"
+    assert "6095.00" in facts["Center"]
+    assert "42.40" in facts["FWHM"]
+    assert "0.8200" in facts["Fit quality"]
+
+
+def test_publication_package_includes_the_active_lineshape_fit(
+    two_sessions: list[MeasurementSession],
+) -> None:
+    fit = _sample_fit()
+    report = ReportModel(
+        two_sessions, "Test Project",
+        active_lineshape_fit=("CdO full", "O2 amplitude", fit),
+    ).publication_package()
+    assert "Spectral peak fit (active)" in [s.title for s in report.sections]
 
 
 # --------------------------------------------------------------------------- #

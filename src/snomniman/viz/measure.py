@@ -20,9 +20,27 @@ from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
+from scipy.optimize import curve_fit
 from scipy.signal import find_peaks, peak_widths
 
 FloatArray = npt.NDArray[np.float64]
+
+#: Lineshape models :func:`fit_lineshape` supports. Only Lorentzian ships in v1
+#: (docs/phase6-spectral-lineshape-analysis.md sec 1) - the parameter exists so
+#: Gaussian/Voigt can extend this function later without a signature break.
+LINESHAPE_LORENTZIAN = "lorentzian"
+LINESHAPES = (LINESHAPE_LORENTZIAN,)
+
+#: Baseline models :func:`fit_lineshape` supports. Only a linear baseline ships in
+#: v1, fit *jointly* with the peak (not subtracted beforehand) - the same method
+#: the source workflow's own figure uses.
+BASELINE_LINEAR = "linear"
+BASELINES = (BASELINE_LINEAR,)
+
+#: Number of free parameters in the Lorentzian+linear model (center, fwhm,
+#: amplitude, slope, intercept) - the minimum finite-sample count a fit window
+#: must contain.
+_N_LINESHAPE_PARAMS = 5
 
 
 @dataclass(frozen=True)
@@ -199,6 +217,45 @@ class RegionComparison:
     unit: str
 
 
+@dataclass(frozen=True)
+class LineshapeFit:
+    """A Lorentzian + linear-baseline joint fit over a chosen wavenumber window.
+
+    A read-only observation (Rule 4): it fits, but never mutates, a spectrum a
+    researcher is already looking at - the lineshape-fitting analogue of
+    :class:`ProfileFeatures`/:class:`RegionComparison`, not a
+    :class:`~snomniman.processing.ProcessingStep`
+    (docs/phase6-spectral-lineshape-analysis.md sec 3.3). ``fit_curve`` and
+    ``residuals`` are evaluated over the **entire** input array (not just the
+    fit window), so a caller can plot the model and residual across the whole
+    spectrum; fit quality (``r_squared``/``ssr_per_dof``/``rms``) is computed
+    **within the fit window only** - the same convention the source workflow's
+    own reporting uses. Uncertainties are one standard error from the
+    least-squares covariance; ``NaN`` when the fit is singular/ill-conditioned
+    (an honest "unknown", never a fabricated number).
+    """
+
+    shape: str
+    baseline: str
+    window: tuple[float, float]
+    center: float
+    center_stderr: float
+    fwhm: float
+    fwhm_stderr: float
+    amplitude: float
+    amplitude_stderr: float
+    baseline_intercept: float
+    baseline_slope: float
+    r_squared: float
+    ssr_per_dof: float
+    rms: float
+    n_window: int
+    unit: str
+    wavenumber_cm1: FloatArray
+    fit_curve: FloatArray
+    residuals: FloatArray
+
+
 def analyze_profile(
     positions_nm: FloatArray,
     values: FloatArray,
@@ -254,6 +311,146 @@ def compare_regions(
     difference = float(a.mean - b.mean)
     ratio = float(a.mean / b.mean) if (b.mean != 0.0 and math.isfinite(b.mean)) else None
     return RegionComparison(label_a, label_b, a, b, difference, ratio, unit)
+
+
+def fit_lineshape(
+    wavenumber_cm1: FloatArray,
+    values: FloatArray,
+    *,
+    window: tuple[float, float],
+    shape: str = LINESHAPE_LORENTZIAN,
+    baseline: str = BASELINE_LINEAR,
+    unit: str = "",
+) -> LineshapeFit:
+    """Fit a lineshape + baseline to *values* within *window* (read-only).
+
+    ``wavenumber_cm1``/``values`` is the full spectrum (e.g. an already
+    ratio'd and smoothed curve, monotonically increasing in wavenumber); only
+    the finite samples inside ``window`` (a ``(low, high)`` wavenumber pair,
+    order-independent) are used for the least-squares fit itself, but the
+    returned ``fit_curve``/``residuals`` are evaluated over the *entire*
+    input so the model and residual can be plotted across the whole
+    spectrum. ``shape``/``baseline`` currently accept only
+    ``"lorentzian"``/``"linear"`` - present so a future lineshape/baseline
+    extends this function rather than adding a new one.
+
+    Raises :exc:`ValueError` for a shape/baseline this function does not
+    (yet) support, mismatched input arrays, or a window with too few finite
+    samples to constrain the 5-parameter model; raises :exc:`ValueError` (not
+    a bare :exc:`RuntimeError`) if the underlying least-squares fit fails to
+    converge.
+    """
+    if shape not in LINESHAPES:
+        raise ValueError(f"fit_lineshape: shape must be one of {LINESHAPES}, got {shape!r}")
+    if baseline not in BASELINES:
+        raise ValueError(
+            f"fit_lineshape: baseline must be one of {BASELINES}, got {baseline!r}"
+        )
+
+    x = np.asarray(wavenumber_cm1, dtype=np.float64)
+    y = np.asarray(values, dtype=np.float64)
+    if x.shape != y.shape:
+        raise ValueError(
+            "fit_lineshape: wavenumber_cm1 and values must have the same shape, "
+            f"got {x.shape} and {y.shape}"
+        )
+
+    lo, hi = sorted(window)
+    mask = np.isfinite(x) & np.isfinite(y) & (x >= lo) & (x <= hi)
+    n_window = int(mask.sum())
+    if n_window <= _N_LINESHAPE_PARAMS:
+        raise ValueError(
+            f"fit_lineshape: window [{lo}, {hi}] contains {n_window} finite sample(s); "
+            f"need more than {_N_LINESHAPE_PARAMS} to fit {_N_LINESHAPE_PARAMS} parameters"
+        )
+    xw, yw = x[mask], y[mask]
+
+    p0 = _lineshape_initial_guess(xw, yw)
+    spacing = float(np.min(np.diff(np.sort(xw)))) if xw.size > 1 else 1.0
+    width = float(xw.max() - xw.min())
+    lower = [float(xw.min()), max(spacing, 1e-9), -np.inf, -np.inf, -np.inf]
+    upper = [float(xw.max()), max(width * 5.0, spacing * 5.0), np.inf, np.inf, np.inf]
+
+    try:
+        popt, pcov = curve_fit(
+            _lorentzian_linear, xw, yw, p0=p0, bounds=(lower, upper), maxfev=10000
+        )
+    except RuntimeError as exc:
+        raise ValueError(f"fit_lineshape: the fit did not converge - {exc}") from exc
+
+    center, fwhm, amplitude, slope, intercept = (float(v) for v in popt)
+    diag = np.diag(pcov)
+    if np.all(np.isfinite(diag)) and np.all(diag >= 0.0):
+        stderr = np.sqrt(diag)
+    else:
+        stderr = np.full(_N_LINESHAPE_PARAMS, np.nan)
+    center_se, fwhm_se, amplitude_se = (float(v) for v in stderr[:3])
+
+    fit_curve = _lorentzian_linear(x, *popt)
+    residuals = y - fit_curve
+
+    residual_window = yw - _lorentzian_linear(xw, *popt)
+    ss_res = float(np.sum(residual_window**2))
+    ss_tot = float(np.sum((yw - np.mean(yw)) ** 2))
+    r_squared = 1.0 - ss_res / ss_tot if ss_tot > 0.0 else float("nan")
+    dof = n_window - _N_LINESHAPE_PARAMS
+    ssr_per_dof = ss_res / dof if dof > 0 else float("nan")
+    rms = float(np.sqrt(np.mean(residual_window**2)))
+
+    return LineshapeFit(
+        shape=shape,
+        baseline=baseline,
+        window=(lo, hi),
+        center=center,
+        center_stderr=center_se,
+        fwhm=fwhm,
+        fwhm_stderr=fwhm_se,
+        amplitude=amplitude,
+        amplitude_stderr=amplitude_se,
+        baseline_intercept=intercept,
+        baseline_slope=slope,
+        r_squared=r_squared,
+        ssr_per_dof=ssr_per_dof,
+        rms=rms,
+        n_window=n_window,
+        unit=unit,
+        wavenumber_cm1=x,
+        fit_curve=fit_curve,
+        residuals=residuals,
+    )
+
+
+def _lorentzian_linear(
+    x: FloatArray,
+    center: float,
+    fwhm: float,
+    amplitude: float,
+    slope: float,
+    intercept: float,
+) -> FloatArray:
+    """A Lorentzian peak plus a linear baseline, fit jointly (not subtracted first)."""
+    lorentzian = amplitude / (1.0 + ((x - center) / (fwhm / 2.0)) ** 2)
+    return np.asarray(lorentzian + slope * x + intercept, dtype=np.float64)
+
+
+def _lineshape_initial_guess(xw: FloatArray, yw: FloatArray) -> list[float]:
+    """A starting point for the Lorentzian+linear fit from the windowed data.
+
+    The baseline starts as the secant line through the window's first and last
+    samples; the peak center/amplitude come from the largest deviation from
+    that line (works for a bump or a dip); the width starts as a quarter of the
+    window - a rough but robust seed, since the bounded least-squares fit only
+    needs to be in the right neighborhood, not exact.
+    """
+    span = float(xw[-1] - xw[0])
+    slope0 = float((yw[-1] - yw[0]) / span) if span != 0.0 else 0.0
+    intercept0 = float(yw[0] - slope0 * xw[0])
+    detrended = yw - (slope0 * xw + intercept0)
+    peak_idx = int(np.argmax(np.abs(detrended)))
+    amplitude0 = float(detrended[peak_idx])
+    center0 = float(xw[peak_idx])
+    fwhm0 = max(span / 4.0, 1e-6)
+    return [center0, fwhm0, amplitude0, slope0, intercept0]
 
 
 def _detect_peaks(
@@ -314,6 +511,11 @@ def _bilinear(values: FloatArray, fx: FloatArray, fy: FloatArray) -> FloatArray:
 
 
 __all__ = [
+    "BASELINES",
+    "BASELINE_LINEAR",
+    "LINESHAPES",
+    "LINESHAPE_LORENTZIAN",
+    "LineshapeFit",
     "Peak",
     "ProfileFeatures",
     "RegionComparison",
@@ -321,6 +523,7 @@ __all__ = [
     "analyze_profile",
     "compare_regions",
     "distance",
+    "fit_lineshape",
     "pixel_area",
     "polygon_mask",
     "rect_mask",

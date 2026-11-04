@@ -167,6 +167,16 @@ def _observations_section(
                 f"Channel {stat.channel} contains {stat.invalid_count} invalid (NaN/inf) pixels.",
                 "diagnostics",
             ))
+    for feat in diag.features:
+        if feat.count == 0:
+            continue
+        line = (
+            f"{feat.count} feature(s) detected in '{feat.label_channel}' "
+            f"(from '{feat.source_channel}')"
+        )
+        if feat.coverage_fraction is not None:
+            line += f", covering {feat.coverage_fraction * 100:.1f}% of the field"
+        statements.append(_fact(line + ".", "diagnostics"))
     if desc.is_raw:
         statements.append(_fact(
             "This is the raw measurement; no processing has been applied.", "description"
