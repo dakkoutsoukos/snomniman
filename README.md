@@ -4,11 +4,16 @@ Reproducible analysis of scattering-type SNOM (s-SNOM) and nano-FTIR data - a
 modern, open desktop platform intended as a successor to neaPLOT. Python package:
 `snomniman`.
 
-> **Status: Phase 0 complete; Phase 1 ready to begin.** All architecture
-> decisions are settled (see [`docs/decisions.md`](docs/decisions.md)); the
-> scientific/application code has not been written yet. Next up is the Phase 1
-> backend vertical slice (a real neaSNOM imaging reader -> validated `Dataset` ->
-> golden-file tests). Readiness: [`docs/phase0-readiness.md`](docs/phase0-readiness.md).
+> **Status: active development (pre-alpha, v0.2.0).** The backend (readers, processing
+> pipeline, provenance DAG, batch runs, export) and the PySide6 GUI are implemented, along
+> with spectral lineshape fitting, particle segmentation and a first Drude/Lorentz dielectric
+> fit. Per `NEXT.md` (2026-07-20), 925 tests pass, with `ruff` and `mypy --strict` clean.
+> The finite-dipole model, carrier-density analysis and watershed/hyperspectral segmentation
+> are designed but not implemented. See [`NEXT.md`](NEXT.md) and [`LOG.md`](LOG.md).
+>
+> Developed by Demetrios Koutsoukos as AI-directed engineering with Claude Code, under the
+> governance rules in [`CLAUDE.md`](CLAUDE.md). Real instrument data is not included in this
+> repository; tests that need it skip when it is absent.
 
 ## Why
 
@@ -60,8 +65,7 @@ SNOM/
 
 ## Development setup
 
-Requires Python >= 3.11 and [`uv`](https://docs.astral.sh/uv/) (not yet installed
-on this machine - install it first).
+Requires Python >= 3.11 and [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync                 # backend + dev tools
