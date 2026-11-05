@@ -37,7 +37,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Type check (mypy)
-        run: uv run mypy .
+        run: uv run mypy
 
       - name: Tests (pytest — includes backend Qt-free invariant)
         run: uv run pytest

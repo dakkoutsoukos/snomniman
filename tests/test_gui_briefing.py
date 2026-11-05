@@ -37,12 +37,15 @@ def test_panel_renders_sections(qapp: Any, synthetic_dataset: Dataset) -> None:
 
     panel = BriefingPanel()
     briefing = ExplorerModel(synthetic_dataset).scientific_briefing()
+
     def section_titles() -> list[str]:
-        return [
-            panel._facts_layout.itemAt(i).widget().text()
-            for i in range(panel._facts_layout.count())
-            if panel._facts_layout.itemAt(i).widget().font().bold()
-        ]
+        titles: list[str] = []
+        for i in range(panel._facts_layout.count()):
+            item = panel._facts_layout.itemAt(i)
+            label = item.widget() if item is not None else None
+            if isinstance(label, QtWidgets.QLabel) and label.font().bold():
+                titles.append(label.text())
+        return titles
 
     panel.set_briefing(briefing)
     assert section_titles() == [section.title for section in briefing.sections]
