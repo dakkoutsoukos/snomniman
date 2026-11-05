@@ -34,7 +34,7 @@ def canvas() -> tuple[Image.Image, ImageDraw.ImageDraw]:
 
 
 def z(v: float) -> int:
-    return int(round(v * SS))
+    return round(v * SS)
 
 
 def arc(d, cx, cy, r, start, end, w, fill=255):
