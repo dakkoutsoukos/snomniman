@@ -1,5 +1,7 @@
 # SNOMNIMAN
 
+[![CI](https://github.com/dakkoutsoukos/snomniman/actions/workflows/ci.yml/badge.svg)](https://github.com/dakkoutsoukos/snomniman/actions/workflows/ci.yml)
+
 Reproducible analysis of scattering-type SNOM (s-SNOM) and nano-FTIR data - a
 modern, open desktop platform intended as a successor to neaPLOT. Python package:
 `snomniman`.
@@ -7,7 +9,8 @@ modern, open desktop platform intended as a successor to neaPLOT. Python package
 > **Status: active development (pre-alpha, v0.2.0).** The backend (readers, processing
 > pipeline, provenance DAG, batch runs, export) and the PySide6 GUI are implemented, along
 > with spectral lineshape fitting, particle segmentation and a first Drude/Lorentz dielectric
-> fit. Per `NEXT.md` (2026-07-20), 925 tests pass, with `ruff` and `mypy --strict` clean.
+> fit. As of 2026-11-05, CI passes: 925 tests, with `ruff` and `mypy --strict` clean.
+> Feature status below is as recorded in `NEXT.md` (last updated 2026-07-20).
 > The finite-dipole model, carrier-density analysis and watershed/hyperspectral segmentation
 > are designed but not implemented. See [`NEXT.md`](NEXT.md) and [`LOG.md`](LOG.md).
 >
@@ -23,6 +26,27 @@ curves), and are analyzed through sequences of convention-sensitive
 transformations. SNOMNIMAN makes that analysis **transparent, reproducible, and
 batchable**, with publication-quality export - backend-first, so every scientific
 operation is testable without launching the UI.
+
+## Screenshots
+
+The Measurement Explorer (`python -m snomniman.gui <measurement-directory>`). All three
+screenshots show a **synthetic** nanoparticle scan generated for this README, not real
+instrument data.
+
+![Measurement Explorer showing a synthetic near-field amplitude image, the channel browser and the metadata inspector](docs/images/explorer.png)
+
+*Explorer: channel browser, amplitude/phase view with scale bar and contrast histogram,
+and the metadata inspector.*
+
+![Diagnostics tab showing topography statistics and a height histogram](docs/images/diagnostics.png)
+
+*Diagnostics: deterministic, computed facts about the selected channel (tilt, roughness,
+value distribution, which processing operations apply).*
+
+![Briefing tab showing a measurement summary, observations and applicable next steps](docs/images/briefing.png)
+
+*Briefing: a rule-based summary and grounded next-step suggestions derived from the
+description and diagnostics layers.*
 
 ## Documentation (single source of truth)
 
